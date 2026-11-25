@@ -126,7 +126,7 @@ const assert = (c, m) => { if (!c) { console.log('FAIL: ' + m); process.exitCode
   const perry = d.characters.find(c => c.id === 'p');
   assert(perry.name === 'Perry' && perry.look.hair === '#303030', 'character name and look are editable');
   assert((await p.getAttribute('#leftBody .card.open img.big', 'src')).includes('%23303030'), 'portrait preview follows the look');
-  assert((await p.textContent('#leftBody .card.open')).includes("Peregrine's regard"), "character card lists that character's properties");
+  assert(await p.locator('#leftBody .card.open .sect:has-text("Properties of this character") ~ .brow input[type=number]').count() === 2 && !(await p.textContent('#leftBody .card.open')).includes('[object'), "character card lists that character's properties, each with an editable starting value");
   await p.screenshot({ path: out + '/e3.png' });
   // rename the id: references follow
   const idInput = p.locator('#leftBody .card.open .grid2 input[type=text]').nth(1);

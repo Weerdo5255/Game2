@@ -1,4 +1,6 @@
 {
+  "title": "Faithful portrait",
+  "kind": "sprite",
   "description": "Neutral portrait of a character: img2img from the sprite flattened on grey, structure locked by ControlNet, then cut out with the guide's own silhouette (eroded and feathered) so the result has an alpha channel.",
   "output_node": "22",
   "prompt": {

@@ -16,6 +16,11 @@ ControlNet. The runner is plain Python 3 (standard library only).
 > against a mock server, but no image has actually been generated with them.
 > Expect to tune the settings in `config.json` on first use.
 
+The story editor (`cargo run --release -- --editor`, **Art** button) uses
+the same workflows, settings and node checks from this folder, per story and
+with a point-and-click queue. This runner does the built-in story in bulk
+from the command line.
+
 ## Quick start
 
 ```bash
@@ -67,6 +72,25 @@ Check the licence of any checkpoint before shipping art made with it.
 | `manifest.json` | Every asset, its files and its text prompt |
 
 7 backgrounds and 7 characters x 6 expressions: 49 assets.
+
+## Other workflows
+
+Besides the three described below, `workflows/` holds:
+
+| File | Kind | What it does |
+|---|---|---|
+| `background_reimagine.json` | background | Starts from noise, not from the painting; ControlNet keeps only the outlines. |
+| `sprite_reimagine.json` | sprite | The same for a neutral portrait, cut out as usual. |
+| `background_refine.json` | background | A light pass (no ControlNet) over the current enhanced image, or the painting if there is none. |
+
+```bash
+python3 comfyui/enhance.py run --kind background --workflow background_reimagine.json --force
+```
+
+`--workflow` uses that file for everything selected; it must match the kind
+of asset. A workflow file carries a `title`, a `kind`, and optionally
+`defaults` (settings it prefers, which per-asset `overrides` still beat) and
+`"guide": "enhanced"` (start from the current enhanced image).
 
 ## The three workflows
 

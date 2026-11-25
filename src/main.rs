@@ -2,7 +2,7 @@
 //!
 //!   cargo run --release                    play
 //!   cargo run --release -- --editor        open the visual story editor
-//!       (--port N, --no-browser)
+//!       (--port N, --no-browser, --stories DIR, --comfy-dir DIR)
 //!   cargo run --release -- --story FILE    use another story file
 //!   cargo run --release -- --start LABEL   begin at a scene
 //!   cargo run --release -- --format-story  tidy the story file's layout
@@ -16,6 +16,7 @@
 //!       and saving screenshots
 
 mod art;
+mod comfy;
 mod editor;
 mod game;
 mod gfx;
@@ -65,10 +66,12 @@ fn main() {
         return;
     }
 
+    // a story's enhanced art lives beside it, in "enhanced"
+    let beside_story = arg("--story").map(|s| comfy::enhanced_dir(Path::new(&s))).filter(|d| d.is_dir());
     let art_dir = if flag("--procedural") {
         None
     } else {
-        arg("--art-dir").map(PathBuf::from).or_else(art::find_enhanced_dir)
+        arg("--art-dir").map(PathBuf::from).or(beside_story).or_else(|| if arg("--story").is_some() { None } else { art::find_enhanced_dir() })
     };
 
     if flag("--editor") {
@@ -81,8 +84,16 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        let port = arg("--port").and_then(|p| p.parse().ok()).unwrap_or(7878);
-        if let Err(e) = editor::serve(path, port, art_dir, !flag("--no-browser")) {
+        let options = editor::Options {
+            story: path,
+            stories: arg("--stories").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("stories")),
+            comfy: arg("--comfy-dir").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("comfyui")),
+            port: arg("--port").and_then(|p| p.parse().ok()).unwrap_or(7878),
+            procedural: flag("--procedural"),
+            browser: !flag("--no-browser"),
+            job_timeout: arg("--job-timeout").and_then(|p| p.parse().ok()).unwrap_or(1800),
+        };
+        if let Err(e) = editor::serve(options) {
             eprintln!("{}", e);
             std::process::exit(1);
         }

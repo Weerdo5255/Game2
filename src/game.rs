@@ -476,9 +476,20 @@ impl Game {
                 let sel = *sel;
                 self.draw_bg(c, "vista_night");
                 c.rect_blend(0, 0, W, 250, rgba(8, 8, 28, 120));
-                c.text_c(W / 2, 54, "BELOW STAIRS,", GOLD, 6);
-                c.text_c(W / 2, 118, "ABOVE STARS", GOLD, 6);
-                c.text_c(W / 2, 196, "A tale of Halcyon Reach", rgb(200, 210, 255), 2);
+                // the story's own title, wrapped and sized to fit
+                let title = if self.script.title.is_empty() { "Untitled Story".to_string() } else { self.script.title.to_uppercase() };
+                let mut lines = wrap(&title, 14);
+                let scale = if lines.len() <= 2 && lines.iter().all(|l| l.chars().count() <= 22) { 6 } else { 4 };
+                if scale == 4 {
+                    lines = wrap(&title, 30);
+                    lines.truncate(3);
+                }
+                let mut y = if lines.len() == 1 { 86 } else { 54 };
+                for line in &lines {
+                    c.text_c(W / 2, y, line, GOLD, scale);
+                    y += scale * 8 + 16;
+                }
+                c.text_c(W / 2, y.max(196), &self.script.subtitle, rgb(200, 210, 255), 2);
                 c.panel(W / 2 - 170, 372, 340, 150);
                 for (i, item) in TITLE_ITEMS.iter().enumerate() {
                     let enabled = i != 1 || Game::has_save();

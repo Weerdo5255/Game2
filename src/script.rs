@@ -100,6 +100,11 @@ pub struct Scene {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Doc {
+    /// Shown on the game's title screen and in the editor's story list.
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub subtitle: String,
     #[serde(default)]
     pub header: Vec<String>,
     #[serde(default)]
@@ -158,6 +163,7 @@ fn split_pair(rest: &str) -> (String, String) {
 }
 
 enum Line {
+    Title(String, String),
     Character(CharDef),
     Var(VarDef),
     Label(String),
@@ -197,6 +203,10 @@ fn parse_line(line: &str) -> Result<Line, String> {
     let rest = line[toks[0].len()..].trim();
     let number = |s: &str| s.parse::<i32>().map_err(|_| format!("bad number '{}'", s));
     let item = match toks[0] {
+        "title" => {
+            let (title, subtitle) = split_pair(rest);
+            return Ok(Line::Title(title, subtitle));
+        }
         "character" => {
             let parts: Vec<&str> = rest.split('|').map(str::trim).collect();
             if parts.len() < 2 {
@@ -279,6 +289,10 @@ impl Doc {
                 Line::Item(Item::Comment { text: format!("UNPARSED: {}", line) })
             });
             match parsed {
+                Line::Title(title, subtitle) => {
+                    doc.title = title;
+                    doc.subtitle = subtitle;
+                }
                 Line::Character(c) => doc.characters.push(c),
                 Line::Var(v) => doc.vars.push(v),
                 Line::Label(label) => doc.scenes.push(Scene { label, ..Scene::default() }),
@@ -319,6 +333,8 @@ impl Doc {
     pub fn sanitize(&mut self) {
         let id = |s: &mut String| *s = s.trim().to_string();
         let pipe_free = |s: &mut String| *s = one_line(s).replace('|', "/");
+        pipe_free(&mut self.title);
+        self.subtitle = one_line(&self.subtitle);
         self.header.iter_mut().for_each(|h| *h = comment_line(h));
         // items of an unlabelled scene anywhere but first would be absorbed by the scene before it
         let mut i = 1;
@@ -407,6 +423,10 @@ impl Doc {
         };
         for h in &self.header {
             comment(&mut out, h);
+        }
+        if !self.title.is_empty() || !self.subtitle.is_empty() {
+            out.push_str(format!("\ntitle {} | {}", self.title, self.subtitle).trim_end_matches([' ', '|']));
+            out.push('\n');
         }
         if !self.characters.is_empty() {
             out.push('\n');
@@ -743,6 +763,8 @@ pub enum Cmd {
 }
 
 pub struct Script {
+    pub title: String,
+    pub subtitle: String,
     pub cmds: Vec<Cmd>,
     pub labels: HashMap<String, usize>,
     pub characters: Vec<CharDef>,
@@ -778,7 +800,7 @@ impl Script {
                 });
             }
         }
-        Script { cmds, labels, characters: doc.characters.clone(), vars: doc.vars.clone() }
+        Script { title: doc.title.clone(), subtitle: doc.subtitle.clone(), cmds, labels, characters: doc.characters.clone(), vars: doc.vars.clone() }
     }
 
     pub fn character(&self, id: &str) -> Option<&CharDef> {

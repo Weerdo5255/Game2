@@ -84,6 +84,15 @@ def settings_for(asset, cfg):
     return merged
 
 
+def explicit_keys(asset, cfg):
+    """Settings the user set for this asset specifically (per-asset overrides)."""
+    keys = set()
+    for pattern, extra in cfg.get("overrides", {}).items():
+        if fnmatch.fnmatchcase(asset["id"], pattern):
+            keys.update(extra)
+    return keys
+
+
 def select(assets, only=None, kind=None):
     """Filter assets and order them so neutral sprites precede expressions."""
     chosen = []
@@ -149,6 +158,10 @@ def build_prompt(asset, cfg):
     """Return (prompt graph, output node id, {upload name: role}) for an asset."""
     s = settings_for(asset, cfg)
     template = load_json(os.path.join(HERE, "workflows", s["workflow"]), "workflow")
+    # a workflow may carry defaults of its own; explicit settings still win
+    for key, value in template.get("defaults", {}).items():
+        if key not in explicit_keys(asset, cfg):
+            s[key] = value
     values = dict(s)
     values.update(
         positive=positive_prompt(asset, s),
@@ -160,11 +173,19 @@ def build_prompt(asset, cfg):
     roles = {"background": {"guide": "file"}, "sprite": {"guide": "flat", "silhouette": "mask"}}.get(
         kind, {"guide": "flat", "silhouette": "mask", "face": "face_mask", "base": "base"}
     )
+    needed = json.dumps(template["prompt"])
     for var, role in roles.items():
+        if f'"${var}"' not in needed:
+            continue  # this workflow does not use that image
         if not asset.get(role):
             raise EnhanceError(f"{asset['id']}: manifest entry has no '{role}' (re-export the guides)")
         values[var] = input_name(asset, role)
         uploads[values[var]] = role
+    if template.get("guide") == "enhanced" and "guide" in values:
+        # start from the current enhanced image when there is one
+        del uploads[values["guide"]]
+        values["guide"] = "current_" + asset["output"]
+        uploads[values["guide"]] = "current"
     prompt = fill(template["prompt"], values)
     if s.get("control_preprocess", "canny") == "none":
         prompt = drop_canny(prompt)
@@ -423,6 +444,13 @@ def cmd_run(args):
     assets = select(load_manifest(args.guides), args.only, args.kind)
     if not assets:
         raise EnhanceError("no assets match")
+    if args.workflow:
+        # use one workflow for everything selected, whatever the config says
+        kind = load_json(os.path.join(HERE, "workflows", args.workflow), "workflow").get("kind")
+        wrong = [a["id"] for a in assets if kind and asset_kind(a) != kind]
+        if wrong:
+            raise EnhanceError(f"{args.workflow} is a {kind} workflow; narrow the selection (--kind {kind}). Not suitable for: {', '.join(wrong[:4])}")
+        cfg = dict(cfg, kinds={k: dict(v, workflow=args.workflow) for k, v in cfg.get("kinds", {}).items()})
     by_id = {a["id"]: a for a in load_manifest(args.guides)}
 
     if args.dry_run:
@@ -452,7 +480,9 @@ def cmd_run(args):
             if errors:
                 raise EnhanceError("; ".join(errors))
             for name, role in uploads.items():
-                if role == "base":
+                if role == "current":
+                    source = target if os.path.isfile(target) else os.path.join(args.guides, a.get("flat") or a["file"])
+                elif role == "base":
                     source = os.path.join(args.out, by_id[a["base"]]["output"])
                     if not os.path.isfile(source):
                         raise EnhanceError(f"needs the enhanced neutral portrait first ({a['base']}); run that asset, then this one")
@@ -565,6 +595,7 @@ def main(argv=None):
     sp = sub.add_parser("run", help="enhance assets through ComfyUI")
     filters(sp)
     sp.add_argument("--force", action="store_true", help="redo assets that already have an enhanced image")
+    sp.add_argument("--workflow", metavar="FILE", help="use this workflow from comfyui/workflows for every selected asset, e.g. background_reimagine.json")
     sp.add_argument("--dry-run", metavar="DIR", help="write the resolved workflow for each asset to DIR; contact no server")
     sp.add_argument("--timeout", type=float, default=1800, help="seconds to wait for one image (default 1800)")
     sp.add_argument("--poll", type=float, default=1.0, help=argparse.SUPPRESS)

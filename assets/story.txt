@@ -3,6 +3,7 @@
 # Edit this file by hand, or visually with:  cargo run --release -- --editor
 #
 # Syntax (one element per line):
+# title Name | Subtitle      shown on the title screen
 # character id | Name | #colour | portrait | look     who can speak; portrait is p v s q t c a, or - for none
 # var id | Label | start | flags                      a property; flags: meter=N good bad hidden character=id
 # *label                      starts a scene; flow falls through to the next scene unless it jumps
@@ -17,6 +18,8 @@
 # if var >= n goto label
 # goto label
 # end Title | Epilogue
+
+title Below Stairs, Above Stars | A tale of Halcyon Reach
 
 character m | Marlowe | #96e6a0 | -
 character p | Peregrine | #c8b4ff | p

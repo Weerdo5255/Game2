@@ -7,3 +7,7 @@
 __pycache__/
 *.part
 /comfyui/resolved
+# stories set aside by the editor, and its backups
+/stories/.removed
+*.bak
+.removed/

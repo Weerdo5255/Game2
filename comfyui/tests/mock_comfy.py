@@ -60,6 +60,10 @@ class MockComfy:
                     self._send(200, {"system": {"comfyui_version": "mock"}, "devices": []})
                 elif url.path == "/object_info":
                     self._send(200, mock.object_info())
+                elif url.path.startswith("/object_info/"):
+                    cls = url.path.rsplit("/", 1)[1]
+                    info = mock.object_info()
+                    self._send(200, {cls: info[cls]} if cls in info else {})
                 elif url.path.startswith("/history/"):
                     pid = url.path.rsplit("/", 1)[1]
                     self._send(200, {pid: mock.history[pid]} if pid in mock.history else {})

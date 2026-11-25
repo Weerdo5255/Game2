@@ -1,0 +1,19 @@
+{
+  "title": "Refine (light second pass)",
+  "kind": "background",
+  "description": "A gentle img2img pass with no ControlNet over the current image: the enhanced one if it exists, otherwise the game painting. Adds detail without changing the composition.",
+  "guide": "enhanced",
+  "defaults": {"refine_denoise": 0.3},
+  "output_node": "12",
+  "prompt": {
+    "1": {"class_type": "CheckpointLoaderSimple", "_meta": {"title": "Checkpoint"}, "inputs": {"ckpt_name": "$checkpoint"}},
+    "2": {"class_type": "LoadImage", "_meta": {"title": "Current image (enhanced if there is one)"}, "inputs": {"image": "$guide"}},
+    "3": {"class_type": "ImageScale", "_meta": {"title": "Scale guide to generation size"}, "inputs": {"image": ["2", 0], "upscale_method": "lanczos", "width": "$width", "height": "$height", "crop": "disabled"}},
+    "4": {"class_type": "CLIPTextEncode", "_meta": {"title": "Positive prompt"}, "inputs": {"text": "$positive", "clip": ["1", 1]}},
+    "5": {"class_type": "CLIPTextEncode", "_meta": {"title": "Negative prompt"}, "inputs": {"text": "$negative", "clip": ["1", 1]}},
+    "9": {"class_type": "VAEEncode", "_meta": {"title": "Guide to latent"}, "inputs": {"pixels": ["3", 0], "vae": ["1", 2]}},
+    "10": {"class_type": "KSampler", "_meta": {"title": "Light second pass"}, "inputs": {"model": ["1", 0], "seed": "$seed", "steps": "$steps", "cfg": "$cfg", "sampler_name": "$sampler", "scheduler": "$scheduler", "positive": ["4", 0], "negative": ["5", 0], "latent_image": ["9", 0], "denoise": "$refine_denoise"}},
+    "11": {"class_type": "VAEDecode", "_meta": {"title": "Decode"}, "inputs": {"samples": ["10", 0], "vae": ["1", 2]}},
+    "12": {"class_type": "SaveImage", "_meta": {"title": "Save"}, "inputs": {"images": ["11", 0], "filename_prefix": "$prefix"}}
+  }
+}

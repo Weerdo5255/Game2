@@ -1,4 +1,6 @@
 {
+  "title": "Expression from the enhanced neutral",
+  "kind": "expression",
   "description": "Another expression of a character whose neutral portrait is already enhanced: start from that enhanced neutral, re-noise ONLY the face region, steer it with the edges of the expression guide and the expression prompt, then paste the new face back over the untouched neutral so identity, hair and clothes cannot drift.",
   "output_node": "32",
   "prompt": {

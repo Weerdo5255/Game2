@@ -178,6 +178,36 @@ class Workflows(Base):
             self.assertFalse([n for n in prompt.values() if n["class_type"] == "Canny"])
             self.assertEqual(enhance.validate_graph(prompt, self.specs), [])
 
+    def test_every_shipped_workflow_is_valid_for_its_kind(self):
+        folder = os.path.join(os.path.dirname(HERE), "workflows")
+        seen = set()
+        for name in sorted(os.listdir(folder)):
+            template = enhance.load_json(os.path.join(folder, name), "workflow")
+            self.assertIn(template["kind"], ("background", "sprite", "expression"), name)
+            self.assertTrue(template["title"])
+            cfg = dict(self.cfg, kinds={k: dict(v, workflow=name) for k, v in self.cfg["kinds"].items()})
+            for a in self.assets:
+                if enhance.asset_kind(a) != template["kind"]:
+                    continue
+                prompt, out, uploads = enhance.build_prompt(a, cfg)
+                self.assertEqual(enhance.validate_graph(prompt, self.specs), [], name)
+                self.assertNotIn('"$', json.dumps(prompt), name)
+                seen.add(name)
+        self.assertEqual(len(seen), 6)
+
+    def test_reimagine_starts_from_noise_and_refine_from_the_current_image(self):
+        bg = next(a for a in self.assets if a["id"] == "bg_axis")
+        cfg = lambda name: dict(self.cfg, kinds={k: dict(v, workflow=name) for k, v in self.cfg["kinds"].items()})
+        prompt, _, _ = enhance.build_prompt(bg, cfg("background_reimagine.json"))
+        sampler = next(n for n in prompt.values() if n["class_type"] == "KSampler")
+        self.assertEqual(prompt[sampler["inputs"]["latent_image"][0]]["class_type"], "EmptyLatentImage")
+        self.assertEqual(sampler["inputs"]["denoise"], 1.0)
+        self.assertEqual(next(n for n in prompt.values() if n["class_type"] == "ControlNetApplyAdvanced")["inputs"]["strength"], 0.95)
+        prompt, _, uploads = enhance.build_prompt(bg, cfg("background_refine.json"))
+        self.assertEqual(uploads, {"current_bg_axis.png": "current"})
+        self.assertFalse([n for n in prompt.values() if n["class_type"].startswith("ControlNet")])
+        self.assertEqual(next(n for n in prompt.values() if n["class_type"] == "KSampler")["inputs"]["denoise"], 0.3)
+
     def test_overrides_match_by_glob(self):
         cfg = dict(self.cfg, overrides={"spr_q_*": {"denoise": 0.11}, "bg_axis": {"steps": 7}})
         q = enhance.settings_for(next(a for a in self.assets if a["id"] == "spr_q_smile"), cfg)
@@ -218,6 +248,21 @@ class Runs(Base):
         self.assertIn("skipping", out)
         self.run_cli("run", "--poll", "0.01", "--force", "--only", "bg_axis")
         self.assertEqual(len(mock.prompts), first + 1)
+
+    def test_workflow_option_runs_another_workflow(self):
+        mock = self.server()
+        code, _, err = self.run_cli("run", "--poll", "0.01", "--kind", "background", "--workflow", "background_reimagine.json")
+        self.assertEqual(code, 0, err)
+        self.assertTrue(all(any(n["class_type"] == "EmptyLatentImage" for n in p.values()) for p in mock.prompts))
+        # refine picks up the image that run just made
+        code, _, err = self.run_cli("run", "--poll", "0.01", "--only", "bg_axis", "--force", "--workflow", "background_refine.json")
+        self.assertEqual(code, 0, err)
+        with open(os.path.join(self.out, "bg_axis.png"), "rb") as f:
+            self.assertTrue(f.read().startswith(enhance.PNG_MAGIC))
+        self.assertIn("current_bg_axis.png", mock.files)
+        code, _, err = self.run_cli("run", "--workflow", "background_refine.json")
+        self.assertEqual(code, 1)
+        self.assertIn("background workflow", err)
 
     def test_resume_after_partial_run(self):
         mock = self.server()

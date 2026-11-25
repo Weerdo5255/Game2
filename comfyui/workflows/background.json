@@ -1,4 +1,6 @@
 {
+  "title": "Faithful repaint",
+  "kind": "background",
   "description": "Background: img2img from the game's painted guide, structure locked by ControlNet. Values starting with $ are filled in by enhance.py.",
   "output_node": "12",
   "prompt": {

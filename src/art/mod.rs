@@ -126,7 +126,7 @@ pub fn sprite(def: &CharDef, expr: &str, enhanced: Option<&Path>) -> Canvas {
 }
 
 /// The part of a sprite that changes between expressions: (x, y, w, h).
-fn face_rect(who: &str) -> (i32, i32, i32, i32) {
+pub fn face_rect(who: &str) -> (i32, i32, i32, i32) {
     if who == "a" {
         swan::face_rect()
     } else {
