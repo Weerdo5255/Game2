@@ -7,6 +7,7 @@
 
 use super::paint::*;
 use crate::gfx::*;
+use std::collections::BTreeMap;
 use std::f32::consts::PI;
 
 const CX: f32 = 168.0;
@@ -884,8 +885,9 @@ fn extras(c: &mut Canvas, l: &Look) {
 
 /// Paint character `who` with expression `expr` on a transparent
 /// SPR_W x SPR_H (336x456) canvas.
-pub fn paint(out: &mut Canvas, who: &str, expr_name: &str) {
-    let l = look(who);
+pub fn paint(out: &mut Canvas, who: &str, overrides: &BTreeMap<String, String>, expr_name: &str) {
+    let mut l = look(who);
+    apply_overrides(&mut l, overrides);
     let e = expr(expr_name);
     // paint on a working canvas, then enlarge the bust to fill the frame
     let mut work = Canvas::new(SPR_W_I, SPR_H_I);
@@ -913,6 +915,56 @@ pub fn paint(out: &mut Canvas, who: &str, expr_name: &str) {
     let mut crop = Canvas::new(cw, ch);
     crop.blit(&work, -(SPR_W_I - cw) / 2, 0, false, 256);
     *out = crop.resized(out.w, out.h);
+}
+
+fn hex(v: V3) -> String {
+    let p = pack(v);
+    format!("#{:06x}", p & 0x00FF_FFFF)
+}
+
+/// The colour and proportion settings a story may override, by key.
+fn look_fields(l: &mut Look) -> (Vec<(&'static str, &mut V3)>, Vec<(&'static str, &mut f32, f32, f32)>) {
+    (
+        vec![("skin", &mut l.skin), ("hair", &mut l.hair), ("brow", &mut l.brow), ("iris", &mut l.iris), ("coat", &mut l.coat)],
+        vec![
+            ("width", &mut l.rx, 46.0, 64.0),
+            ("jaw", &mut l.jaw, 0.62, 0.98),
+            ("age", &mut l.age, 0.0, 1.0),
+            ("blush", &mut l.blush, 0.0, 1.0),
+            ("shoulders", &mut l.shoulders, 96.0, 132.0),
+            ("lashes", &mut l.lashes, 0.0, 1.0),
+            ("lips", &mut l.lip_tint, 0.0, 1.0),
+        ],
+    )
+}
+
+fn apply_overrides(l: &mut Look, overrides: &BTreeMap<String, String>) {
+    let (colours, numbers) = look_fields(l);
+    for (key, field) in colours {
+        if let Some(c) = overrides.get(key).and_then(|v| crate::script::parse_color(v)) {
+            *field = v3(c);
+        }
+    }
+    for (key, field, lo, hi) in numbers {
+        if let Some(n) = overrides.get(key).and_then(|v| v.parse::<f32>().ok()).filter(|n| n.is_finite()) {
+            *field = n.clamp(lo, hi);
+        }
+    }
+}
+
+/// Default value of every overridable setting for a built-in portrait.
+/// Numbers are written "value:min:max" so an editor can build a slider.
+pub fn look_defaults(who: &str) -> BTreeMap<String, String> {
+    let mut l = look(who);
+    let (colours, numbers) = look_fields(&mut l);
+    let mut out = BTreeMap::new();
+    for (key, field) in colours {
+        out.insert(key.to_string(), hex(*field));
+    }
+    for (key, field, lo, hi) in numbers {
+        out.insert(key.to_string(), format!("{}:{}:{}", *field, lo, hi));
+    }
+    out
 }
 
 /// Enlargement applied to the working canvas (anchored top centre).

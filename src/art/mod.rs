@@ -17,6 +17,8 @@ mod swan;
 mod vista;
 
 use crate::gfx::*;
+use crate::script::CharDef;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 pub const BACKGROUNDS: &[&str] = &["pantry", "axis", "dock", "vista", "vista_night", "ballroom", "study"];
@@ -95,20 +97,32 @@ pub fn animate(c: &mut Canvas, name: &str, t: f32) {
     }
 }
 
-fn procedural_sprite(who: &str, expr: &str) -> Canvas {
+/// Paint one of the built-in portraits, with optional overrides for its
+/// colours and proportions (see `look_defaults` for the keys).
+pub fn procedural_sprite(base: &str, look: &BTreeMap<String, String>, expr: &str) -> Canvas {
     let mut c = Canvas::new(SPR_W, SPR_H);
-    if who == "a" {
+    if base == "a" {
         swan::paint(&mut c, expr);
     } else {
-        people::paint(&mut c, who, expr);
+        people::paint(&mut c, base, look, expr);
     }
     c
 }
 
-/// A character sprite (SPR_W x SPR_H, transparent background).
-pub fn sprite(who: &str, expr: &str, enhanced: Option<&Path>) -> Canvas {
-    load_enhanced(enhanced, &format!("spr_{}_{}.png", who, expr), SPR_W, SPR_H)
-        .unwrap_or_else(|| procedural_sprite(who, expr))
+/// The editable look of a built-in portrait and its default values.
+pub fn look_defaults(base: &str) -> BTreeMap<String, String> {
+    if base == "a" {
+        BTreeMap::new()
+    } else {
+        people::look_defaults(base)
+    }
+}
+
+/// A character's sprite (SPR_W x SPR_H, transparent background): the
+/// enhanced image `spr_<id>_<expr>.png` if there is one, else painted.
+pub fn sprite(def: &CharDef, expr: &str, enhanced: Option<&Path>) -> Canvas {
+    load_enhanced(enhanced, &format!("spr_{}_{}.png", def.id, expr), SPR_W, SPR_H)
+        .unwrap_or_else(|| procedural_sprite(&def.sprite, &def.look, expr))
 }
 
 /// The part of a sprite that changes between expressions: (x, y, w, h).
@@ -195,7 +209,7 @@ pub fn export_guides(dir: &Path) -> Result<(), String> {
         let face_file = format!("face_{}.png", who);
         face.save_png(&dir.join(&face_file), false)?;
         for expr in EXPRS {
-            let c = procedural_sprite(who, expr);
+            let c = procedural_sprite(who, &BTreeMap::new(), expr);
             let file = format!("spr_{}_{}.png", who, expr);
             c.save_png(&dir.join(&file), true)?;
             // the sprite on a neutral backdrop, as the img2img starting image

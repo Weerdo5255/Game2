@@ -1,0 +1,919 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Story Editor - Below Stairs, Above Stars</title>
+<style>
+:root {
+  --bg: #14162a; --panel: #1c1f3a; --panel2: #252a4d; --line: #343a66; --text: #e6e9ff; --dim: #9aa2d0;
+  --gold: #f0c858; --good: #7fe0a0; --bad: #ff8a80; --blue: #7aa8ff; --sel: #f0c858;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, "Segoe UI", sans-serif; display: grid;
+  grid-template: 46px 1fr / 310px 1fr 430px; grid-template-areas: "bar bar bar" "left stage insp"; overflow: hidden; }
+button, select, input, textarea { font: inherit; color: var(--text); }
+button { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--blue); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: #3b4bb0; border-color: #5a6be0; }
+button.ghost { background: none; border-color: transparent; padding: 2px 6px; color: var(--dim); }
+button.ghost:hover { color: var(--text); border-color: var(--line); }
+button.danger:hover { border-color: var(--bad); color: var(--bad); }
+input, select, textarea { background: #12142a; border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; min-width: 0; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--blue); }
+textarea { width: 100%; resize: none; overflow: hidden; display: block; }
+input[type=number] { width: 58px; }
+input[type=color] { padding: 0; width: 34px; height: 26px; }
+input[type=range] { padding: 0; flex: 1; }
+label { color: var(--dim); }
+
+#bar { grid-area: bar; background: var(--panel); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; padding: 0 12px; }
+#bar h1 { font-size: 15px; margin: 0 10px 0 0; color: var(--gold); font-weight: 600; white-space: nowrap; }
+#status { color: var(--dim); margin-left: 4px; }
+#status.dirty { color: var(--gold); }
+#probBtn.err { border-color: var(--bad); color: var(--bad); }
+#probBtn.warn { border-color: var(--gold); color: var(--gold); }
+.spacer { flex: 1; }
+
+#left { grid-area: left; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+.tabs { display: flex; border-bottom: 1px solid var(--line); }
+.tabs button { flex: 1; border: 0; border-radius: 0; background: none; padding: 9px 0; color: var(--dim); border-bottom: 2px solid transparent; }
+.tabs button.on { color: var(--text); border-bottom-color: var(--gold); }
+#leftBody { overflow: auto; padding: 10px; flex: 1; }
+.card { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+.card.open { border-color: var(--blue); }
+.card .head { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; object-position: 50% 24%; background: #0e1022; border: 2px solid var(--line); flex: none; }
+.avatar.none { display: grid; place-items: center; color: var(--dim); font-size: 18px; }
+.card .nm { font-weight: 600; }
+.card .sub { color: var(--dim); font-size: 12px; }
+.grid2 { display: grid; grid-template-columns: 96px 1fr; gap: 6px 8px; align-items: center; margin-top: 8px; }
+.grid2 > .row { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.grid2 input[type=text], .grid2 select { width: 100%; }
+.big { width: 168px; height: 228px; object-fit: contain; background: linear-gradient(#2a3060, #14162a); border-radius: 8px; display: block; margin: 8px auto 0; }
+.sect { margin: 10px 0 4px; color: var(--gold); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.chip { display: inline-block; border-radius: 10px; padding: 0 7px; font-size: 11px; line-height: 17px; background: #2e3466; color: var(--text); margin: 1px 3px 1px 0; white-space: nowrap; }
+.chip.good { background: #1f4a37; color: var(--good); }
+.chip.bad { background: #55262a; color: var(--bad); }
+.chip.link { cursor: pointer; }
+.chip.link:hover { outline: 1px solid var(--blue); }
+.srow { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; padding: 4px 6px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+.srow:hover { background: var(--panel2); }
+.srow.on { background: var(--panel2); border-color: var(--sel); }
+.srow .grip, .blk .grip { cursor: grab; color: var(--dim); user-select: none; padding: 0 2px; }
+.srow.dropbefore { box-shadow: 0 -2px 0 var(--gold); }
+.srow.dropafter { box-shadow: 0 2px 0 var(--gold); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dot.error { background: var(--bad); } .dot.warning { background: var(--gold); }
+
+#stage { grid-area: stage; position: relative; overflow: hidden; cursor: grab;
+  background: radial-gradient(circle, #262b52 1px, transparent 1px) 0 0 / 24px 24px, var(--bg); }
+#stage.panning { cursor: grabbing; }
+#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+#edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+#edges path { fill: none; stroke-width: 2; opacity: .75; }
+#edges path.choice { stroke: var(--gold); } #edges path.if { stroke: var(--blue); }
+#edges path.goto { stroke: #8a90b8; } #edges path.fall { stroke: #8a90b8; stroke-dasharray: 6 5; }
+#edges path.hot { stroke-width: 3.5; opacity: 1; }
+#edges path.rubber { stroke: #fff; stroke-dasharray: 4 4; }
+.node { position: absolute; width: 260px; background: var(--panel); border: 2px solid var(--line); border-radius: 10px; cursor: default; box-shadow: 0 4px 14px #0006; }
+.node.sel { border-color: var(--sel); box-shadow: 0 0 0 3px #f0c85833, 0 4px 14px #0006; }
+.node.error { border-color: var(--bad); } .node.sel.error { box-shadow: 0 0 0 3px #ff8a8044; }
+.node.droptarget { border-color: var(--good); }
+.node .nh { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--panel2); border-radius: 8px 8px 0 0; cursor: move; }
+.node .lbl { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.tag { font-size: 10px; border-radius: 4px; padding: 0 5px; background: #3b4bb0; }
+.tag.end { background: #7a2d4a; } .tag.warn { background: #6b5720; }
+.node .nb { padding: 6px 8px; }
+.node .scene { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+.node .thumb { width: 64px; height: 36px; border-radius: 4px; object-fit: cover; background: #0e1022; flex: none; }
+.node .cast { display: flex; }
+.node .cast .avatar { width: 30px; height: 30px; margin-left: -6px; } .node .cast .avatar:first-child { margin-left: 0; }
+.node .snip { color: var(--dim); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.node .outs { border-top: 1px solid var(--line); }
+.out { position: relative; padding: 4px 22px 4px 8px; border-bottom: 1px solid #2a2f58; font-size: 12px; }
+.out:last-child { border-bottom: 0; }
+.out.choice .txt { color: var(--gold); } .out.if .txt { color: var(--blue); } .out.end .txt { color: #ff9ec0; }
+.out .txt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.out .to { color: var(--dim); }
+.port { position: absolute; right: -8px; top: 50%; margin-top: -7px; width: 14px; height: 14px; border-radius: 50%; background: var(--panel); border: 2px solid currentColor; cursor: crosshair; }
+.out.choice .port { color: var(--gold); } .out.if .port { color: var(--blue); } .out.goto .port, .out.fall .port { color: #8a90b8; }
+.port:hover { background: currentColor; }
+.out.broken .to { color: var(--bad); }
+#hint { position: absolute; left: 12px; right: 150px; bottom: 12px; color: var(--dim); font-size: 12px; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#zoom { position: absolute; right: 12px; bottom: 10px; display: flex; gap: 6px; }
+
+#insp { grid-area: insp; min-width: 0; background: var(--panel); border-left: 1px solid var(--line); overflow: auto; padding: 10px; }
+#insp h2 { font-size: 14px; margin: 0 0 8px; }
+.ihead { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+.ihead input { flex: 1; font-weight: 600; }
+.blk { background: var(--panel2); border: 1px solid var(--line); border-left: 4px solid #5a6094; border-radius: 6px; padding: 6px; margin-bottom: 6px; }
+.blk.on { border-color: var(--sel); border-left-color: var(--sel); }
+.blk.error { border-color: var(--bad); }
+.blk.dropbefore { box-shadow: 0 -3px 0 var(--gold); } .blk.dropafter { box-shadow: 0 3px 0 var(--gold); }
+.blk.say { border-left-color: #6d74b8; } .blk.choice { border-left-color: var(--gold); }
+.blk.add, .blk.set { border-left-color: var(--good); } .blk.if, .blk.goto { border-left-color: var(--blue); }
+.blk.end { border-left-color: #ff7aa8; } .blk.card { border-left-color: #c9a0ff; }
+.blk.bg, .blk.show, .blk.hide { border-left-color: #58b8c8; } .blk.comment { border-left-color: #555a80; opacity: .85; }
+.bh { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.bh .kind { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); flex: 1; }
+.brow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.brow > select, .brow > input[type=text] { flex: 1; }
+.opt { background: #1a1d3a; border: 1px solid var(--line); border-radius: 6px; padding: 6px; margin-top: 6px; }
+.opt .brow { margin-top: 4px; }
+.pmsg { font-size: 12px; margin-top: 4px; color: var(--bad); } .pmsg.warning { color: var(--gold); }
+.addbar { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.addbar button { font-size: 12px; padding: 3px 8px; }
+.mini { width: 46px; height: 62px; object-fit: contain; background: #12142a; border-radius: 4px; }
+.minibg { width: 96px; height: 54px; object-fit: cover; border-radius: 4px; }
+.empty { color: var(--dim); padding: 30px 10px; text-align: center; }
+
+#probs { position: absolute; top: 50px; right: 440px; width: 420px; max-height: 60vh; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; z-index: 20; box-shadow: 0 8px 30px #000a; display: none; }
+#probs.show { display: block; }
+.prow { padding: 5px 6px; border-radius: 5px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+.prow:hover { background: var(--panel2); }
+#toast { position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%); background: #000c; border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; z-index: 30; display: none; max-width: 70vw; }
+#toast.err { border-color: var(--bad); color: var(--bad); }
+#help { position: absolute; inset: 0; background: #000a; z-index: 40; display: none; place-items: center; }
+#help.show { display: grid; }
+#help div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 22px; max-width: 560px; }
+#help li { margin: 5px 0; } kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+</style>
+</head>
+<body>
+<header id="bar">
+  <h1>Story Editor</h1>
+  <button id="saveBtn" class="primary" title="Ctrl+S">Save</button>
+  <button id="undoBtn" title="Ctrl+Z">Undo</button>
+  <button id="redoBtn" title="Ctrl+Shift+Z">Redo</button>
+  <span id="status"></span>
+  <span class="spacer"></span>
+  <button id="addSceneBtn">+ Scene</button>
+  <button id="layoutBtn" title="Arrange every scene automatically">Tidy layout</button>
+  <button id="playBtn" title="Save, then run the game from the start">&#9654; Play</button>
+  <button id="probBtn">No problems</button>
+  <button id="helpBtn" class="ghost">?</button>
+</header>
+<aside id="left">
+  <div class="tabs">
+    <button data-tab="cast">Cast</button><button data-tab="props">Properties</button><button data-tab="scenes">Scenes</button>
+  </div>
+  <div id="leftBody"></div>
+</aside>
+<main id="stage">
+  <div id="world"><svg id="edges"></svg><div id="nodes"></div></div>
+  <div id="hint">Drag scenes to arrange &middot; drag a port onto a scene to reroute &middot; scroll to zoom &middot; double-click for a new scene</div>
+  <div id="zoom"><button id="fitBtn">Fit</button><button id="zoomOut">&minus;</button><button id="zoomIn">+</button></div>
+</main>
+<aside id="insp"></aside>
+<div id="probs"></div>
+<div id="toast"></div>
+<div id="help"><div>
+  <h2>How this works</h2>
+  <ul>
+    <li>Each box is a <b>scene</b>. Lines leaving it are its <b>choices</b> (gold), <b>conditions</b> (blue) and <b>jumps</b> (grey). A dashed line means the scene simply continues into the next one in the Scenes list.</li>
+    <li>Select a scene to edit everything in it on the right. Drag blocks by their grip to reorder them, or drop one on another scene in the graph to move it there.</li>
+    <li>Drag the round port at the end of a choice, condition or jump on to another scene to change where it leads.</li>
+    <li><b>Consequences</b> are the green blocks: they change a property. They show as chips on scenes and beside the choices that lead to them.</li>
+    <li><b>Cast</b> holds each character's name, colour, portrait and look, and the properties that belong to them. <b>Properties</b> lists every property and where it changes.</li>
+    <li><kbd>Ctrl</kbd>+<kbd>S</kbd> saves to the story file. <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> undo and redo. Play saves first, then starts the game.</li>
+  </ul>
+  <button id="helpClose" class="primary">Close</button>
+</div></div>
+
+<script>
+"use strict";
+const $ = (s, root = document) => root.querySelector(s);
+const SPRITE_NAMES = { p: "Young gentleman", v: "Elder lord", s: "Bewigged lord", q: "Steward", t: "Footman", c: "Cook", a: "Swan" };
+const KIND_NAMES = { say: "Line", bg: "Background", show: "Show character", hide: "Hide character", add: "Consequence: change", set: "Consequence: set",
+  if: "Condition", goto: "Jump", card: "Chapter card", end: "Ending", choice: "Choice", comment: "Note" };
+const OP_SYM = { "==": "=", "!=": "≠", ">=": "≥", "<=": "≤", ">": ">", "<": "<" };
+
+let doc = null, meta = null, problems = [], parseErrors = [];
+let sel = -1, selItem = -1, tab = "cast", openChar = null, previewExpr = "neutral", sceneFilter = "";
+let view = { x: 40, y: 40, k: 1 };
+let undoStack = [], redoStack = [], dirty = false, typingSnapshot = null;
+let drag = null; // block or scene being dragged: {type, scene, item}
+
+// ------------------------------------------------------------ utilities
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === false || v == null) continue;
+    if (k === "class") e.className = v;
+    else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k === "value") e.value = v;
+    else if (k === "checked" || k === "selected" || k === "disabled" || k === "draggable") e[k] = v;
+    else e.setAttribute(k, v);
+  }
+  for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) e.append(kid);
+  return e;
+}
+function toast(msg, isErr) {
+  const t = $("#toast"); t.textContent = msg; t.className = isErr ? "err" : ""; t.style.display = "block";
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.style.display = "none", isErr ? 6000 : 2200);
+}
+async function api(method, path, body) {
+  const r = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+  const data = await r.json().catch(() => ({ error: "the editor server gave an unreadable answer" }));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+const charById = id => doc.characters.find(c => c.id === id);
+const varById = id => doc.vars.find(v => v.id === id);
+const sceneIndex = label => doc.scenes.findIndex(s => s.label === label);
+const varLabel = id => (varById(id) && varById(id).label) || id;
+function uniqueId(base, taken) { let i = 1, id = base; while (taken.includes(id)) id = base + "_" + (++i); return id; }
+function spriteUrl(ch, expr) {
+  const look = Object.entries(ch.look || {}).map(([k, v]) => k + "=" + v).join(",");
+  return `/art/sprite?base=${ch.sprite}&expr=${expr || "neutral"}&id=${encodeURIComponent(ch.id)}&look=${encodeURIComponent(look)}`;
+}
+function avatar(ch, cls) {
+  if (!ch || !ch.sprite) return el("div", { class: "avatar none " + (cls || ""), title: ch ? ch.name : "", text: ch ? (ch.name[0] || "?") : "?" });
+  return el("img", { class: "avatar " + (cls || ""), src: spriteUrl(ch, "neutral"), title: ch.name, style: `border-color:${ch.color || "#343a66"}`, draggable: false });
+}
+
+// ---------------------------------------------------------- story model
+/** Where a scene's flow can go, mirroring the game's rules. */
+function exits(si) {
+  const s = doc.scenes[si], out = [];
+  let open = true;
+  for (let i = 0; i < s.items.length && open; i++) {
+    const it = s.items[i];
+    if (it.t === "if") out.push({ kind: "if", item: i, target: it.target, text: `if ${varLabel(it.var)} ${OP_SYM[it.op] || it.op} ${it.val}` });
+    else if (it.t === "goto") { out.push({ kind: "goto", item: i, target: it.target, text: "then" }); open = false; }
+    else if (it.t === "choice") { it.options.forEach((o, k) => out.push({ kind: "choice", item: i, opt: k, target: o.target, text: o.text || "(no text)", cond: o.cond })); open = false; }
+    else if (it.t === "end") { out.push({ kind: "end", item: i, text: "Ending: " + it.title }); open = false; }
+  }
+  if (open) { const nx = doc.scenes[si + 1]; out.push({ kind: "fall", target: nx ? nx.label : "", text: nx ? "continues" : "story stops here" }); }
+  return out;
+}
+/** The consequences in a scene: net change to each property. */
+function effects(si) {
+  const net = new Map();
+  for (const it of doc.scenes[si].items) {
+    if (it.t === "add") { const e = net.get(it.var) || { var: it.var, n: 0 }; if (!e.set) e.n += it.n; else e.n += it.n; net.set(it.var, e); }
+    if (it.t === "set") net.set(it.var, { var: it.var, n: it.n, set: true });
+  }
+  return [...net.values()].filter(e => e.set || e.n !== 0);
+}
+function effectChip(e, onClick) {
+  const v = varById(e.var), good = !v || (e.n > 0) === v.good;
+  const text = `${varLabel(e.var)} ${e.set ? "= " + e.n : (e.n > 0 ? "+" : "") + e.n}`;
+  return el("span", { class: "chip " + (e.set ? "" : good ? "good" : "bad") + (onClick ? " link" : ""), text, onclick: onClick });
+}
+function renameEverywhere(kind, from, to) {
+  for (const s of doc.scenes) for (const it of s.items) {
+    if (kind === "scene") {
+      if ((it.t === "goto" || it.t === "if") && it.target === from) it.target = to;
+      if (it.t === "choice") for (const o of it.options) if (o.target === from) o.target = to;
+    } else if (kind === "char") {
+      if ((it.t === "say" || it.t === "show") && it.who === from) it.who = to;
+    } else if (kind === "var") {
+      if ((it.t === "add" || it.t === "set" || it.t === "if") && it.var === from) it.var = to;
+      if (it.t === "choice") for (const o of it.options) if (o.cond && o.cond.var === from) o.cond.var = to;
+    }
+  }
+  if (kind === "char") for (const v of doc.vars) if (v.character === from) v.character = to;
+}
+function usesOfVar(id) {
+  const uses = [];
+  doc.scenes.forEach((s, si) => s.items.forEach((it, i) => {
+    if ((it.t === "add" || it.t === "set") && it.var === id) uses.push({ si, i, text: `${s.label} ${it.t === "set" ? "= " + it.n : (it.n > 0 ? "+" : "") + it.n}`, change: true, n: it.n, set: it.t === "set" });
+    if (it.t === "if" && it.var === id) uses.push({ si, i, text: `${s.label}: tested` });
+    if (it.t === "choice" && it.options.some(o => o.cond && o.cond.var === id)) uses.push({ si, i, text: `${s.label}: gates a choice` });
+  }));
+  return uses;
+}
+function charStats(id) {
+  let lines = 0; const scenes = new Set();
+  doc.scenes.forEach((s, si) => s.items.forEach(it => {
+    if (it.t === "say" && it.who === id) lines++;
+    if ((it.t === "say" || it.t === "show") && it.who === id) scenes.add(si);
+  }));
+  return { lines, scenes: scenes.size };
+}
+
+// ------------------------------------------------------ change tracking
+function snapshot() { return JSON.stringify(doc); }
+/** Apply a structural change with undo, then redraw. */
+function change(fn, opts) {
+  undoStack.push(snapshot()); if (undoStack.length > 200) undoStack.shift();
+  redoStack = [];
+  fn();
+  markDirty();
+  renderAll(opts);
+}
+function markDirty() { dirty = true; updateBar(); scheduleValidate(); }
+function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); doc = JSON.parse(undoStack.pop()); afterHistory(); }
+function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); doc = JSON.parse(redoStack.pop()); afterHistory(); }
+function afterHistory() { if (sel >= doc.scenes.length) sel = doc.scenes.length - 1; selItem = -1; markDirty(); renderAll(); }
+function updateBar() {
+  $("#saveBtn").disabled = !dirty; $("#undoBtn").disabled = !undoStack.length; $("#redoBtn").disabled = !redoStack.length;
+  const st = $("#status"); st.textContent = dirty ? "Unsaved changes" : "Saved to " + meta.path; st.className = dirty ? "dirty" : "";
+  const errs = problems.filter(p => p.level === "error").length + parseErrors.length, warns = problems.length - problems.filter(p => p.level === "error").length;
+  const b = $("#probBtn");
+  b.textContent = errs + warns ? [errs && `${errs} error${errs > 1 ? "s" : ""}`, warns && `${warns} warning${warns > 1 ? "s" : ""}`].filter(Boolean).join(", ") : "No problems";
+  b.className = errs ? "err" : warns ? "warn" : "";
+}
+let validateTimer = 0;
+function scheduleValidate() {
+  clearTimeout(validateTimer);
+  validateTimer = setTimeout(async () => {
+    try { problems = (await api("POST", "/api/validate", doc)).problems; } catch (e) { return; }
+    updateBar(); markProblems(); renderProblems();
+  }, 350);
+}
+async function save() {
+  try {
+    const r = await api("PUT", "/api/story", doc);
+    problems = r.problems; parseErrors = []; dirty = false; updateBar(); markProblems(); renderProblems();
+    toast("Saved");
+    return true;
+  } catch (e) { toast("Could not save: " + e.message, true); return false; }
+}
+async function play(label) {
+  if (problems.some(p => p.level === "error")) { toast("Fix the errors first, then play.", true); $("#probs").classList.add("show"); return; }
+  if (dirty && !(await save())) return;
+  try { await api("POST", "/api/play", { label }); toast("Starting the game at '" + label + "'"); }
+  catch (e) { toast(e.message, true); }
+}
+
+// ---------------------------------------------------------------- graph
+const NODE_W = 260, COL_W = 340;
+function applyView() { $("#world").style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`; }
+function nodeEl(si) { return $(`#nodes .node[data-i="${si}"]`); }
+function renderGraph() {
+  const host = $("#nodes"); host.textContent = "";
+  doc.scenes.forEach((s, si) => {
+    const outs = exits(si), fx = effects(si);
+    const bg = s.items.find(it => it.t === "bg");
+    const cast = [...new Set(s.items.filter(it => it.t === "show").map(it => it.who))].map(charById).filter(Boolean);
+    const firstSay = s.items.find(it => it.t === "say");
+    const card = s.items.find(it => it.t === "card");
+    const lines = s.items.filter(it => it.t === "say").length;
+    const node = el("div", { class: "node" + (si === sel ? " sel" : ""), "data-i": si, style: `left:${s.pos[0]}px;top:${s.pos[1]}px` },
+      el("div", { class: "nh" },
+        el("span", { class: "lbl", text: s.label || "(unnamed)" }),
+        s.label === "start" && el("span", { class: "tag", text: "START" }),
+        outs.some(o => o.kind === "end") && el("span", { class: "tag end", text: "END" })),
+      el("div", { class: "nb" },
+        (bg || cast.length > 0) && el("div", { class: "scene" },
+          bg && el("img", { class: "thumb", src: `/art/bg/${bg.name}.png`, title: bg.name, draggable: false }),
+          el("div", { class: "cast" }, cast.map(ch => avatar(ch)))),
+        card && el("div", { class: "snip", style: "color:#c9a0ff", text: card.title + (card.sub ? " — " + card.sub : "") }),
+        firstSay && el("div", { class: "snip", text: firstSay.text }),
+        el("div", { style: "margin-top:4px" }, el("span", { class: "chip", text: `${lines} line${lines === 1 ? "" : "s"}` }), fx.map(e => effectChip(e)))),
+      el("div", { class: "outs" }, outs.map((o, oi) => {
+        const ti = o.target != null ? sceneIndex(o.target) : -1;
+        const broken = o.kind !== "end" && o.kind !== "fall" && ti < 0;
+        return el("div", { class: `out ${o.kind}` + (broken ? " broken" : ""), "data-o": oi },
+          el("div", { class: "txt", text: (o.cond ? `[${varLabel(o.cond.var)} ${OP_SYM[o.cond.op]} ${o.cond.val}] ` : "") + o.text }),
+          o.kind !== "end" && el("div", { class: "to" }, "→ " + (o.target || "nowhere"), " ", ti >= 0 && o.kind === "choice" ? effects(ti).map(e => effectChip(e)) : null),
+          o.kind !== "end" && el("span", { class: "port", title: "Drag to another scene to change where this leads" }));
+      })));
+    host.append(node);
+  });
+  markProblems();
+  drawEdges();
+}
+function portPoint(si, oi) {
+  const s = doc.scenes[si], row = $(`.out[data-o="${oi}"]`, nodeEl(si));
+  return [s.pos[0] + NODE_W + 8, s.pos[1] + row.offsetTop + row.offsetHeight / 2];
+}
+function curve(a, b) {
+  const dx = Math.max(70, Math.abs(b[0] - a[0]) / 2);
+  return `M${a[0]},${a[1]} C${a[0] + dx},${a[1]} ${b[0] - dx},${b[1]} ${b[0]},${b[1]}`;
+}
+function drawEdges() {
+  const svg = $("#edges");
+  svg.innerHTML = '<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>';
+  doc.scenes.forEach((s, si) => exits(si).forEach((o, oi) => {
+    const ti = o.target != null ? sceneIndex(o.target) : -1;
+    if (ti < 0 || o.kind === "end") return;
+    const t = doc.scenes[ti];
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", curve(portPoint(si, oi), [t.pos[0] - 3, t.pos[1] + 18]));
+    p.setAttribute("class", o.kind + (si === sel || ti === sel ? " hot" : ""));
+    p.setAttribute("marker-end", "url(#arr)");
+    svg.append(p);
+  }));
+}
+function markProblems() {
+  document.querySelectorAll("#nodes .node").forEach(n => {
+    const label = doc.scenes[+n.dataset.i].label;
+    n.classList.toggle("error", problems.some(p => p.scene === label && p.level === "error"));
+  });
+}
+/** Longest-path layering from the start scene; returns a position per scene. */
+function computeLayout() {
+  const n = doc.scenes.length, depth = new Array(n).fill(-1), state = new Array(n).fill(0);
+  const succ = doc.scenes.map((_, i) => exits(i).map(o => o.target != null ? sceneIndex(o.target) : -1).filter(t => t >= 0));
+  const order = [];
+  (function visit(i) { if (state[i]) return; state[i] = 1; succ[i].forEach(visit); state[i] = 2; order.push(i); })(Math.max(0, sceneIndex("start")));
+  order.reverse();
+  const rank = new Map(order.map((i, k) => [i, k]));
+  for (const i of order) { if (depth[i] < 0) depth[i] = 0; for (const t of succ[i]) if (rank.has(t) && rank.get(t) > rank.get(i)) depth[t] = Math.max(depth[t], depth[i] + 1); }
+  const maxDepth = Math.max(0, ...depth);
+  doc.scenes.forEach((_, i) => { if (depth[i] < 0) depth[i] = maxDepth + 1; });
+  const cols = new Map();
+  doc.scenes.forEach((_, i) => { if (!cols.has(depth[i])) cols.set(depth[i], []); cols.get(depth[i]).push(i); });
+  const pos = new Array(n), preds = doc.scenes.map(() => []);
+  succ.forEach((ts, i) => ts.forEach(t => preds[t].push(i)));
+  // lay columns out left to right, wrapping into bands like lines of text
+  const PER_BAND = 8, depths = [...cols.keys()].sort((a, b) => a - b);
+  let bandTop = 0;
+  for (let band = 0; band * PER_BAND <= depths[depths.length - 1]; band++) {
+    const mine = depths.filter(d => Math.floor(d / PER_BAND) === band);
+    const height = i => (nodeEl(i) ? nodeEl(i).offsetHeight : 160) + 34;
+    const colHeight = d => cols.get(d).reduce((a, i) => a + height(i), 0);
+    const bandHeight = Math.max(0, ...mine.map(colHeight));
+    for (const d of mine) {
+      const list = cols.get(d);
+      const want = i => { const ys = preds[i].filter(p => pos[p] && pos[p][1] >= bandTop).map(p => pos[p][1]); return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : i * 10; };
+      list.sort((a, b) => want(a) - want(b));
+      let y = bandTop + (bandHeight - colHeight(d)) / 2;
+      for (const i of list) { pos[i] = [(d % PER_BAND) * COL_W, Math.round(y)]; y += height(i); }
+    }
+    bandTop += bandHeight + 110;
+  }
+  return pos;
+}
+function layoutMissing() {
+  const missing = doc.scenes.filter(s => !s.pos);
+  if (!missing.length) return;
+  doc.scenes.forEach(s => { if (!s.pos) { s.pos = [0, 0]; s.fresh = true; } });
+  renderGraph();
+  const pos = computeLayout();
+  doc.scenes.forEach((s, i) => { if (s.fresh) { s.pos = pos[i]; delete s.fresh; } });
+}
+function tidyLayout() {
+  change(() => { const pos = computeLayout(); doc.scenes.forEach((s, i) => s.pos = pos[i]); });
+  fit();
+}
+function fit() {
+  if (!doc.scenes.length) return;
+  const st = $("#stage"), xs = doc.scenes.map(s => s.pos[0]), ys = doc.scenes.map(s => s.pos[1]);
+  const x0 = Math.min(...xs) - 40, y0 = Math.min(...ys) - 40, x1 = Math.max(...xs) + NODE_W + 60, y1 = Math.max(...ys) + 320;
+  view.k = Math.max(0.12, Math.min(1, st.clientWidth / (x1 - x0), st.clientHeight / (y1 - y0)));
+  view.x = (st.clientWidth - (x1 - x0) * view.k) / 2 - x0 * view.k; view.y = (st.clientHeight - (y1 - y0) * view.k) / 2 - y0 * view.k;
+  applyView();
+}
+function centerOn(si) {
+  const s = doc.scenes[si], st = $("#stage"), n = nodeEl(si);
+  if (view.k < 0.55) view.k = 0.85;
+  view.x = st.clientWidth / 2 - (s.pos[0] + NODE_W / 2) * view.k; view.y = st.clientHeight / 2 - (s.pos[1] + (n ? n.offsetHeight / 2 : 80)) * view.k;
+  applyView();
+}
+function select(si, item, center) {
+  sel = si; selItem = item == null ? -1 : item;
+  renderGraph(); renderInspector(); if (tab === "scenes") renderLeft();
+  if (center && si >= 0) centerOn(si);
+  if (selItem >= 0) { const b = $(`#insp .blk[data-i="${selItem}"]`); if (b) b.scrollIntoView({ block: "center" }); }
+}
+function stagePoint(ev) { const r = $("#stage").getBoundingClientRect(); return [(ev.clientX - r.left - view.x) / view.k, (ev.clientY - r.top - view.y) / view.k]; }
+function addScene(at, from) {
+  let label;
+  change(() => {
+    label = uniqueId("scene", doc.scenes.map(s => s.label));
+    const base = sel >= 0 ? doc.scenes[sel].pos : [0, 0];
+    doc.scenes.splice(sel >= 0 && !from ? sel + 1 : doc.scenes.length, 0, { label, pos: at || freeSpot(base[0] + COL_W, base[1]), items: [{ t: "say", who: "n", text: "..." }] });
+    if (from) from(label);
+    sel = sceneIndex(label); selItem = -1;
+  });
+  return label;
+}
+/** The nearest place at or below (x, y) that no scene already occupies. */
+function freeSpot(x, y) {
+  const hit = () => doc.scenes.some((s, i) => s.pos && Math.abs(s.pos[0] - x) < NODE_W + 20 && y < s.pos[1] + (nodeEl(i) ? nodeEl(i).offsetHeight : 200) + 20 && y + 120 > s.pos[1]);
+  for (let tries = 0; tries < 60 && hit(); tries++) y += 60;
+  return [x, y];
+}
+function retarget(si, o, label) {
+  change(() => {
+    const s = doc.scenes[si];
+    if (o.kind === "choice") s.items[o.item].options[o.opt].target = label;
+    else if (o.kind === "fall") s.items.push({ t: "goto", target: label });
+    else s.items[o.item].target = label;
+  });
+}
+function setupStage() {
+  const stage = $("#stage");
+  stage.addEventListener("wheel", ev => {
+    ev.preventDefault();
+    const r = stage.getBoundingClientRect(), mx = ev.clientX - r.left, my = ev.clientY - r.top;
+    const k = Math.max(0.12, Math.min(2, view.k * (ev.deltaY < 0 ? 1.12 : 1 / 1.12)));
+    view.x = mx - (mx - view.x) * k / view.k; view.y = my - (my - view.y) * k / view.k; view.k = k; applyView();
+  }, { passive: false });
+  stage.addEventListener("mousedown", ev => {
+    if (ev.button !== 0) return;
+    const port = ev.target.closest(".port"), node = ev.target.closest(".node");
+    if (port) {
+      ev.preventDefault();
+      const si = +node.dataset.i, oi = +port.parentElement.dataset.o, o = exits(si)[oi], a = portPoint(si, oi);
+      const rubber = document.createElementNS("http://www.w3.org/2000/svg", "path"); rubber.setAttribute("class", "rubber"); $("#edges").append(rubber);
+      const move = e => { rubber.setAttribute("d", curve(a, stagePoint(e))); document.querySelectorAll(".node.droptarget").forEach(n => n.classList.remove("droptarget")); const t = e.target.closest && e.target.closest(".node"); if (t) t.classList.add("droptarget"); };
+      const up = e => {
+        window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); rubber.remove();
+        const t = document.elementFromPoint(e.clientX, e.clientY); const tn = t && t.closest(".node");
+        document.querySelectorAll(".node.droptarget").forEach(n => n.classList.remove("droptarget"));
+        if (tn) retarget(si, o, doc.scenes[+tn.dataset.i].label);
+        else if (t && t.closest("#stage")) { const at = stagePoint(e); addScene([Math.round(at[0]), Math.round(at[1] - 18)], label => { const s = doc.scenes[si]; if (o.kind === "choice") s.items[o.item].options[o.opt].target = label; else if (o.kind === "fall") s.items.push({ t: "goto", target: label }); else s.items[o.item].target = label; }); }
+      };
+      window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+    } else if (node) {
+      const si = +node.dataset.i, s = doc.scenes[si], start = [ev.clientX, ev.clientY], orig = [...s.pos], before = snapshot();
+      let moved = false;
+      const move = e => {
+        const dx = (e.clientX - start[0]) / view.k, dy = (e.clientY - start[1]) / view.k;
+        if (!moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+        moved = true; s.pos = [Math.round(orig[0] + dx), Math.round(orig[1] + dy)];
+        node.style.left = s.pos[0] + "px"; node.style.top = s.pos[1] + "px"; drawEdges();
+      };
+      const up = () => {
+        window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+        if (moved) { undoStack.push(before); redoStack = []; markDirty(); }
+        if (!moved && si !== sel) select(si); else if (!moved) { /* already selected */ }
+      };
+      if (ev.target.closest(".nh") || !ev.target.closest(".out")) { window.addEventListener("mousemove", move); window.addEventListener("mouseup", up); }
+      else if (si !== sel) select(si);
+    } else {
+      const start = [ev.clientX - view.x, ev.clientY - view.y]; stage.classList.add("panning");
+      const move = e => { view.x = e.clientX - start[0]; view.y = e.clientY - start[1]; applyView(); };
+      const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); stage.classList.remove("panning"); };
+      window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+    }
+  });
+  stage.addEventListener("dblclick", ev => { if (!ev.target.closest(".node") && !ev.target.closest("#zoom")) { const at = stagePoint(ev); addScene([Math.round(at[0] - NODE_W / 2), Math.round(at[1] - 20)], () => {}); } });
+  // blocks dragged from the inspector can be dropped on a scene
+  stage.addEventListener("dragover", ev => { const n = ev.target.closest(".node"); if (drag && drag.type === "item" && n) { ev.preventDefault(); n.classList.add("droptarget"); } });
+  stage.addEventListener("dragleave", ev => { const n = ev.target.closest && ev.target.closest(".node"); if (n) n.classList.remove("droptarget"); });
+  stage.addEventListener("drop", ev => {
+    const n = ev.target.closest(".node"); if (!drag || drag.type !== "item" || !n) return;
+    ev.preventDefault(); const to = +n.dataset.i, d = drag;
+    if (to !== d.scene) moveItem(d.scene, d.item, to, -1);
+  });
+  $("#zoomIn").onclick = () => { view.k = Math.min(2, view.k * 1.2); applyView(); };
+  $("#zoomOut").onclick = () => { view.k = Math.max(0.12, view.k / 1.2); applyView(); };
+  $("#fitBtn").onclick = fit;
+}
+/** Move a block. `toIndex` -1 means "the end of the scene, before whatever closes it". */
+function moveItem(fromScene, fromIndex, toScene, toIndex) {
+  change(() => {
+    const [it] = doc.scenes[fromScene].items.splice(fromIndex, 1);
+    const items = doc.scenes[toScene].items;
+    if (toIndex < 0) { const last = items[items.length - 1]; toIndex = last && ["choice", "goto", "end"].includes(last.t) && !["choice", "goto", "end"].includes(it.t) ? items.length - 1 : items.length; }
+    else if (fromScene === toScene && fromIndex < toIndex) toIndex--;
+    items.splice(toIndex, 0, it);
+    if (toScene === sel) selItem = toIndex; else selItem = -1;
+  });
+}
+
+// ------------------------------------------------------------ inspector
+function opts(list, value, extra) {
+  const seen = list.some(o => (o.value != null ? o.value : o) === value);
+  const all = seen || value == null ? list : [{ value, label: value + " (missing)" }, ...list];
+  return [...all, ...(extra || [])].map(o => { const v = o.value != null ? o.value : o; return el("option", { value: v, text: o.label || v, selected: v === value }); });
+}
+const speakerOpts = () => [{ value: "n", label: "Narration" }, ...doc.characters.map(c => ({ value: c.id, label: c.name || c.id }))];
+const shownOpts = () => doc.characters.filter(c => c.sprite).map(c => ({ value: c.id, label: c.name || c.id }));
+const sceneOpts = () => doc.scenes.map(s => ({ value: s.label, label: s.label }));
+const varOpts = () => doc.vars.map(v => ({ value: v.id, label: v.label || v.id }));
+const NEW_SCENE = "\u0000new";
+function targetSelect(value, onPick) {
+  return el("select", { title: "Where this leads", onchange: ev => {
+    if (ev.target.value === NEW_SCENE) addScene(null, label => onPick(label, true)); else change(() => onPick(ev.target.value));
+  } }, opts(sceneOpts(), value, [{ value: NEW_SCENE, label: "+ New scene…" }]));
+}
+/** A text control bound to obj[key]: edits live, records one undo step per visit. */
+function bindText(node, obj, key, after) {
+  node.value = obj[key] == null ? "" : obj[key];
+  node.addEventListener("focus", () => typingSnapshot = snapshot());
+  node.addEventListener("input", () => {
+    if (typingSnapshot) { undoStack.push(typingSnapshot); redoStack = []; typingSnapshot = null; }
+    obj[key] = node.type === "number" ? (parseInt(node.value, 10) || 0) : node.value;
+    if (node.tagName === "TEXTAREA") grow(node);
+    markDirty(); scheduleGraph(); if (after) after();
+  });
+  return node;
+}
+function grow(t) { t.style.height = "auto"; t.style.height = (t.scrollHeight + 2) + "px"; }
+let graphTimer = 0;
+function scheduleGraph() { clearTimeout(graphTimer); graphTimer = setTimeout(renderGraph, 250); }
+function condEditor(cond, onChange) {
+  return [
+    el("select", { onchange: ev => onChange(c => c.var = ev.target.value) }, opts(varOpts(), cond.var)),
+    el("select", { style: "flex:none", onchange: ev => onChange(c => c.op = ev.target.value) }, meta.ops.map(o => el("option", { value: o, text: OP_SYM[o], selected: o === cond.op }))),
+    el("input", { type: "number", value: cond.val, onchange: ev => onChange(c => c.val = parseInt(ev.target.value, 10) || 0) }),
+  ];
+}
+function blockBody(s, it, i) {
+  const set = fn => change(fn);
+  switch (it.t) {
+    case "say": {
+      const ch = charById(it.who);
+      return [el("div", { class: "brow" },
+        el("select", { style: ch ? `color:${ch.color}` : "", onchange: ev => set(() => it.who = ev.target.value) }, opts(speakerOpts(), it.who))),
+        bindText(el("textarea", { rows: 1, placeholder: "What is said…", style: "margin-top:4px" }), it, "text")];
+    }
+    case "bg": return el("div", { class: "brow" },
+      el("select", { onchange: ev => set(() => it.name = ev.target.value) }, opts(meta.bgs, it.name)),
+      meta.bgs.includes(it.name) && el("img", { class: "minibg", src: `/art/bg/${it.name}.png` }));
+    case "show": {
+      const ch = charById(it.who);
+      return el("div", { class: "brow" },
+        el("select", { onchange: ev => set(() => it.who = ev.target.value) }, opts(shownOpts(), it.who)),
+        el("select", { onchange: ev => set(() => it.expr = ev.target.value) }, opts(meta.exprs, it.expr)),
+        el("select", { onchange: ev => set(() => it.slot = ev.target.value) }, opts(meta.slots, it.slot)),
+        ch && ch.sprite && meta.exprs.includes(it.expr) && el("img", { class: "mini", src: spriteUrl(ch, it.expr) }));
+    }
+    case "hide": return el("div", { class: "brow" }, el("select", { onchange: ev => set(() => it.slot = ev.target.value) }, opts([...meta.slots, { value: "all", label: "everyone" }], it.slot)));
+    case "add": case "set": return el("div", { class: "brow" },
+      el("select", { onchange: ev => set(() => it.var = ev.target.value) }, opts(varOpts(), it.var)),
+      el("select", { style: "flex:none", onchange: ev => set(() => it.t = ev.target.value) }, el("option", { value: "add", text: "changes by", selected: it.t === "add" }), el("option", { value: "set", text: "becomes", selected: it.t === "set" })),
+      el("input", { type: "number", value: it.n, onchange: ev => set(() => it.n = parseInt(ev.target.value, 10) || 0) }),
+      effectChip({ var: it.var, n: it.n, set: it.t === "set" }));
+    case "if": return [el("div", { class: "brow" }, el("label", { text: "if" }), condEditor(it, fn => set(() => fn(it)))),
+      el("div", { class: "brow", style: "margin-top:4px" }, el("label", { text: "go to" }), targetSelect(it.target, label => it.target = label))];
+    case "goto": return el("div", { class: "brow" }, el("label", { text: "go to" }), targetSelect(it.target, label => it.target = label));
+    case "card": return [bindText(el("input", { type: "text", placeholder: "Title", style: "width:100%" }), it, "title"),
+      bindText(el("input", { type: "text", placeholder: "Subtitle", style: "width:100%;margin-top:4px" }), it, "sub")];
+    case "end": return [bindText(el("input", { type: "text", placeholder: "Name of the ending", style: "width:100%" }), it, "title"),
+      bindText(el("textarea", { rows: 2, placeholder: "Epilogue…", style: "margin-top:4px" }), it, "text")];
+    case "comment": return bindText(el("input", { type: "text", placeholder: "A note to yourself (not shown in the game)", style: "width:100%" }), it, "text");
+    case "choice": return [it.options.map((o, k) => {
+        const ti = sceneIndex(o.target);
+        return el("div", { class: "opt", "data-k": k },
+          bindText(el("textarea", { rows: 1, placeholder: "What the player can choose…" }), o, "text"),
+          el("div", { class: "brow" }, el("label", { text: "leads to" }), targetSelect(o.target, label => o.target = label),
+            el("button", { class: "ghost", title: "Go to that scene", text: "→", disabled: ti < 0, onclick: () => select(ti, -1, true) })),
+          ti >= 0 && effects(ti).length > 0 && el("div", { class: "brow" }, el("label", { text: "consequences" }), effects(ti).map(e => effectChip(e, () => select(ti, -1, true)))),
+          el("div", { class: "brow" },
+            el("label", {}, el("input", { type: "checkbox", checked: !!o.cond, onchange: ev => set(() => o.cond = ev.target.checked ? { var: (doc.vars[0] || { id: "" }).id, op: ">=", val: 1 } : null) }), " only if"),
+            o.cond && condEditor(o.cond, fn => set(() => fn(o.cond))),
+            el("span", { class: "spacer", style: "flex:1" }),
+            el("button", { class: "ghost", title: "Move up", text: "↑", disabled: k === 0, onclick: () => set(() => it.options.splice(k - 1, 0, it.options.splice(k, 1)[0])) }),
+            el("button", { class: "ghost", title: "Move down", text: "↓", disabled: k === it.options.length - 1, onclick: () => set(() => it.options.splice(k + 1, 0, it.options.splice(k, 1)[0])) }),
+            el("button", { class: "ghost danger", title: "Remove this option", text: "✕", onclick: () => set(() => it.options.splice(k, 1)) })));
+      }),
+      el("button", { style: "margin-top:6px", text: "+ Option", onclick: () => set(() => it.options.push({ text: "Another way", target: s.label, cond: null })) })];
+  }
+}
+function renderInspector() {
+  const host = $("#insp"); host.textContent = "";
+  if (sel < 0 || !doc.scenes[sel]) { host.append(el("div", { class: "empty", text: "Select a scene in the graph to edit its lines, choices and consequences." })); return; }
+  const s = doc.scenes[sel];
+  const mine = problems.filter(p => p.scene === s.label);
+  host.append(el("div", { class: "ihead" },
+    el("input", { type: "text", value: s.label, title: "Scene name (used by jumps)", onchange: ev => {
+      const to = ev.target.value.trim().replace(/[^A-Za-z0-9_]/g, "_");
+      if (!to || to === s.label) { ev.target.value = s.label; return; }
+      if (sceneIndex(to) >= 0) { toast(`There is already a scene called '${to}'`, true); ev.target.value = s.label; return; }
+      change(() => { renameEverywhere("scene", s.label, to); s.label = to; });
+    } }),
+    el("button", { title: "Save, then run the game from this scene", text: "▶ Play from here", onclick: () => play(s.label) }),
+    el("button", { class: "ghost", title: "Duplicate this scene", text: "⧉", onclick: () => change(() => {
+      const copy = JSON.parse(JSON.stringify(s)); copy.label = uniqueId(s.label + "_copy", doc.scenes.map(x => x.label)); copy.pos = [s.pos[0] + 30, s.pos[1] + 30];
+      doc.scenes.splice(sel + 1, 0, copy); sel = sel + 1;
+    }) }),
+    el("button", { class: "ghost danger", title: "Delete this scene", text: "✕", onclick: () => {
+      const refs = doc.scenes.filter((x, i) => i !== sel && exits(i).some(o => o.target === s.label && o.kind !== "fall")).length;
+      if (!confirm(`Delete scene '${s.label}'?` + (refs ? ` ${refs} other scene(s) lead here and will need rerouting.` : ""))) return;
+      change(() => { doc.scenes.splice(sel, 1); sel = Math.min(sel, doc.scenes.length - 1); selItem = -1; });
+    } })));
+  mine.filter(p => p.item == null).forEach(p => host.append(el("div", { class: "pmsg " + p.level, text: p.msg })));
+  s.items.forEach((it, i) => {
+    const probs = mine.filter(p => p.item === i);
+    const blk = el("div", { class: `blk ${it.t}` + (i === selItem ? " on" : "") + (probs.some(p => p.level === "error") ? " error" : ""), "data-i": i },
+      el("div", { class: "bh" },
+        el("span", { class: "grip", draggable: true, title: "Drag to reorder, or drop on another scene", text: "☰" }),
+        el("span", { class: "kind", text: KIND_NAMES[it.t] }),
+        el("button", { class: "ghost", title: "Move up", text: "↑", disabled: i === 0, onclick: () => moveItem(sel, i, sel, i - 1) }),
+        el("button", { class: "ghost", title: "Move down", text: "↓", disabled: i === s.items.length - 1, onclick: () => moveItem(sel, i, sel, i + 2) }),
+        el("button", { class: "ghost", title: "Duplicate", text: "⧉", onclick: () => change(() => { s.items.splice(i + 1, 0, JSON.parse(JSON.stringify(it))); selItem = i + 1; }) }),
+        el("button", { class: "ghost danger", title: "Delete", text: "✕", onclick: () => change(() => { s.items.splice(i, 1); selItem = -1; }) })),
+      blockBody(s, it, i),
+      probs.map(p => el("div", { class: "pmsg " + p.level, text: p.msg })));
+    blk.addEventListener("mousedown", () => { if (selItem !== i) { selItem = i; host.querySelectorAll(".blk.on").forEach(b => b.classList.remove("on")); blk.classList.add("on"); } });
+    host.append(blk);
+  });
+  const add = (label, make) => el("button", { text: "+ " + label, onclick: () => change(() => {
+    // after the selected block; otherwise at the end, but ahead of whatever closes the scene
+    const it = make(), closing = x => x && ["choice", "goto", "end"].includes(x.t);
+    let at = selItem >= 0 ? selItem + 1 : s.items.length;
+    if (selItem < 0 && closing(s.items[at - 1]) && !closing(it)) at--;
+    s.items.splice(at, 0, it); selItem = at;
+  }) });
+  const firstVar = (doc.vars[0] || { id: "" }).id, firstShown = (doc.characters.find(c => c.sprite) || { id: "" }).id;
+  host.append(el("div", { class: "addbar" },
+    add("Line", () => ({ t: "say", who: (s.items.slice(0, selItem >= 0 ? selItem + 1 : undefined).reverse().find(x => x.t === "say") || { who: "n" }).who, text: "" })),
+    add("Choice", () => ({ t: "choice", options: [{ text: "One way", target: s.label, cond: null }, { text: "Another way", target: s.label, cond: null }] })),
+    add("Consequence", () => ({ t: "add", var: firstVar, n: 1 })),
+    add("Condition", () => ({ t: "if", var: firstVar, op: ">=", val: 1, target: s.label })),
+    add("Jump", () => ({ t: "goto", target: s.label })),
+    add("Background", () => ({ t: "bg", name: meta.bgs[0] })),
+    add("Show", () => ({ t: "show", who: firstShown, expr: "neutral", slot: "center" })),
+    add("Hide", () => ({ t: "hide", slot: "all" })),
+    add("Card", () => ({ t: "card", title: "Chapter", sub: "" })),
+    add("Ending", () => ({ t: "end", title: "An Ending", text: "" })),
+    add("Note", () => ({ t: "comment", text: "" }))));
+  host.querySelectorAll("textarea").forEach(grow);
+  // drag and drop of blocks
+  host.querySelectorAll(".blk").forEach(blk => {
+    const i = +blk.dataset.i, grip = $(".grip", blk);
+    grip.addEventListener("dragstart", ev => { drag = { type: "item", scene: sel, item: i }; ev.dataTransfer.setData("text/plain", "block"); ev.dataTransfer.effectAllowed = "move"; ev.dataTransfer.setDragImage(blk, 10, 10); });
+    grip.addEventListener("dragend", () => { drag = null; document.querySelectorAll(".dropbefore,.dropafter,.droptarget").forEach(n => n.classList.remove("dropbefore", "dropafter", "droptarget")); });
+    blk.addEventListener("dragover", ev => {
+      if (!drag || drag.type !== "item") return; ev.preventDefault();
+      const r = blk.getBoundingClientRect(), after = ev.clientY > r.top + r.height / 2;
+      blk.classList.toggle("dropbefore", !after); blk.classList.toggle("dropafter", after);
+    });
+    blk.addEventListener("dragleave", () => blk.classList.remove("dropbefore", "dropafter"));
+    blk.addEventListener("drop", ev => {
+      if (!drag || drag.type !== "item") return; ev.preventDefault();
+      const r = blk.getBoundingClientRect(), after = ev.clientY > r.top + r.height / 2, d = drag;
+      moveItem(d.scene, d.item, sel, i + (after ? 1 : 0));
+    });
+  });
+}
+
+// ------------------------------------------------------------ left panel
+function renderLeft() {
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  const host = $("#leftBody"), scroll = host.scrollTop; host.textContent = "";
+  ({ cast: renderCast, props: renderProps, scenes: renderScenes })[tab](host);
+  host.scrollTop = scroll;
+}
+function propRow(v) {
+  return el("div", { class: "brow", style: "margin-top:4px" },
+    el("span", { class: "chip link", text: v.label || v.id, title: "Open in Properties", onclick: () => { tab = "props"; renderLeft(); const c = $(`#leftBody .card[data-id="${v.id}"]`); if (c) c.scrollIntoView({ block: "center" }); } }),
+    el("label", { text: "starts at" }),
+    el("input", { type: "number", value: v.initial, onchange: ev => change(() => v.initial = parseInt(ev.target.value, 10) || 0) }));
+}
+function renderCast(host) {
+  doc.characters.forEach((ch, ci) => {
+    const st = charStats(ch.id), open = openChar === ch.id;
+    const card = el("div", { class: "card" + (open ? " open" : "") },
+      el("div", { class: "head", onclick: () => { openChar = open ? null : ch.id; previewExpr = "neutral"; renderLeft(); } },
+        avatar(ch),
+        el("div", { style: "flex:1;min-width:0" },
+          el("div", { class: "nm", style: `color:${ch.color || "inherit"}`, text: ch.name || "(no name)" }),
+          el("div", { class: "sub", text: `${ch.id} · ${st.lines} line${st.lines === 1 ? "" : "s"} · in ${st.scenes} scene${st.scenes === 1 ? "" : "s"}` })),
+        el("div", {}, doc.vars.filter(v => v.character === ch.id && !v.hidden).map(v => el("span", { class: "chip", text: v.label })))));
+    if (open) {
+      const defaults = (ch.sprite && meta.looks[ch.sprite]) || {};
+      const img = ch.sprite ? el("img", { class: "big", src: spriteUrl(ch, previewExpr) }) : null;
+      let lookTimer = 0;
+      const refresh = () => { clearTimeout(lookTimer); lookTimer = setTimeout(() => {
+        if (img) img.src = spriteUrl(ch, previewExpr);
+        const small = $(".head img.avatar", card); if (small) small.src = spriteUrl(ch, "neutral");
+      }, 200); };
+      const lookRow = key => {
+        const def = defaults[key], isNum = def.includes(":"), [dv, lo, hi] = def.split(":");
+        const cur = ch.look[key] != null ? ch.look[key] : (isNum ? dv : def);
+        const input = isNum
+          ? el("input", { type: "range", min: lo, max: hi, step: (hi - lo) > 4 ? 1 : 0.01, value: cur })
+          : el("input", { type: "color", value: cur });
+        input.addEventListener("focus", () => typingSnapshot = snapshot());
+        input.addEventListener("input", () => { if (typingSnapshot) { undoStack.push(typingSnapshot); redoStack = []; typingSnapshot = null; } ch.look[key] = input.value; markDirty(); refresh(); });
+        input.addEventListener("change", () => { scheduleGraph(); });
+        return [el("label", { text: key }), el("div", { class: "row" }, input,
+          ch.look[key] != null && el("button", { class: "ghost", title: "Back to this portrait's default", text: "↺", onclick: () => change(() => delete ch.look[key]) }))];
+      };
+      card.append(
+        img,
+        ch.sprite && el("div", { class: "brow", style: "justify-content:center;margin-top:6px" }, el("label", { text: "preview" }),
+          el("select", { style: "flex:none", onchange: ev => { previewExpr = ev.target.value; img.src = spriteUrl(ch, previewExpr); } }, opts(meta.exprs, previewExpr))),
+        el("div", { class: "grid2" },
+          el("label", { text: "Name" }), bindText(el("input", { type: "text" }), ch, "name", () => { $(".nm", card).textContent = ch.name; }),
+          el("label", { text: "Id" }), el("input", { type: "text", value: ch.id, title: "Short id used in the story file", onchange: ev => {
+            const to = ev.target.value.trim().replace(/[^A-Za-z0-9_]/g, "_");
+            if (!to || to === ch.id) { ev.target.value = ch.id; return; }
+            if (to === "n" || charById(to)) { toast(`The id '${to}' is taken`, true); ev.target.value = ch.id; return; }
+            change(() => { renameEverywhere("char", ch.id, to); ch.id = to; openChar = to; });
+          } }),
+          el("label", { text: "Name colour" }), el("div", { class: "row" }, el("input", { type: "color", value: ch.color || "#ffffff", onchange: ev => change(() => ch.color = ev.target.value) })),
+          el("label", { text: "Portrait" }), el("select", { onchange: ev => change(() => { ch.sprite = ev.target.value; ch.look = {}; }) },
+            opts([{ value: "", label: "None (never shown)" }, ...meta.sprites.map(s => ({ value: s, label: SPRITE_NAMES[s] || s }))], ch.sprite))),
+        Object.keys(defaults).length > 0 && el("div", { class: "sect", text: "Look" }),
+        Object.keys(defaults).length > 0 && el("div", { class: "grid2" }, Object.keys(defaults).sort((a, b) => defaults[a].includes(":") - defaults[b].includes(":")).map(lookRow)),
+        el("div", { class: "sect", text: "Properties of this character" }),
+        doc.vars.filter(v => v.character === ch.id).map(propRow),
+        el("button", { style: "margin-top:6px", text: "+ Property", onclick: () => change(() => {
+          doc.vars.push({ id: uniqueId(ch.id + "_regard", doc.vars.map(v => v.id)), label: (ch.name || ch.id) + "'s regard", initial: 0, meter: 0, good: true, character: ch.id, hidden: false });
+        }) }),
+        el("div", { class: "brow", style: "margin-top:10px;justify-content:space-between" },
+          el("span", {},
+            el("button", { class: "ghost", title: "Move up", text: "↑", disabled: ci === 0, onclick: () => change(() => doc.characters.splice(ci - 1, 0, doc.characters.splice(ci, 1)[0])) }),
+            el("button", { class: "ghost", title: "Move down", text: "↓", disabled: ci === doc.characters.length - 1, onclick: () => change(() => doc.characters.splice(ci + 1, 0, doc.characters.splice(ci, 1)[0])) })),
+          el("button", { class: "danger", text: "Delete character", onclick: () => {
+            if (st.lines || st.scenes) { toast(`${ch.name || ch.id} still appears in ${st.scenes} scene(s). Remove those lines first.`, true); return; }
+            change(() => { doc.characters.splice(ci, 1); doc.vars.forEach(v => { if (v.character === ch.id) v.character = ""; }); openChar = null; });
+          } })));
+    }
+    host.append(card);
+  });
+  host.append(el("button", { text: "+ Character", onclick: () => change(() => {
+    const id = uniqueId("x", ["n", ...doc.characters.map(c => c.id)]);
+    doc.characters.push({ id, name: "New character", color: "#ffffff", sprite: "", look: {} }); openChar = id;
+  }) }));
+}
+function renderProps(host) {
+  host.append(el("div", { class: "sub", style: "color:var(--dim);margin-bottom:8px", text: "Properties are what choices change and conditions test. A consequence is a change to one of them." }));
+  doc.vars.forEach((v, vi) => {
+    const uses = usesOfVar(v.id), owner = charById(v.character);
+    host.append(el("div", { class: "card", "data-id": v.id },
+      el("div", { class: "brow" }, owner && avatar(owner), bindText(el("input", { type: "text", placeholder: "Label shown to the player", style: "flex:1;font-weight:600" }), v, "label")),
+      el("div", { class: "grid2" },
+        el("label", { text: "Id" }), el("input", { type: "text", value: v.id, onchange: ev => {
+          const to = ev.target.value.trim().replace(/[^A-Za-z0-9_]/g, "_");
+          if (!to || to === v.id) { ev.target.value = v.id; return; }
+          if (varById(to)) { toast(`The id '${to}' is taken`, true); ev.target.value = v.id; return; }
+          change(() => { renameEverywhere("var", v.id, to); v.id = to; });
+        } }),
+        el("label", { text: "Starts at" }), el("div", { class: "row" }, el("input", { type: "number", value: v.initial, onchange: ev => change(() => v.initial = parseInt(ev.target.value, 10) || 0) })),
+        el("label", { text: "Belongs to" }), el("select", { onchange: ev => change(() => v.character = ev.target.value) }, opts([{ value: "", label: "The story (nobody)" }, ...doc.characters.map(c => ({ value: c.id, label: c.name || c.id }))], v.character)),
+        el("label", { text: "A rise is" }), el("select", { onchange: ev => change(() => v.good = ev.target.value === "good") }, el("option", { value: "good", text: "good news", selected: v.good }), el("option", { value: "bad", text: "bad news", selected: !v.good })),
+        el("label", { text: "Meter" }), el("div", { class: "row" }, el("input", { type: "number", min: 0, max: 12, value: v.meter, title: "Size of the on-screen meter; 0 for none", onchange: ev => change(() => v.meter = Math.max(0, Math.min(12, parseInt(ev.target.value, 10) || 0))) }), el("span", { class: "sub", style: "color:var(--dim)", text: v.meter ? "pips on screen" : "not shown as a meter" })),
+        el("label", { text: "Hidden" }), el("div", { class: "row" }, el("input", { type: "checkbox", checked: v.hidden, onchange: ev => change(() => v.hidden = ev.target.checked) }), el("span", { class: "sub", style: "color:var(--dim)", text: "changes silently" }))),
+      el("div", { class: "sect", text: uses.length ? "Where it matters" : "Not used yet" }),
+      el("div", {}, uses.map(u => el("span", { class: "chip link " + (u.change && !u.set ? ((u.n > 0) === v.good ? "good" : "bad") : ""), text: u.text, onclick: () => select(u.si, u.i, true) }))),
+      el("div", { class: "brow", style: "margin-top:8px;justify-content:space-between" },
+        el("span", {},
+          el("button", { class: "ghost", text: "↑", disabled: vi === 0, onclick: () => change(() => doc.vars.splice(vi - 1, 0, doc.vars.splice(vi, 1)[0])) }),
+          el("button", { class: "ghost", text: "↓", disabled: vi === doc.vars.length - 1, onclick: () => change(() => doc.vars.splice(vi + 1, 0, doc.vars.splice(vi, 1)[0])) })),
+        el("button", { class: "danger", text: "Delete", onclick: () => {
+          if (uses.length) { toast(`'${v.label || v.id}' is still used in ${uses.length} place(s).`, true); return; }
+          change(() => doc.vars.splice(vi, 1));
+        } }))));
+  });
+  host.append(el("button", { text: "+ Property", onclick: () => change(() => doc.vars.push({ id: uniqueId("property", doc.vars.map(v => v.id)), label: "New property", initial: 0, meter: 0, good: true, character: "", hidden: false })) }));
+}
+function renderScenes(host) {
+  host.append(el("input", { type: "text", placeholder: "Filter scenes…", value: sceneFilter, style: "width:100%;margin-bottom:8px", oninput: ev => { sceneFilter = ev.target.value; const pos = ev.target.selectionStart; renderLeft(); const f = $("#leftBody input"); f.focus(); f.setSelectionRange(pos, pos); } }),
+    el("div", { class: "sub", style: "color:var(--dim);margin-bottom:6px", text: "The order matters only where a scene continues into the next one. Drag to reorder." }));
+  doc.scenes.forEach((s, si) => {
+    if (sceneFilter && !s.label.toLowerCase().includes(sceneFilter.toLowerCase())) return;
+    const level = problems.some(p => p.scene === s.label && p.level === "error") ? "error" : problems.some(p => p.scene === s.label) ? "warning" : "";
+    const row = el("div", { class: "srow" + (si === sel ? " on" : ""), draggable: true, onclick: () => select(si, -1, true) },
+      el("span", { class: "grip", text: "☰" }), el("span", { style: "flex:1 0 auto", text: s.label || "(unnamed)" }),
+      effects(si).map(e => effectChip(e)), level && el("span", { class: "dot " + level }));
+    row.addEventListener("dragstart", ev => { drag = { type: "scene", scene: si }; ev.dataTransfer.setData("text/plain", "scene"); ev.dataTransfer.effectAllowed = "move"; });
+    row.addEventListener("dragend", () => { drag = null; document.querySelectorAll(".dropbefore,.dropafter").forEach(n => n.classList.remove("dropbefore", "dropafter")); });
+    row.addEventListener("dragover", ev => { if (!drag || drag.type !== "scene") return; ev.preventDefault(); const r = row.getBoundingClientRect(), after = ev.clientY > r.top + r.height / 2; row.classList.toggle("dropbefore", !after); row.classList.toggle("dropafter", after); });
+    row.addEventListener("dragleave", () => row.classList.remove("dropbefore", "dropafter"));
+    row.addEventListener("drop", ev => {
+      if (!drag || drag.type !== "scene") return; ev.preventDefault();
+      const r = row.getBoundingClientRect(), after = ev.clientY > r.top + r.height / 2, from = drag.scene;
+      let to = si + (after ? 1 : 0); if (from < to) to--;
+      if (to !== from) change(() => { const selected = doc.scenes[sel]; doc.scenes.splice(to, 0, doc.scenes.splice(from, 1)[0]); sel = doc.scenes.indexOf(selected); });
+    });
+    host.append(row);
+  });
+}
+function renderProblems() {
+  const host = $("#probs"); host.textContent = "";
+  parseErrors.forEach(e => host.append(el("div", { class: "prow" }, el("span", { class: "dot error" }), el("span", { text: e }))));
+  problems.forEach(p => host.append(el("div", { class: "prow", onclick: () => { const si = sceneIndex(p.scene); if (si >= 0) select(si, p.item, true); host.classList.remove("show"); } },
+    el("span", { class: "dot " + p.level }), el("span", {}, p.scene && el("b", { text: p.scene + ": " }), p.msg))));
+  if (!host.childElementCount) host.append(el("div", { class: "empty", text: "Nothing wrong with the story." }));
+  if (sel >= 0 && !$("#insp").contains(document.activeElement)) renderInspector();
+  else if (sel < 0) renderInspector();
+  if (tab === "scenes" && !$("#left").contains(document.activeElement)) renderLeft();
+}
+function renderAll(opts) {
+  renderGraph(); renderInspector(); renderLeft(); updateBar();
+  if (opts && opts.center && sel >= 0) centerOn(sel);
+}
+
+// ----------------------------------------------------------------- boot
+async function boot() {
+  let data;
+  try { data = await api("GET", "/api/story"); } catch (e) { document.body.innerHTML = `<div class="empty" style="grid-column:1/-1">Could not load the story: ${e.message}</div>`; return; }
+  doc = data.doc; meta = data.meta; problems = data.problems; parseErrors = data.parse_errors;
+  setupStage(); applyView();
+  layoutMissing();
+  sel = Math.max(0, sceneIndex("start"));
+  renderAll(); renderProblems(); fit(); centerOn(sel);
+  if (parseErrors.length) { toast(`${parseErrors.length} line(s) of the story file could not be understood; they are kept as notes.`, true); $("#probs").classList.add("show"); }
+  document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { tab = b.dataset.tab; renderLeft(); });
+  $("#saveBtn").onclick = save; $("#undoBtn").onclick = undo; $("#redoBtn").onclick = redo;
+  $("#addSceneBtn").onclick = () => { addScene(null, null); centerOn(sel); };
+  $("#layoutBtn").onclick = tidyLayout; $("#playBtn").onclick = () => play("start");
+  $("#probBtn").onclick = () => $("#probs").classList.toggle("show");
+  $("#helpBtn").onclick = () => $("#help").classList.add("show"); $("#helpClose").onclick = () => $("#help").classList.remove("show");
+  window.addEventListener("keydown", ev => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); if (dirty) save(); }
+    else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z" && !typing) { ev.preventDefault(); ev.shiftKey ? redo() : undo(); }
+    else if (ev.key === "Escape") { $("#probs").classList.remove("show"); $("#help").classList.remove("show"); }
+  });
+  window.addEventListener("beforeunload", ev => { if (dirty) { ev.preventDefault(); ev.returnValue = ""; } });
+  window.addEventListener("resize", drawEdges);
+}
+boot();
+</script>
+</body>
+</html>

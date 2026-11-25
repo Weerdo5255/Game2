@@ -2,29 +2,15 @@
 
 use crate::art;
 use crate::gfx::*;
-use crate::script::{Cmd, Script, Vm};
+use crate::script::{parse_color, Cmd, Script, Vm, NARRATOR};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-pub const SPEAKERS: &[&str] = &["n", "m", "p", "v", "s", "q", "t", "c", "a"];
 const SAVE_FILE: &str = "below_stairs.sav";
 const COLS: usize = 64;
 const LINES: usize = 4;
 const FADE_HALF: f32 = 0.3;
-
-fn speaker(id: &str) -> (&'static str, u32) {
-    match id {
-        "m" => ("Marlowe", rgb(150, 230, 160)),
-        "p" => ("Peregrine", rgb(200, 180, 255)),
-        "v" => ("Lord Varrow", rgb(255, 130, 130)),
-        "s" => ("Lord Solberg", rgb(110, 230, 220)),
-        "q" => ("Quince", rgb(170, 200, 230)),
-        "t" => ("Tobe", rgb(255, 170, 110)),
-        "c" => ("Cook", rgb(255, 220, 170)),
-        "a" => ("The Admiral", WHITE),
-        _ => ("", rgb(214, 222, 255)),
-    }
-}
+const NARRATION: u32 = rgb(214, 222, 255);
 
 /// One frame of player input, independent of the windowing backend.
 #[derive(Default, Clone)]
@@ -120,8 +106,8 @@ fn title_item_y(i: usize) -> i32 {
 impl Game {
     pub fn new(script: Script, art_dir: Option<PathBuf>) -> Game {
         Game {
+            vm: Vm::new(&script),
             script,
-            vm: Vm::default(),
             mode: Mode::Title { sel: 0 },
             bg: String::new(),
             slots: [None, None, None],
@@ -151,9 +137,23 @@ impl Game {
 
     pub fn new_game(&mut self) {
         self.reset_scene();
-        self.vm = Vm::default();
-        self.vm.jump(&self.script, "start");
+        self.start_at("start");
+    }
+
+    /// Begin a fresh run at any scene (the editor's "play from here").
+    pub fn start_at(&mut self, label: &str) {
+        self.reset_scene();
+        self.vm = Vm::new(&self.script);
+        self.vm.jump(&self.script, label);
         self.run();
+    }
+
+    /// Display name and name-tag colour of a speaker.
+    fn speaker(&self, id: &str) -> (String, u32) {
+        match self.script.character(id) {
+            Some(c) if id != NARRATOR => (c.name.clone(), parse_color(&c.color).unwrap_or(WHITE)),
+            _ => (String::new(), NARRATION),
+        }
     }
 
     fn to_title(&mut self) {
@@ -232,17 +232,10 @@ impl Game {
                     return;
                 }
                 Cmd::Add(var, n) => {
-                    let label = match var.as_str() {
-                        "peace" => "Detente",
-                        "heat" => "Suspicion",
-                        "favor" => "Peregrine's regard",
-                        "trust" => "Quince's trust",
-                        _ => continue,
-                    };
-                    // rising suspicion is bad news; everything else rising is good
-                    let good = (n > 0) != (var == "heat");
-                    let col = if good { rgb(150, 240, 160) } else { rgb(255, 130, 120) };
-                    self.toasts.push((format!("{} {}{}", label, if n > 0 { "+" } else { "" }, n), col, 3.0));
+                    // announce the consequence, unless the property is a hidden one
+                    let Some(def) = self.script.var_def(&var).filter(|d| !d.hidden && !d.label.is_empty()) else { continue };
+                    let col = if (n > 0) == def.good { rgb(150, 240, 160) } else { rgb(255, 130, 120) };
+                    self.toasts.push((format!("{} {}{}", def.label, if n > 0 { "+" } else { "" }, n), col, 3.0));
                 }
                 Cmd::Card(title, sub) => {
                     self.reset_scene();
@@ -284,7 +277,7 @@ impl Game {
             self.note = Some(("No saved game".into(), 2.5));
             return;
         };
-        let mut vm = Vm::default();
+        let mut vm = Vm::new(&self.script);
         let mut bg = String::new();
         let mut slots: [Option<Slot>; 3] = [None, None, None];
         let mut pc = None;
@@ -541,10 +534,11 @@ impl Game {
             let Some(s) = slot else { continue };
             let key = (s.who.clone(), s.expr.clone());
             let dir = self.art_dir.as_deref();
-            let spr = self.sprites.entry(key).or_insert_with(|| art::sprite(&s.who, &s.expr, dir));
+            let Some(def) = self.script.character(&s.who) else { continue };
+            let spr = self.sprites.entry(key).or_insert_with(|| art::sprite(def, &s.expr, dir));
             let x = 72 + i as i32 * art::SPR_W;
             let mut y = 30 + ((1.0 - s.appear) * 18.0) as i32;
-            if s.who == "a" || self.bg == "axis" {
+            if def.sprite == "a" || self.bg == "axis" {
                 // the Admiral bobs; at the axis, so does everyone
                 y += ((self.time * 1.6 + i as f32).sin() * 7.0) as i32;
             }
@@ -554,14 +548,14 @@ impl Game {
 
         match &self.mode {
             Mode::Say { who, pages, page, shown } => {
-                let (name, col) = speaker(who);
+                let (name, col) = self.speaker(who);
                 c.panel(24, 456, W - 48, 174);
                 if !name.is_empty() {
                     let w = name.len() as i32 * 16 + 36;
                     c.panel(44, 424, w, 40);
-                    c.text_sh(62, 436, name, col, 2);
+                    c.text_sh(62, 436, &name, col, 2);
                 }
-                let text_col = if who == "n" { col } else { WHITE };
+                let text_col = if who == NARRATOR { col } else { WHITE };
                 let mut left = *shown as usize;
                 let mut done = true;
                 for (i, line) in pages[*page].iter().enumerate() {
@@ -614,18 +608,23 @@ impl Game {
     }
 
     fn render_hud(&self, c: &mut Canvas) {
-        let rows = [
-            ("DETENTE", self.vm.var("peace"), 7, rgb(120, 230, 150)),
-            ("SUSPICION", self.vm.var("heat"), 4, rgb(255, 110, 100)),
-        ];
-        c.rect_blend(W - 330, 8, 322, 60, rgba(8, 8, 28, 130));
-        for (i, (label, val, _, col)) in rows.iter().enumerate() {
-            let y = 16 + i as i32 * 26;
-            let px = W - 16 - 7 * 20;
-            c.text_sh(px - 12 - label.len() as i32 * 16, y, label, WHITE, 2);
-            for k in 0..rows[i].2 {
-                c.rect(px + k * 20, y, 17, 16, OUTLINE);
-                c.rect(px + k * 20 + 2, y + 2, 13, 12, if k < *val { *col } else { rgb(60, 64, 100) });
+        // one meter per property that declares one
+        let meters: Vec<_> = self.script.vars.iter().filter(|v| v.meter > 0).take(4).collect();
+        if !meters.is_empty() {
+            let pips = meters.iter().map(|v| v.meter.min(12)).max().unwrap_or(0);
+            let widest = meters.iter().map(|v| v.label.chars().count() as i32).max().unwrap_or(0);
+            let px = W - 16 - pips * 20;
+            let left = px - 12 - widest * 16;
+            c.rect_blend(left - 12, 8, W - left + 4, 8 + meters.len() as i32 * 26, rgba(8, 8, 28, 130));
+            for (i, v) in meters.iter().enumerate() {
+                let y = 16 + i as i32 * 26;
+                let label = v.label.to_uppercase();
+                let col = if v.good { rgb(120, 230, 150) } else { rgb(255, 110, 100) };
+                c.text_sh(px - 12 - label.chars().count() as i32 * 16, y, &label, WHITE, 2);
+                for k in 0..v.meter.min(12) {
+                    c.rect(px + k * 20, y, 17, 16, OUTLINE);
+                    c.rect(px + k * 20 + 2, y + 2, 13, 12, if k < self.vm.var(&v.id) { col } else { rgb(60, 64, 100) });
+                }
             }
         }
         for (i, (msg, col, _)) in self.toasts.iter().rev().take(4).enumerate() {

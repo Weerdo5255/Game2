@@ -1,6 +1,11 @@
 //! Below Stairs, Above Stars - a sci-fi visual novel.
 //!
 //!   cargo run --release                    play
+//!   cargo run --release -- --editor        open the visual story editor
+//!       (--port N, --no-browser)
+//!   cargo run --release -- --story FILE    use another story file
+//!   cargo run --release -- --start LABEL   begin at a scene
+//!   cargo run --release -- --format-story  tidy the story file's layout
 //!   cargo run --release -- --procedural    ignore assets/enhanced
 //!   cargo run --release -- --art-dir DIR   load enhanced art from DIR
 //!   cargo run --release -- --window 800x450  initial window size (resizable)
@@ -11,6 +16,7 @@
 //!       and saving screenshots
 
 mod art;
+mod editor;
 mod game;
 mod gfx;
 mod script;
@@ -20,6 +26,31 @@ use gfx::{Canvas, H, W};
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+
+const BUILT_IN_STORY: &str = include_str!("../assets/story.txt");
+
+/// The story to play: the file named, else assets/story.txt (in the working
+/// directory, then beside the executable), else the copy built in.
+fn load_story(explicit: Option<PathBuf>) -> (String, String) {
+    let mut candidates: Vec<PathBuf> = explicit.iter().cloned().collect();
+    if explicit.is_none() {
+        candidates.push(PathBuf::from("assets/story.txt"));
+        if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
+            candidates.push(dir.join("assets/story.txt"));
+        }
+    }
+    for path in candidates {
+        match std::fs::read_to_string(&path) {
+            Ok(text) => return (text, path.display().to_string()),
+            Err(e) if explicit.is_some() => {
+                eprintln!("cannot read {}: {}", path.display(), e);
+                std::process::exit(1);
+            }
+            Err(_) => {}
+        }
+    }
+    (BUILT_IN_STORY.to_string(), "the built-in story".to_string())
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -34,38 +65,80 @@ fn main() {
         return;
     }
 
-    let script = match script::Script::parse(include_str!("../assets/story.txt")) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
-    };
-    let errs = script.validate(game::SPEAKERS, art::SPRITES, art::EXPRS, art::BACKGROUNDS);
-    if !errs.is_empty() {
-        eprintln!("story script problems:\n  {}", errs.join("\n  "));
-        std::process::exit(1);
-    }
-
     let art_dir = if flag("--procedural") {
         None
     } else {
         arg("--art-dir").map(PathBuf::from).or_else(art::find_enhanced_dir)
     };
+
+    if flag("--editor") {
+        // the editor always works on a real file, created from the built-in story if need be
+        let path = arg("--story").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("assets/story.txt"));
+        if !path.exists() {
+            let made = path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|_| std::fs::write(&path, BUILT_IN_STORY));
+            if let Err(e) = made {
+                eprintln!("cannot create {}: {}", path.display(), e);
+                std::process::exit(1);
+            }
+        }
+        let port = arg("--port").and_then(|p| p.parse().ok()).unwrap_or(7878);
+        if let Err(e) = editor::serve(path, port, art_dir, !flag("--no-browser")) {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    let (text, source) = load_story(arg("--story").map(PathBuf::from));
+    let (doc, errors) = script::Doc::parse(&text);
+    if flag("--format-story") {
+        // rewrite the story file in the editor's canonical layout
+        let path = arg("--story").unwrap_or_else(|| "assets/story.txt".into());
+        if let Err(e) = std::fs::write(&path, doc.to_text()) {
+            eprintln!("cannot write {}: {}", path, e);
+            std::process::exit(1);
+        }
+        println!("rewrote {}", path);
+        return;
+    }
+    let mut errors: Vec<String> = errors;
+    errors.extend(
+        doc.problems(art::EXPRS, art::BACKGROUNDS, art::SPRITES)
+            .into_iter()
+            .filter(|p| p.level == "error")
+            .map(|p| if p.scene.is_empty() { p.msg } else { format!("scene '{}': {}", p.scene, p.msg) }),
+    );
+    if !errors.is_empty() {
+        eprintln!("problems in {}:\n  {}", source, errors.join("\n  "));
+        eprintln!("open the editor to fix them:  --editor");
+        std::process::exit(1);
+    }
+    let script = script::Script::compile(&doc);
+    let start = arg("--start");
+    if let Some(label) = &start {
+        if !script.labels.contains_key(label) {
+            eprintln!("no scene called '{}'", label);
+            std::process::exit(1);
+        }
+    }
+
     if let Some(dir) = &art_dir {
         println!("enhanced art: {}", dir.display());
     }
-    let game = Game::new(script, art_dir);
+    let mut game = Game::new(script, art_dir);
 
     if let Some(list) = arg("--autoplay") {
         let picks = list.split(',').filter_map(|s| s.trim().parse().ok()).collect();
-        headless(game, picks, arg("--shots"));
+        headless(game, picks, arg("--shots"), start.as_deref().unwrap_or("start"));
         return;
     }
     let size = arg("--window")
         .and_then(|s| s.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
         .filter(|&(w, h): &(usize, usize)| w >= 160 && h >= 90)
         .unwrap_or((W as usize, H as usize));
+    if let Some(label) = &start {
+        game.start_at(label);
+    }
     if let Err(e) = windowed(game, size) {
         eprintln!("could not open a window: {}", e);
         std::process::exit(1);
@@ -153,7 +226,7 @@ fn windowed(mut game: Game, size: (usize, usize)) -> Result<(), minifb::Error> {
 }
 
 /// Play the story with no window, optionally writing screenshots.
-fn headless(mut game: Game, picks: Vec<usize>, shots: Option<String>) {
+fn headless(mut game: Game, picks: Vec<usize>, shots: Option<String>, start: &str) {
     let mut canvas = Canvas::new(W, H);
     let (mut next_pick, mut says, mut n) = (0, 0, 0);
     let shoot_to = |canvas: &Canvas, path: String| {
@@ -168,7 +241,7 @@ fn headless(mut game: Game, picks: Vec<usize>, shots: Option<String>) {
         game.render(&mut canvas);
         shoot_to(&canvas, format!("{}/000_title.png", dir));
     }
-    game.new_game();
+    game.start_at(start);
     for _ in 0..100_000 {
         // let fades and the typewriter finish
         game.update(&Input::default(), 5.0);

@@ -596,8 +596,8 @@ impl Canvas {
         Ok(c)
     }
 
-    /// Write a PNG; RGBA if `alpha`, otherwise RGB.
-    pub fn save_png(&self, path: &std::path::Path, alpha: bool) -> Result<(), String> {
+    /// Encode as PNG; RGBA if `alpha`, otherwise RGB.
+    pub fn png_bytes(&self, alpha: bool) -> Result<Vec<u8>, String> {
         let mut data = Vec::with_capacity(self.px.len() * 4);
         for &p in &self.px {
             data.extend_from_slice(&[(p >> 16) as u8, (p >> 8) as u8, p as u8]);
@@ -605,12 +605,17 @@ impl Canvas {
                 data.push((p >> 24) as u8);
             }
         }
-        let file = std::fs::File::create(path).map_err(|e| format!("{}: {}", path.display(), e))?;
-        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), self.w as u32, self.h as u32);
+        let mut out = Vec::new();
+        let mut enc = png::Encoder::new(&mut out, self.w as u32, self.h as u32);
         enc.set_color(if alpha { png::ColorType::Rgba } else { png::ColorType::Rgb });
         enc.set_depth(png::BitDepth::Eight);
-        enc.write_header()
-            .and_then(|mut w| w.write_image_data(&data))
-            .map_err(|e| format!("{}: {}", path.display(), e))
+        enc.write_header().and_then(|mut w| w.write_image_data(&data)).map_err(|e| e.to_string())?;
+        Ok(out)
+    }
+
+    /// Write a PNG file; RGBA if `alpha`, otherwise RGB.
+    pub fn save_png(&self, path: &std::path::Path, alpha: bool) -> Result<(), String> {
+        let bytes = self.png_bytes(alpha)?;
+        std::fs::write(path, bytes).map_err(|e| format!("{}: {}", path.display(), e))
     }
 }

@@ -47,6 +47,44 @@ sets its starting size.
 The two meters top right are **Detente** (how close the lords are to a deal)
 and **Suspicion** (how close you are to the algae vats).
 
+## Story editor
+
+```bash
+cargo run --release -- --editor
+```
+
+opens a visual editor for the story in your browser (it prints the address,
+`http://127.0.0.1:7878/`, if no browser opens). It edits `assets/story.txt`
+directly; the game reads that file each time it starts, so there is nothing
+to rebuild.
+
+![Editor](docs/editor.png)
+
+- **The graph** shows every scene as a box. Gold lines are choices, blue are
+  conditions, grey are jumps, and a dashed line means the scene simply
+  continues into the next one. Drag scenes to arrange them; drag the round
+  port at the end of a choice, condition or jump on to another scene to
+  change where it leads, or on to empty space to make a new scene.
+- **Consequences** are changes to a property (Detente +2, Suspicion +1).
+  They appear as chips on the scene they happen in and beside every choice
+  that leads there.
+- **The panel on the right** edits the selected scene: its lines, choices,
+  consequences, conditions, backgrounds and who is on screen. Drag a block by
+  its grip to reorder it, or drop it on another scene in the graph to move it
+  there.
+- **Cast** holds each character's name, name colour, portrait and look (hair,
+  skin, coat, age and so on, with a live preview), and the properties that
+  belong to them. **Properties** lists every property, its starting value,
+  whether it has an on-screen meter, and everywhere it is changed or tested.
+  **Scenes** lists scenes in file order; drag to reorder.
+- Problems are checked as you type by the same validator the game uses.
+  **Play** and **Play from here** save and launch the game at that scene.
+- Undo and redo work on everything; the first save of a session keeps the
+  previous file as `story.txt.bak`.
+
+Options: `--port N`, `--no-browser`, `--story FILE`. The editor listens on
+your own machine only and refuses requests from other web pages.
+
 ## Graphics
 
 All artwork is procedural: there are no image files in the game. Each scene
@@ -83,10 +121,15 @@ drop hand-painted replacements there too.
 - `src/art/` - the artwork: `paint.rs` (shading toolkit), one module per
   scene, `people.rs` and `swan.rs` for the cast, and `mod.rs` (registry,
   enhanced-art loader, guide export).
-- `src/script.rs` - parser and virtual machine for the story script.
+- `src/script.rs` - the story: document model (text and JSON), validator,
+  compiler and virtual machine.
+- `src/editor.rs`, `src/editor.html` - the story editor: a small local web
+  server and the page it serves.
 - `src/game.rs` - title screen, dialogue, choices, HUD, save/load.
-- `assets/story.txt` - the whole story, in a small line-based script language
-  documented at the top of the file. Edit it and rebuild to change the game.
+- `assets/story.txt` - the whole story, cast and properties, in a small
+  line-based language documented at the top of the file. Edit it by hand or
+  with the editor; the game reads it at start-up (`--story FILE` for another,
+  `--start LABEL` to begin at a scene).
 - `comfyui/` - the enhancement suite: workflows, runner, tests.
 
 ## Testing
@@ -95,9 +138,16 @@ drop hand-painted replacements there too.
 cargo test
 ```
 
-The tests validate every label, speaker, sprite and background referenced by
-the story, then play every possible combination of choices to check that each
-one reaches an ending and that all five endings are reachable.
+The tests validate the story, play every possible combination of choices to
+check that each one reaches an ending and that all five endings are
+reachable, and check that the story file survives a round trip through the
+editor's formats unchanged.
+
+The editor has a browser test (needs Node with Playwright):
+
+```bash
+cargo build && node tools/editor_e2e.js
+```
 
 The ComfyUI suite has its own tests (no network or GPU needed):
 
