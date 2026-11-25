@@ -51,7 +51,8 @@ impl Library {
             .flatten()
             .filter_map(|e| e.ok())
             .map(|e| e.file_name().to_string_lossy().to_string())
-            .filter(|id| !id.starts_with('.') && self.path(id).is_ok())
+            // "main" is reserved, and the main story may itself live in this folder
+            .filter(|id| !id.starts_with('.') && id != "main" && self.path(id).map_or(false, |p| !same_file(&p, &self.main)))
             .collect();
         others.sort();
         ids.extend(others);
@@ -148,6 +149,21 @@ impl Library {
     }
 }
 
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+/// A fingerprint of a file's contents, so a save can tell whether the file
+/// changed since the page loaded it.
+fn revision(path: &Path) -> String {
+    let bytes = std::fs::read(path).unwrap_or_default();
+    let hash = bytes.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ *b as u64).wrapping_mul(0x0100_0000_01b3));
+    format!("{:016x}-{}", hash, bytes.len())
+}
+
 struct State {
     library: Library,
     port: u16,
@@ -227,6 +243,28 @@ fn respond(stream: &mut TcpStream, status: &str, content_type: &str, cache: bool
         if cache { "max-age=3600" } else { "no-store" }
     );
     let _ = stream.write_all(head.as_bytes()).and_then(|_| stream.write_all(body));
+}
+
+/// Send a preview image. The browser may keep it but must ask each time;
+/// if it still has the version named by `tag`, it is told so instead.
+fn respond_image(stream: &mut TcpStream, req: &Request, tag: &str, body: impl FnOnce() -> Option<Arc<Vec<u8>>>) {
+    let etag = format!("\"{:016x}\"", tag.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3)));
+    if req.headers.get("if-none-match") == Some(&etag) {
+        let head = format!("HTTP/1.1 304 Not Modified\r\nETag: {}\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n", etag);
+        let _ = stream.write_all(head.as_bytes());
+        return;
+    }
+    match body() {
+        Some(png) => {
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nETag: {}\r\nCache-Control: no-cache\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n",
+                png.len(),
+                etag
+            );
+            let _ = stream.write_all(head.as_bytes()).and_then(|_| stream.write_all(&png));
+        }
+        None => respond(stream, "500 Internal Server Error", "text/plain", false, b"could not paint"),
+    }
 }
 
 fn respond_json(stream: &mut TcpStream, status: &str, value: &Value) {
@@ -394,13 +432,21 @@ impl State {
                 let made = self.library.create(body["title"].as_str().unwrap_or(""), body["copy"].as_str());
                 answer(stream, made.map(|id| json!({ "id": id, "stories": self.library.list() })))
             }
-            ("POST", "/api/stories/remove") => answer(stream, self.library.remove(&story_id).map(|_| json!({ "stories": self.library.list() }))),
+            ("POST", "/api/stories/remove") => {
+                let removed = self.library.remove(&story_id).map(|_| {
+                    self.jobs.forget_story(&story_id);
+                    json!({ "stories": self.library.list() })
+                });
+                answer(stream, removed)
+            }
             ("GET", "/api/story") => match self.load(&story) {
-                Ok((doc, parse_errors)) => {
+                Ok((mut doc, parse_errors)) => {
+                    // tidy what a hand-edited file may leave loose (a scene in a chapter that was never declared, say)
+                    doc.sanitize();
                     let p = problems(&doc);
                     let mut meta = self.meta();
                     meta["path"] = json!(story.display().to_string());
-                    respond_json(stream, "200 OK", &json!({ "doc": doc, "problems": p, "parse_errors": parse_errors, "meta": meta }))
+                    respond_json(stream, "200 OK", &json!({ "doc": doc, "problems": p, "parse_errors": parse_errors, "meta": meta, "revision": revision(&story) }))
                 }
                 Err(e) => fail(stream, e),
             },
@@ -408,12 +454,17 @@ impl State {
                 Ok(doc) => respond_json(stream, "200 OK", &json!({ "problems": problems(&doc) })),
                 Err(e) => fail(stream, e),
             },
-            ("PUT", "/api/story") => match self.doc_from(&req.body).and_then(|doc| doc.survives_text().and_then(|_| self.save(&story, &doc)).map(|_| doc)) {
-                Ok(doc) => {
-                    respond_json(stream, "200 OK", &json!({ "ok": true, "doc": doc, "problems": problems(&doc) }))
+            ("PUT", "/api/story") => {
+                // refuse to overwrite a file that changed since this page loaded it (another tab, a hand edit)
+                let on_disk = revision(&story);
+                if q.get("base").map_or(false, |base| *base != on_disk) && !q.contains_key("force") {
+                    return respond_json(stream, "409 Conflict", &json!({ "error": "the story file has changed since you opened it", "conflict": true }));
                 }
-                Err(e) => fail(stream, e),
-            },
+                match self.doc_from(&req.body).and_then(|doc| doc.survives_text().and_then(|_| self.save(&story, &doc)).map(|_| doc)) {
+                    Ok(doc) => respond_json(stream, "200 OK", &json!({ "ok": true, "doc": doc, "problems": problems(&doc), "revision": revision(&story) })),
+                    Err(e) => fail(stream, e),
+                }
+            }
             ("POST", "/api/play") => answer(stream, self.play(&story, body["label"].as_str().unwrap_or("")).map(|_| json!({ "ok": true }))),
 
             // ---- art: previews
@@ -430,7 +481,7 @@ impl State {
                 let dir = self.art_dir(&story).filter(|_| !q.contains_key("plain"));
                 let def = CharDef { id, sprite: base, look, ..Default::default() };
                 let key = self.art_key(&req, dir.as_deref().map(|d| d.join(format!("spr_{}_{}.png", def.id, expr))));
-                self.send_art(stream, &key, || Some((art::sprite(&def, &expr, dir.as_deref()), true)))
+                respond_image(stream, &req, &key, || self.art(&key, || Some((art::sprite(&def, &expr, dir.as_deref()), true))))
             }
             ("GET", path) if path.starts_with("/art/bg/") => {
                 let name = path.trim_start_matches("/art/bg/").trim_end_matches(".png").to_string();
@@ -440,12 +491,14 @@ impl State {
                 let dir = self.art_dir(&story).filter(|_| !q.contains_key("plain"));
                 let full = q.contains_key("full");
                 let key = self.art_key(&req, dir.as_deref().map(|d| d.join(format!("bg_{}.png", name))));
-                self.send_art(stream, &key, || {
-                    let (mut c, animated) = art::background(&name, dir.as_deref());
-                    if animated {
-                        art::animate(&mut c, &name, 0.5);
-                    }
-                    Some((if full { c } else { c.resized(384, 216) }, false))
+                respond_image(stream, &req, &key, || {
+                    self.art(&key, || {
+                        let (mut c, animated) = art::background(&name, dir.as_deref());
+                        if animated {
+                            art::animate(&mut c, &name, 0.5);
+                        }
+                        Some((if full { c } else { c.resized(384, 216) }, false))
+                    })
                 })
             }
 
@@ -497,7 +550,14 @@ impl State {
                 let mut moved = 0;
                 for id in ids(&body["assets"]).iter().filter(|id| valid_id(id)) {
                     let file = dir.join(format!("{}.png", id));
-                    if file.is_file() && std::fs::create_dir_all(dir.join(".removed")).and_then(|_| std::fs::rename(&file, dir.join(".removed").join(format!("{}.png", id)))).is_ok() {
+                    // never on top of an image set aside earlier
+                    let mut target = dir.join(".removed").join(format!("{}.png", id));
+                    let mut n = 1;
+                    while target.exists() {
+                        n += 1;
+                        target = dir.join(".removed").join(format!("{}-{}.png", id, n));
+                    }
+                    if file.is_file() && std::fs::create_dir_all(dir.join(".removed")).and_then(|_| std::fs::rename(&file, &target)).is_ok() {
                         moved += 1;
                     }
                 }
@@ -515,13 +575,6 @@ impl State {
         let query: Vec<&str> = req.query.split('&').filter(|kv| !kv.starts_with("v=")).collect();
         let stamp = enhanced.and_then(|f| std::fs::metadata(f).ok()).and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
         format!("{}?{}#{}", req.path, query.join("&"), stamp)
-    }
-
-    fn send_art(&self, stream: &mut TcpStream, key: &str, paint: impl FnOnce() -> Option<(Canvas, bool)>) {
-        match self.art(key, paint) {
-            Some(png) => respond(stream, "200 OK", "image/png", true, &png),
-            None => respond(stream, "500 Internal Server Error", "text/plain", false, b"could not paint"),
-        }
     }
 
     /// Launch the game on the saved story, starting at a scene.

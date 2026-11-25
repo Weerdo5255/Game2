@@ -110,6 +110,21 @@ let browser = null;
   assert(await p.locator('.node:not(.chapter)').count() === 1, 'a scene outside any chapter sits on the main graph beside the panels');
   await p.click('#undoBtn'); await p.click('#undoBtn'); await p.click('#undoBtn'); await p.click('#undoBtn');
 
+  // new chapters get distinct names
+  await p.click('#crumbs button >> nth=0');
+  for (let i = 0; i < 3; i++) await p.click('#crumbs button:has-text("+ Chapter")');
+  d = await D();
+  assert(new Set(d.chapters.map(c => c.name)).size === d.chapters.length && d.chapters.length === before + 3, 'new chapters get distinct names: ' + d.chapters.slice(before).map(c => c.name).join(', '));
+  await p.click('#undoBtn'); await p.click('#undoBtn'); await p.click('#undoBtn');
+
+  // typing in the scene filter stays in the filter
+  await p.click('.tabs button[data-tab="scenes"]');
+  await p.click('#leftBody input.filter');
+  await p.keyboard.type('gala');
+  d = await D();
+  assert(await p.inputValue('#leftBody input.filter') === 'gala' && d.title === 'Below Stairs, Above Stars' && await p.locator('#leftBody .srow.scene').count() === 13, 'the scene filter keeps the focus while typing (and matches chapter names)');
+  await p.fill('#leftBody input.filter', '');
+
   // ---- a story without chapters can be grouped from its chapter cards
   await p.evaluate(() => change(() => { doc.scenes.forEach(s => { s.chapter = ''; s.pos = null; }); doc.chapters = []; curChapter = ''; selChapter = null; }));
   const loose = await p.locator('.node').count();

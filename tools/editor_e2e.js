@@ -177,6 +177,16 @@ let browser = null;
   await p.click('#fitBtn');
   await p.waitForTimeout(1500);
   await p.screenshot({ path: out + '/e5.png' });
+  // 14b. the file changing underneath is noticed: the save asks first (the test accepts)
+  fs.appendFileSync(story, '\n# edited by hand while the editor was open\n');
+  await p.click('.tabs button[data-tab="scenes"]');
+  await p.locator('#leftBody .card input').nth(1).fill('Saved over a hand edit');
+  let asked = '';
+  p.once('dialog', d => { asked = d.message(); });
+  await p.keyboard.press('Control+s');
+  await p.waitForFunction(() => !dirty);
+  assert(asked.includes('has changed since you opened it') && fs.readFileSync(story, 'utf8').includes('| Saved over a hand edit'), 'saving over a file that changed on disk asks first');
+
   // 15. what was saved is a story the game accepts and can play to an ending
   const saved = fs.readFileSync(story, 'utf8');
   assert(saved.includes('character perry | Perry') && saved.includes('hair=#303030') && saved.includes('| Scrutiny |'), 'saved file holds the edits');
@@ -198,7 +208,7 @@ let browser = null;
   await p.click('.tabs button[data-tab="cast"]');
   assert(await p.locator('.tabs button[data-tab="cast"].on').count() === 1 && (await p.evaluate(() => varById('peace').initial)) === 3, 'a click that commits a field still lands');
 
-  const real = errs.filter(e => !e.includes('403') && !e.includes('400'));   // step 16 provokes one on purpose
+  const real = errs.filter(e => !e.includes('403') && !e.includes('400') && !e.includes('409'));   // each provoked on purpose   // step 16 provokes one on purpose
   console.log('page errors:', JSON.stringify(real));
   if (real.length) process.exitCode = 1;
   await b.close();

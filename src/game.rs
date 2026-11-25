@@ -67,7 +67,7 @@ fn wrap(text: &str, cols: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut cur = String::new();
     for word in text.split_whitespace() {
-        if !cur.is_empty() && cur.len() + 1 + word.len() > cols {
+        if !cur.is_empty() && cur.chars().count() + 1 + word.chars().count() > cols {
             lines.push(std::mem::take(&mut cur));
         }
         if !cur.is_empty() {
@@ -489,7 +489,9 @@ impl Game {
                     c.text_c(W / 2, y, line, GOLD, scale);
                     y += scale * 8 + 16;
                 }
-                c.text_c(W / 2, y.max(196), &self.script.subtitle, rgb(200, 210, 255), 2);
+                for (i, line) in wrap(&self.script.subtitle, 66).iter().take(2).enumerate() {
+                    c.text_c(W / 2, y.max(196) + i as i32 * 22, line, rgb(200, 210, 255), 2);
+                }
                 c.panel(W / 2 - 170, 372, 340, 150);
                 for (i, item) in TITLE_ITEMS.iter().enumerate() {
                     let enabled = i != 1 || Game::has_save();

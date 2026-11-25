@@ -17,7 +17,7 @@ use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -235,6 +235,18 @@ fn fill(node: &Value, values: &Map<String, Value>) -> Result<Value, String> {
     })
 }
 
+/// CRC-32 as zlib computes it, so seeds match comfyui/enhance.py.
+fn crc32(data: &[u8]) -> u32 {
+    let mut crc = 0xFFFF_FFFFu32;
+    for &byte in data {
+        crc ^= byte as u32;
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+        }
+    }
+    !crc
+}
+
 /// Feed the guide straight to the ControlNet, without edge detection.
 fn drop_canny(prompt: &mut Map<String, Value>) {
     let ids: Vec<String> = prompt.iter().filter(|(_, n)| n["class_type"] == "Canny").map(|(k, _)| k.clone()).collect();
@@ -242,7 +254,7 @@ fn drop_canny(prompt: &mut Map<String, Value>) {
         let source = prompt[&id]["inputs"]["image"].clone();
         prompt.remove(&id);
         for node in prompt.values_mut() {
-            if let Some(inputs) = node["inputs"].as_object_mut() {
+            if let Some(inputs) = node.get_mut("inputs").and_then(Value::as_object_mut) {
                 for v in inputs.values_mut() {
                     if v.as_array().map_or(false, |a| a.len() == 2 && a[0] == json!(id)) {
                         *v = source.clone();
@@ -304,7 +316,14 @@ pub fn build(suite: &Suite, asset: &Asset, tag: &str, ov: &Overrides) -> Result<
             }
         }
     }
-    let workflow = ov.workflow.clone().or_else(|| ov.workflows.get(asset.kind).cloned()).or_else(|| s.get("workflow").and_then(Value::as_str).map(str::to_string));
+    // most specific wins: this send, then the story's choice, then a per-asset
+    // override in config.json, then the kind's default
+    let workflow = ov
+        .workflow
+        .clone()
+        .or_else(|| ov.workflows.get(asset.kind).cloned())
+        .or_else(|| explicit.get("workflow").and_then(Value::as_str).map(str::to_string))
+        .or_else(|| s.get("workflow").and_then(Value::as_str).map(str::to_string));
     let workflow = workflow.ok_or_else(|| format!("config.json names no workflow for {}s", asset.kind))?;
     let template = suite.template(&workflow)?;
     if template["kind"].as_str().map_or(false, |k| k != asset.kind) {
@@ -321,8 +340,7 @@ pub fn build(suite: &Suite, asset: &Asset, tag: &str, ov: &Overrides) -> Result<
     }
     // one seed per character, so every expression shares its neutral's noise
     let seed_key = asset.character.as_ref().map_or(asset.id.as_str(), |c| c.id.as_str());
-    let hash = seed_key.bytes().fold(2166136261u32, |h, b| (h ^ b as u32).wrapping_mul(16777619));
-    let seed = s.get("seed").and_then(Value::as_u64).unwrap_or(0) + (hash % 100_000) as u64;
+    let seed = (s.get("seed").and_then(Value::as_u64).unwrap_or(0) + (crc32(seed_key.as_bytes()) % 100_000) as u64) % (1 << 63);
     s.insert("positive".into(), json!(format!("{}{}{}", text("style_prefix"), subject, text("style_suffix"))));
     s.insert("seed".into(), json!(seed));
     s.insert("prefix".into(), json!(format!("below_stairs/{}/{}", tag, asset.id)));
@@ -350,6 +368,9 @@ pub fn build(suite: &Suite, asset: &Asset, tag: &str, ov: &Overrides) -> Result<
         other => return Err(format!("control_preprocess must be 'canny' or 'none', not '{}'", other)),
     }
     let output_node = template["output_node"].as_str().ok_or("workflow has no output_node")?.to_string();
+    if prompt[&output_node]["class_type"] != "SaveImage" {
+        return Err(format!("{}: output_node '{}' must be the id of its SaveImage node", workflow, output_node));
+    }
     let errors = validate_graph(&prompt, &suite.specs()?);
     if !errors.is_empty() {
         return Err(format!("{}: {}", workflow, errors.join("; ")));
@@ -508,12 +529,18 @@ impl Client {
         answer["prompt_id"].as_str().map(str::to_string).ok_or_else(|| "ComfyUI did not return a prompt id".to_string())
     }
 
+    /// Take our prompt off ComfyUI's queue, and stop it if it is the one running.
+    fn abandon(&self, prompt_id: &str) {
+        let _ = self.agent.post(&format!("{}/queue", self.server)).send_json(json!({ "delete": [prompt_id] }));
+        let _ = self.agent.post(&format!("{}/interrupt", self.server)).send_json(json!({ "prompt_id": prompt_id }));
+    }
+
     /// Wait for a queued prompt; returns its first output image record.
-    fn wait(&self, prompt_id: &str, output_node: &str, timeout: Duration, cancel: &AtomicBool) -> Result<Value, String> {
+    fn wait(&self, prompt_id: &str, output_node: &str, timeout: Duration, cancelled: &dyn Fn() -> bool) -> Result<Value, String> {
         let deadline = Instant::now() + timeout;
         loop {
-            if cancel.load(Ordering::Relaxed) {
-                let _ = self.agent.post(&format!("{}/interrupt", self.server)).send_json(json!({}));
+            if cancelled() {
+                self.abandon(prompt_id);
                 return Err("cancelled".into());
             }
             let history = self.get(&format!("/history/{}", prompt_id))?;
@@ -537,6 +564,8 @@ impl Client {
                 }
             }
             if Instant::now() > deadline {
+                // do not leave it running for a result nobody will collect
+                self.abandon(prompt_id);
                 return Err(format!("timed out after {} minutes waiting for ComfyUI", timeout.as_secs() / 60));
             }
             std::thread::sleep(Duration::from_millis(if timeout < Duration::from_secs(60) { 50 } else { 1000 }));
@@ -571,6 +600,11 @@ pub struct Job {
     pub state: &'static str,
     pub message: String,
     pub seconds: u64,
+    /// background, sprite or expression.
+    pub kind: &'static str,
+    /// Cancelling bumps the queue's generation; a job from an older one stops.
+    #[serde(skip)]
+    generation: u64,
     #[serde(skip)]
     story_path: PathBuf,
     #[serde(skip)]
@@ -583,7 +617,7 @@ pub struct Jobs {
     list: Mutex<Vec<Job>>,
     wake: Condvar,
     next_id: AtomicU64,
-    cancel: AtomicBool,
+    generation: AtomicU64,
     /// Bumped whenever an image on disk changes, so pages can refresh.
     pub version: AtomicU64,
     /// Seconds to wait for one image.
@@ -602,7 +636,7 @@ impl Jobs {
             list: Mutex::new(Vec::new()),
             wake: Condvar::new(),
             next_id: AtomicU64::new(1),
-            cancel: AtomicBool::new(false),
+            generation: AtomicU64::new(1),
             version: AtomicU64::new(1),
             timeout,
         });
@@ -612,7 +646,7 @@ impl Jobs {
     }
 
     pub fn snapshot(&self) -> Vec<Job> {
-        self.list.lock().unwrap().clone()
+        self.list.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Queue assets of one story. Neutral portraits go ahead of the
@@ -640,12 +674,10 @@ impl Jobs {
             let b = build(&self.suite, a, story, &this).map_err(|e| format!("{}: {}", a.id, e))?;
             built.push((this, b.workflow));
         }
-        let mut list = self.list.lock().unwrap();
-        list.retain(|j| j.state == "queued" || j.state == "running" || !(j.story == story && chosen.iter().any(|a| a.id == j.asset)));
+        let mut list = self.list.lock().unwrap_or_else(|e| e.into_inner());
+        // a new request for an asset replaces its finished entries and any still waiting
+        list.retain(|j| j.state == "running" || !(j.story == story && chosen.iter().any(|a| a.id == j.asset)));
         for (a, (this, workflow)) in chosen.iter().zip(built) {
-            if list.iter().any(|j| j.story == story && j.asset == a.id && j.state == "queued") {
-                continue;
-            }
             let label = match &a.character {
                 Some(c) => format!("{} ({})", if c.name.is_empty() { &c.id } else { &c.name }, a.expr),
                 None => format!("{} (background)", a.name),
@@ -659,6 +691,8 @@ impl Jobs {
                 state: "queued",
                 message: String::new(),
                 seconds: 0,
+                kind: a.kind,
+                generation: self.generation.load(Ordering::Relaxed),
                 story_path: story_path.to_path_buf(),
                 overrides: this,
             });
@@ -668,35 +702,46 @@ impl Jobs {
             let mut dropped = 0;
             list.retain(|j| j.state == "queued" || j.state == "running" || { dropped += 1; dropped > extra });
         }
-        self.cancel.store(false, Ordering::Relaxed);
+        // whatever order requests came in, a neutral portrait runs before the expressions built from it
+        let rank = |j: &Job| ["background", "sprite", "expression"].iter().position(|k| *k == j.kind).unwrap_or(3);
+        let mut waiting: Vec<Job> = list.iter().filter(|j| j.state == "queued").cloned().collect();
+        waiting.sort_by_key(rank);
+        let mut waiting = waiting.into_iter();
+        for j in list.iter_mut().filter(|j| j.state == "queued") {
+            *j = waiting.next().expect("same number of queued jobs");
+        }
         self.wake.notify_all();
         Ok(chosen.len())
     }
 
     /// Drop everything queued and stop the job in hand.
     pub fn cancel_all(&self) {
-        self.cancel.store(true, Ordering::Relaxed);
-        for j in self.list.lock().unwrap().iter_mut().filter(|j| j.state == "queued") {
+        self.generation.fetch_add(1, Ordering::Relaxed);
+        for j in self.list.lock().unwrap_or_else(|e| e.into_inner()).iter_mut().filter(|j| j.state == "queued") {
             j.state = "cancelled";
         }
+    }
+
+    /// Drop the jobs of one story (it is being removed).
+    pub fn forget_story(&self, story: &str) {
+        self.list.lock().unwrap_or_else(|e| e.into_inner()).retain(|j| j.story != story || j.state == "running");
     }
 
     fn work(&self) {
         loop {
             let job = {
-                let mut list = self.list.lock().unwrap();
+                let mut list = self.list.lock().unwrap_or_else(|e| e.into_inner());
                 loop {
                     if let Some(j) = list.iter_mut().find(|j| j.state == "queued") {
                         j.state = "running";
                         break j.clone();
                     }
-                    list = self.wake.wait(list).unwrap();
+                    list = self.wake.wait(list).unwrap_or_else(|e| e.into_inner());
                 }
             };
-            self.cancel.store(false, Ordering::Relaxed);
             let started = Instant::now();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.run(&job))).unwrap_or_else(|_| Err("the editor hit an internal error while painting the guide".into()));
-            let mut list = self.list.lock().unwrap();
+            let mut list = self.list.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(j) = list.iter_mut().find(|j| j.id == job.id) {
                 j.seconds = started.elapsed().as_secs();
                 match result {
@@ -724,7 +769,11 @@ impl Jobs {
         let target = out_dir.join(asset.output());
         let cfg = self.suite.config()?;
         let client = Client::new(cfg["server"].as_str().unwrap_or("http://127.0.0.1:8188"), Duration::from_secs(120));
+        let cancelled = || self.generation.load(Ordering::Relaxed) != job.generation;
         for (name, role) in &built.uploads {
+            if cancelled() {
+                return Err("cancelled".into());
+            }
             let png = match role.as_str() {
                 "base" => {
                     let neutral = out_dir.join(format!("spr_{}_neutral.png", asset.character.as_ref().map_or("", |c| c.id.as_str())));
@@ -737,13 +786,16 @@ impl Jobs {
             client.upload(name, &png)?;
         }
         let prompt_id = client.queue(&built.prompt, &format!("below-stairs-editor-{}", job.id))?;
-        let image = client.wait(&prompt_id, &built.output_node, self.timeout, &self.cancel)?;
+        let image = client.wait(&prompt_id, &built.output_node, self.timeout, &cancelled)?;
         let bytes = client.download(&image)?;
         if !bytes.starts_with(PNG_MAGIC) || bytes.len() < 33 {
             return Err("ComfyUI returned something that is not a PNG".into());
         }
         if asset.character.is_some() && !matches!(bytes[25], 4 | 6) {
             return Err("the result has no transparency; a character workflow must end by cutting the figure out".into());
+        }
+        if !job.story_path.is_file() {
+            return Err("the story was removed while this image was being made; nothing was saved".into());
         }
         std::fs::create_dir_all(&out_dir).map_err(|e| format!("{}: {}", out_dir.display(), e))?;
         let tmp = out_dir.join(format!("{}.part", asset.output()));
@@ -838,6 +890,61 @@ mod tests {
         let mut bad = good.clone();
         bad["10"]["inputs"].as_object_mut().unwrap().remove("denoise");
         assert!(!validate_graph(&bad, &specs).is_empty());
+    }
+
+    #[test]
+    fn seeds_match_the_python_runner() {
+        // zlib.crc32(b"p") == 0x8dbdc8e9 and zlib.crc32(b"bg_axis") == 0x1c4e2b0b... checked against Python below
+        assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
+        assert_eq!(crc32(b""), 0);
+    }
+
+    #[test]
+    fn a_resend_replaces_the_waiting_job_and_neutrals_go_first() {
+        let jobs = Jobs { suite: suite(), list: Mutex::new(Vec::new()), wake: Condvar::new(), next_id: AtomicU64::new(1), generation: AtomicU64::new(1), version: AtomicU64::new(1), timeout: Duration::from_secs(1) };
+        let doc = story();
+        let path = Path::new("assets/story.txt");
+        let ids = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        jobs.enqueue("main", path, &doc, &ids(&["spr_p_smile", "bg_axis"]), &Overrides::default()).unwrap();
+        let mut ov = Overrides::default();
+        ov.workflow = Some("background_reimagine.json".into());
+        jobs.enqueue("main", path, &doc, &ids(&["bg_axis", "spr_p_neutral"]), &ov).unwrap();
+        let list = jobs.snapshot();
+        assert_eq!(list.iter().map(|j| j.asset.as_str()).collect::<Vec<_>>(), ["bg_axis", "spr_p_neutral", "spr_p_smile"]);
+        assert_eq!(list[0].workflow, "background_reimagine.json");
+        assert_eq!(list[1].workflow, "sprite_base.json");
+        // cancelling ends this generation; later sends are a new one
+        jobs.cancel_all();
+        assert!(jobs.snapshot().iter().all(|j| j.state == "cancelled"));
+        jobs.enqueue("main", path, &doc, &ids(&["bg_study"]), &Overrides::default()).unwrap();
+        let fresh = jobs.snapshot().into_iter().find(|j| j.asset == "bg_study").unwrap();
+        assert_eq!(fresh.generation, jobs.generation.load(Ordering::Relaxed));
+        assert_ne!(list[0].generation, fresh.generation);
+        jobs.forget_story("main");
+        assert!(jobs.snapshot().is_empty());
+    }
+
+    #[test]
+    fn a_wrong_output_node_or_per_asset_workflow_is_handled() {
+        let dir = std::env::temp_dir().join(format!("bsas-suite-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("workflows")).unwrap();
+        let mut cfg: Value = serde_json::from_str(BUILT_IN_CONFIG).unwrap();
+        cfg["overrides"]["bg_study"] = json!({ "workflow": "background_reimagine.json" });
+        std::fs::write(dir.join("config.json"), cfg.to_string()).unwrap();
+        for (name, text) in BUILT_IN_WORKFLOWS {
+            std::fs::write(dir.join("workflows").join(name), text).unwrap();
+        }
+        let mut bad: Value = serde_json::from_str(BUILT_IN_WORKFLOWS[0].1).unwrap();
+        bad["output_node"] = json!("11");
+        std::fs::write(dir.join("workflows").join("bad.json"), bad.to_string()).unwrap();
+        let s = Suite { dir: dir.clone() };
+        let assets = assets_for(&story());
+        let study = assets.iter().find(|a| a.id == "bg_study").unwrap();
+        assert_eq!(build(&s, study, "main", &Overrides::default()).unwrap().workflow, "background_reimagine.json");
+        assert_eq!(build(&s, &assets[0], "main", &Overrides::default()).unwrap().workflow, "background.json");
+        let ov = Overrides { workflow: Some("bad.json".into()), ..Default::default() };
+        assert!(build(&s, &assets[0], "main", &ov).unwrap_err().contains("SaveImage"));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

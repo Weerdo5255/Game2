@@ -268,13 +268,18 @@ fn parse_line(line: &str) -> Result<Line, String> {
             return Ok(Line::Var(v));
         }
         "chapter" => {
+            // chapter Name | x y | note - written by hand, the position is often left out
             let parts: Vec<&str> = rest.splitn(3, '|').map(str::trim).collect();
-            let xy: Vec<f32> = parts.get(1).unwrap_or(&"").split_whitespace().filter_map(|v| v.parse().ok()).collect();
-            return Ok(Line::Chapter(ChapterDef {
-                name: parts[0].to_string(),
-                pos: if xy.len() == 2 { Some((xy[0], xy[1])) } else { None },
-                note: parts.get(2).unwrap_or(&"").to_string(),
-            }));
+            let second = parts.get(1).copied().unwrap_or("");
+            let words: Vec<&str> = second.split_whitespace().collect();
+            let xy: Vec<f32> = words.iter().filter_map(|v| v.parse().ok()).collect();
+            let is_pos = words.len() == 2 && xy.len() == 2;
+            let note = match (is_pos || second.is_empty(), parts.get(2)) {
+                (true, third) => third.unwrap_or(&"").to_string(),
+                (false, None) => second.to_string(),
+                (false, Some(third)) => format!("{} | {}", second, third),
+            };
+            return Ok(Line::Chapter(ChapterDef { name: parts[0].to_string(), pos: if is_pos { Some((xy[0], xy[1])) } else { None }, note }));
         }
         "bg" if toks.len() == 2 => Item::Bg { name: toks[1].into() },
         "show" if toks.len() == 4 => Item::Show { who: toks[1].into(), expr: toks[2].into(), slot: toks[3].into() },
@@ -372,9 +377,16 @@ impl Doc {
     pub fn sanitize(&mut self) {
         let id = |s: &mut String| *s = s.trim().to_string();
         let pipe_free = |s: &mut String| *s = one_line(s).replace('|', "/");
+        // text that ends a line must not end in the field separator
+        let last_field = |s: &str| one_line(s).trim_end_matches([' ', '|']).to_string();
         pipe_free(&mut self.title);
-        self.subtitle = one_line(&self.subtitle);
-        self.header.iter_mut().for_each(|h| *h = comment_line(h));
+        self.subtitle = last_field(&self.subtitle);
+        for h in self.header.iter_mut() {
+            *h = comment_line(h);
+            if h.starts_with("@pos ") || h.starts_with("@chapter ") {
+                h.insert(0, '(');
+            }
+        }
         // items of an unlabelled scene anywhere but first would be absorbed by the scene before it
         let mut i = 1;
         while i < self.scenes.len() {
@@ -400,7 +412,7 @@ impl Doc {
         // every chapter a scene names exists, once
         for c in &mut self.chapters {
             pipe_free(&mut c.name);
-            c.note = one_line(&c.note);
+            c.note = last_field(&c.note).replace('|', "/");
         }
         for scene in &mut self.scenes {
             scene.chapter = one_line(&scene.chapter).replace('|', "/");
@@ -1097,6 +1109,23 @@ mod tests {
         let plain = Doc::parse("*start\nn: Hi.\n*two\nn: Bye.\nend Done | .\n*three\nn: x\n").0;
         assert_eq!(Script::compile(&doc).cmds.len(), Script::compile(&plain).cmds.len() + 0);
         assert_eq!(Script::compile(&doc).labels, Script::compile(&plain).labels);
+    }
+
+    #[test]
+    fn awkward_titles_and_chapter_lines_survive() {
+        let (doc, errors) = Doc::parse("chapter Act One | the long night\nchapter Two | 5 6\nchapter Three | 1 2 | notes | more\n*start\nn: Hi.\nend X | y\n");
+        assert!(errors.is_empty());
+        assert_eq!((doc.chapters[0].note.as_str(), doc.chapters[0].pos), ("the long night", None));
+        assert_eq!((doc.chapters[1].note.as_str(), doc.chapters[1].pos), ("", Some((5.0, 6.0))));
+        assert_eq!(doc.chapters[2].note, "notes | more");
+        let mut doc = doc;
+        doc.subtitle = "What now |".into();
+        doc.title = "T".into();
+        doc.chapters[0].note = "ends with a pipe |".into();
+        doc.header.push("@pos 3 4".into());
+        doc.sanitize();
+        assert!(doc.survives_text().is_ok(), "{:?}", doc.survives_text());
+        assert_eq!(doc.subtitle, "What now");
     }
 
     #[test]

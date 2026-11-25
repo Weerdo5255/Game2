@@ -242,6 +242,7 @@ let sel = -1, selItem = -1, tab = "cast", openChar = null, previewExpr = "neutra
 let view = { x: 40, y: 40, k: 1 };
 let undoStack = [], redoStack = [], dirty = false, typingSnapshot = null;
 let drag = null; // block or scene being dragged: {type, scene, item}
+let revision = null; // fingerprint of the story file as last loaded or saved
 let storyId = (location.hash.match(/story=([\w-]+)/) || [])[1] || "main", stories = [];
 let artVersion = 0; // bumped when images on disk change, so previews reload
 /** Add the current story (and art version, for images) to a URL. */
@@ -272,7 +273,7 @@ function toast(msg, isErr) {
 async function api(method, path, body) {
   const r = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
   const data = await r.json().catch(() => ({ error: "the editor server gave an unreadable answer" }));
-  if (!r.ok) throw new Error(data.error || r.statusText);
+  if (!r.ok) { const err = new Error(data.error || r.statusText); err.conflict = !!data.conflict; throw err; }
   return data;
 }
 const charById = id => doc.characters.find(c => c.id === id);
@@ -398,7 +399,14 @@ function scheduleValidate() {
 async function save() {
   try {
     const sent = snapshot();
-    const r = await api("PUT", forStory("/api/story"), doc);
+    let r;
+    try { r = await api("PUT", forStory("/api/story") + "&base=" + encodeURIComponent(revision || ""), doc); }
+    catch (e) {
+      if (!e.conflict) throw e;
+      if (!confirm("The story file has changed since you opened it (another tab, or an edit by hand).\n\nOK: save anyway, replacing what is on disk.\nCancel: keep the file; reload the page to see it (your changes here would be lost).")) return false;
+      r = await api("PUT", forStory("/api/story") + "&force=1", doc);
+    }
+    revision = r.revision;
     // anything typed while the request was on its way is still unsaved
     problems = r.problems; parseErrors = []; dirty = snapshot() !== sent; updateBar(); markProblems(); renderProblems();
     toast("Saved");
@@ -450,10 +458,12 @@ function chapterFlow(name) {
   if (!entries.size && members.length) entries.add(members[0]);
   // the range of each property's net change over every way through the chapter
   const memo = new Map(), visiting = new Set();
+  let loops = false, open = 0; // open: how many unfinished loops the scene being worked out sits in
   const range = i => {
     if (memo.has(i)) return memo.get(i);
-    if (visiting.has(i)) return new Map();
+    if (visiting.has(i)) { loops = true; open++; return new Map(); }
     visiting.add(i);
+    const openBefore = open;
     const own = effects(i), kids = internal.get(i).map(range), res = new Map();
     for (const v of new Set([...own.map(e => e.var), ...kids.flatMap(k => [...k.keys()])])) {
       let lo = Infinity, hi = -Infinity, sets = false;
@@ -463,7 +473,9 @@ function chapterFlow(name) {
       if (e && e.set) sets = true; else if (e) { lo += e.n; hi += e.n; }
       res.set(v, { lo, hi, sets });
     }
-    visiting.delete(i); memo.set(i, res);
+    visiting.delete(i);
+    // a result worked out part-way round a loop is not the whole story: do not reuse it
+    if (open === openBefore) memo.set(i, res); else if (!visiting.size) open = 0;
     return res;
   };
   const changes = new Map();
@@ -476,7 +488,7 @@ function chapterFlow(name) {
     if (it.t === "if") reads.add(it.var);
     if (it.t === "choice") it.options.forEach(o => o.cond && reads.add(o.cond.var));
   }));
-  return { members, entries: [...entries], exits: out, ends, changes, reads };
+  return { members, entries: [...entries], exits: out, ends, changes, reads, loops };
 }
 /** A chip for what a chapter passes out: "Detente -2…+3", "Suspicion +1", "Knows … set". */
 function rangeChip(id, r) {
@@ -532,7 +544,7 @@ function chapterNode(c) {
         bgs.map(b => el("img", { class: "thumb", style: "width:48px;height:27px", src: bgUrl(b), title: b, draggable: false })),
         el("div", { class: "cast" }, cast.map(ch => avatar(ch)))),
       c.note && el("div", { class: "snip", text: c.note }),
-      passes.length > 0 && el("div", { class: "flow" }, el("span", { class: "flab", text: "passes out" }), passes),
+      passes.length > 0 && el("div", { class: "flow" }, el("span", { class: "flab", text: f.loops ? "passes out (per pass; it loops)" : "passes out" }), passes),
       f.reads.size > 0 && el("div", { class: "flow" }, el("span", { class: "flab", text: "depends on" }), [...f.reads].map(v => el("span", { class: "chip", text: varLabel(v) })))),
     el("div", { class: "ins" }, f.entries.map(i => el("div", { class: "in", "data-entry": i, title: "A way into this chapter", text: "▸ " + doc.scenes[i].label }))),
     el("div", { class: "outs" }, f.exits.map(o => outRow(o, doc.scenes[o.si].label + ": "))));
@@ -715,7 +727,7 @@ function enterChapter(name) {
 function newChapter(members) {
   let name;
   change(() => {
-    name = uniqueId("Chapter", doc.chapters.map(c => c.name)).replace("_", " ");
+    for (let n = doc.chapters.length + 1; !name || chapterDef(name); n++) name = "Chapter " + n;
     doc.chapters.push({ name, pos: null, note: "" });
     (members || []).forEach(i => { doc.scenes[i].chapter = name; doc.scenes[i].pos = null; });
     curChapter = ""; sel = -1; selChapter = name;
@@ -805,7 +817,11 @@ function setupStage() {
         window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); rubber.remove(); clear();
         const t = document.elementFromPoint(e.clientX, e.clientY), ti = dropScene(t);
         if (ti >= 0) retarget(si, o, doc.scenes[ti].label);
-        else if (t && t.closest("#stage") && !t.closest(".node")) { const at = stagePoint(e); addScene([Math.round(at[0]), Math.round(at[1] - 18)], label => applyTarget(si, o, label)); }
+        else if (t && t.closest("#stage") && !t.closest(".node")) {
+          // the new scene may be inserted ahead of the source in the file, so find the source again by identity
+          const at = stagePoint(e), source = doc.scenes[si];
+          addScene([Math.round(at[0]), Math.round(at[1] - 18)], label => applyTarget(doc.scenes.indexOf(source), o, label));
+        }
       };
       window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
     } else if (node) {
@@ -983,7 +999,9 @@ function chapterInspector(host, c) {
     bindText(el("textarea", { rows: 2, placeholder: "A note about this chapter (for you; not shown in the game)" }), c, "note"),
     el("div", { class: "sect", text: "Passes out to the story" }),
     passes.length ? el("div", {}, passes) : el("div", { class: "sub", style: "color:var(--dim)", text: "This chapter changes no properties." }),
-    passes.length > 0 && el("div", { class: "sub", style: "color:var(--dim);margin-top:4px", text: "The range covers every route through the chapter. Open it to see and edit the consequences that add up to this." }),
+    passes.length > 0 && el("div", { class: "sub", style: "color:var(--dim);margin-top:4px", text: f.loops
+      ? "This chapter can loop back on itself, so the figures are for one pass; going round again adds more."
+      : "The range covers every route through the chapter. Open it to see and edit the consequences that add up to this." }),
     el("div", { class: "sect", text: "Depends on" }),
     f.reads.size ? el("div", {}, [...f.reads].map(v => el("span", { class: "chip link", text: varLabel(v), title: "Open in Properties", onclick: () => { tab = "props"; renderLeft(); const card = $(`#leftBody .card[data-id="${v}"]`); if (card) card.scrollIntoView({ block: "center" }); } })))
                  : el("div", { class: "sub", style: "color:var(--dim)", text: "Nothing: no condition inside tests a property." }),
@@ -1019,7 +1037,7 @@ function renderInspector() {
     el("button", { class: "ghost danger", title: "Delete this scene", text: "✕", onclick: () => {
       const refs = doc.scenes.filter((x, i) => i !== sel && exits(i).some(o => o.target === s.label && o.kind !== "fall")).length;
       if (!confirm(`Delete scene '${s.label}'?` + (refs ? ` ${refs} other scene(s) lead here and will need rerouting.` : ""))) return;
-      change(() => { doc.scenes.splice(sel, 1); sel = Math.min(sel, doc.scenes.length - 1); selItem = -1; });
+      change(() => { doc.scenes.splice(sel, 1); sel = Math.min(sel, doc.scenes.length - 1); if (sel >= 0 && chapterOf(sel) !== curChapter) sel = -1; selItem = -1; });
     } })));
   const NEW_CHAPTER = "\u0000new";
   host.append(el("div", { class: "brow chapterpick", style: "margin-bottom:8px" }, el("label", { text: "Chapter" }),
@@ -1204,7 +1222,7 @@ function renderScenes(host) {
     el("div", { class: "sect", style: "margin-top:0", text: "This story" }),
     bindText(el("input", { type: "text", placeholder: "Title (shown on the title screen)", style: "width:100%;font-weight:600" }), doc, "title", () => { const o = $("#storySel").selectedOptions[0]; if (o) o.textContent = doc.title || "Untitled story"; }),
     bindText(el("input", { type: "text", placeholder: "Subtitle", style: "width:100%;margin-top:6px" }), doc, "subtitle")));
-  host.append(el("input", { type: "text", placeholder: "Filter scenes…", value: sceneFilter, style: "width:100%;margin-bottom:8px", oninput: ev => { sceneFilter = ev.target.value; const pos = ev.target.selectionStart; renderLeft(); const f = $("#leftBody input"); f.focus(); f.setSelectionRange(pos, pos); } }),
+  host.append(el("input", { type: "text", class: "filter", placeholder: "Filter scenes…", value: sceneFilter, style: "width:100%;margin-bottom:8px", oninput: ev => { sceneFilter = ev.target.value; const pos = ev.target.selectionStart; renderLeft(); const f = $("#leftBody input.filter"); f.focus(); f.setSelectionRange(pos, pos); } }),
     el("div", { class: "sub", style: "color:var(--dim);margin-bottom:6px", text: "The order matters only where a scene continues into the next one. Drag to reorder, or drag a scene on to a chapter in the main graph to move it there." }));
   if (doc.chapters.length) host.append(el("div", { class: "card" }, el("div", { class: "sect", style: "margin-top:0", text: "Chapters" }),
     doc.chapters.map(c => el("div", { class: "srow" + (curChapter === c.name ? " on" : ""), onclick: () => enterChapter(c.name) },
@@ -1235,8 +1253,7 @@ function renderProblems() {
   problems.forEach(p => host.append(el("div", { class: "prow", onclick: () => { const si = sceneIndex(p.scene); if (si >= 0) select(si, p.item, true); host.classList.remove("show"); } },
     el("span", { class: "dot " + p.level }), el("span", {}, p.scene && el("b", { text: p.scene + ": " }), p.msg))));
   if (!host.childElementCount) host.append(el("div", { class: "empty", text: "Nothing wrong with the story." }));
-  if (sel >= 0 && !$("#insp").contains(document.activeElement)) renderInspector();
-  else if (sel < 0) renderInspector();
+  if (!$("#insp").contains(document.activeElement)) renderInspector();
   if (tab === "scenes" && !$("#left").contains(document.activeElement)) renderLeft();
 }
 function renderAll(opts) {
@@ -1252,13 +1269,14 @@ async function boot() {
 }
 /** Open a story from the library, replacing whatever was being edited. */
 async function loadStory(id) {
-  let data;
+  // fetch first, switch only once everything has arrived
+  let data, list;
   try {
-    stories = (await api("GET", "/api/stories")).stories;
-    if (!stories.some(x => x.id === id)) id = "main";
-    storyId = id;
-    data = await api("GET", forStory("/api/story"));
-  } catch (e) { toast("Could not load the story: " + e.message, true); return; }
+    list = (await api("GET", "/api/stories")).stories;
+    if (!list.some(x => x.id === id)) id = "main";
+    data = await api("GET", "/api/story?story=" + encodeURIComponent(id));
+  } catch (e) { toast("Could not load the story: " + e.message, true); return false; }
+  stories = list; storyId = id; revision = data.revision;
   history.replaceState(null, "", "#story=" + storyId);
   doc = data.doc; meta = data.meta; problems = data.problems; parseErrors = data.parse_errors;
   undoStack = []; redoStack = []; dirty = false; selItem = -1; openChar = null; sceneFilter = ""; view = { x: 40, y: 40, k: 1 };
@@ -1270,6 +1288,7 @@ async function loadStory(id) {
   document.title = (doc.title || "Untitled story") + " - Story Editor";
   if (parseErrors.length) { toast(`${parseErrors.length} line(s) of the story file could not be understood; they are kept as notes.`, true); $("#probs").classList.add("show"); }
   if (art.open) openArt();
+  return true;
 }
 const NEW_STORY = "\u0000new", COPY_STORY = "\u0000copy", REMOVE_STORY = "\u0000remove";
 function renderStoryMenu() {
@@ -1284,19 +1303,21 @@ function renderStoryMenu() {
 async function storyMenuChanged() {
   const v = $("#storySel").value, back = () => { $("#storySel").value = storyId; };
   if (dirty && !confirm("This story has unsaved changes. Leave it without saving?")) return back();
+  // only forget the unsaved changes once the other story has really opened
+  const open = async id => { const was = dirty; dirty = false; if (await loadStory(id)) return true; dirty = was; updateBar(); back(); return false; };
   try {
     if (v === NEW_STORY || v === COPY_STORY) {
       const current = stories.find(x => x.id === storyId);
       const title = prompt(v === NEW_STORY ? "Title of the new story:" : "Title of the copy:", v === NEW_STORY ? "" : (current ? current.title : "") + " (copy)");
       if (!title || !title.trim()) return back();
       const made = await api("POST", "/api/stories", { title, copy: v === COPY_STORY ? storyId : null });
-      dirty = false; await loadStory(made.id); toast("Created '" + title.trim() + "'");
+      if (await open(made.id)) toast("Created '" + title.trim() + "'");
     } else if (v === REMOVE_STORY) {
       const current = stories.find(x => x.id === storyId);
       if (!confirm(`Remove '${current ? current.title : storyId}' from the library? Its folder is moved to stories/.removed, not deleted.`)) return back();
       await api("POST", "/api/stories/remove", { story: storyId });
-      dirty = false; await loadStory("main"); toast("Story removed");
-    } else { dirty = false; await loadStory(v); }
+      if (await open("main")) toast("Story removed");
+    } else await open(v);
   } catch (e) { toast(e.message, true); back(); }
 }
 
@@ -1320,7 +1341,7 @@ async function refreshArt() {
 async function checkServer() {
   art.server = null; renderServerLamp();
   try { art.server = await api("GET", "/api/art/server"); } catch (e) { art.server = { ok: false, error: e.message }; }
-  if (art.open) renderArt();
+  if (art.open && !artTyping()) renderArt(); else if (art.open) { art.stale = true; renderServerLamp(); }
 }
 function renderServerLamp() {
   const lamp = $("#art .lamp"), note = $("#art .srvnote"); if (!lamp) return;

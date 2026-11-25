@@ -91,6 +91,8 @@ to rebuild.
   **Play** and **Play from here** save and launch the game at that scene.
 - Undo and redo work on everything; the first save of a session keeps the
   previous file as `story.txt.bak`.
+- If the story file changes on disk while you have it open (another tab, an
+  edit by hand), saving asks before replacing it.
 
 ### Working with chapters
 
