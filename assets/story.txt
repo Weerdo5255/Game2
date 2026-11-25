@@ -1,0 +1,571 @@
+# BELOW STAIRS, ABOVE STARS - story script
+#
+# Syntax (one command per line):
+#   *label                      jump target
+#   card Title | Subtitle       chapter card
+#   bg name                     change background (clears the cast)
+#   show who expr slot          who: p v s q t c a   slot: left center right
+#   hide slot|all
+#   who: text                   dialogue; "n" is narration, "m" is Marlowe
+#   choice                      followed by option lines:
+#   - [var >= n] text => label  (the [condition] is optional)
+#   add var n / set var n       story variables (all start at 0)
+#   if var >= n goto label
+#   goto label
+#   end Title | Epilogue
+#
+# Variables: peace (detente), heat (suspicion), favor (Peregrine's regard),
+#            trust (Quince), canvas, water, ally (flags)
+
+*start
+card Prologue | Thistlemere, Halcyon Reach
+bg pantry
+n: Morning on Halcyon Reach arrives the way everything arrives here: on schedule, by committee, and three minutes late so that His Lordship may feel he was waited for.
+n: The sunline brightens along the axis. Eight kilometres overhead, somebody else's lake catches the light. I stopped looking up years ago. Looking up is for tourists and theologians.
+n: My name is Marlowe. I am Head of Household to the Honourable Peregrine Varrow, who turns twenty tomorrow and has never once in his life opened a door.
+show c neutral right
+c: You've the look of a person counting to ten, Marlowe.
+m: I am counting to twenty, Cook. It is the Young Master's birthday.
+c: Weather Office rang. His Lordship's had the rain moved again. Says a drizzle on the eve of a gala is 'defeatist'.
+c: That's three days of rain banked up now. When they finally let it go, we'll want boats.
+m: And our guests?
+show c worried right
+c: Lord Solberg's yacht matched spin an hour ago. All the way from Meridian Spindle, with forty trunks and, so the dock boys say, his own air.
+m: His own air.
+c: In bottles. Vintage.
+n: Lord Solberg and Lord Varrow have not spoken civilly since the Veil: a comet of excellent ice, parked between our two cylinders and claimed, loudly, by both.
+n: Officially, Solberg comes to toast the heir. Unofficially, every pantry between here and Meridian knows what follows a toast when lords are involved. An ultimatum.
+n: The bell board chimes. Third row, gold tag. The Axis.
+show c smile right
+c: He's wanting breakfast up the hub again. Mind the marmalade. It wanders.
+
+# ---------------------------------------------------------------- chapter 1
+card Chapter One | A Breakfast at the Axis
+bg axis
+n: At the hub of the cylinder there is no gravity, no dignity, and, as of this morning, one croissant in a slow polar orbit around the heir to Thistlemere.
+show p smile center
+p: Marlowe! Splendid. Catch that teacup, would you? No, let it go. It's happier.
+m: Good morning, sir. Many happy returns of tomorrow.
+p: Twenty, Marlowe. Twenty! A man of twenty must have Views. I have been up here since six, having them.
+m: I tremble to ask, sir.
+p: View the first. The soup at my gala is to be served up here, weightless. In spheres. Guests shall pursue it with straws. It will be the making of the season.
+choice
+- "An inspired notion, sir. Might I suggest a chilled soup? Scalded dukes litigate." => soup_yes
+- "Sir, the last weightless course put the Bishop of the Ring in a ventilation duct." => soup_no
+- "Spheres are last year, sir. Lady Okoro did spheres. One hears that cubes are coming." => soup_cube
+
+*soup_yes
+add favor 1
+show p smile center
+p: Chilled! You see, this is why I keep you. Father's man would have said 'no' and then something about insurance.
+n: I make a note to rehearse the spheres. I make a second note to ensure the rehearsal is a catastrophe that happens to somebody else.
+goto ch1_swan
+
+*soup_no
+add favor -1
+show p angry center
+p: The Bishop was perfectly all right. They got him out with a broom. Really, Marlowe, one begins to suspect you of gravity.
+n: He sulks, rotating gently. A sulk in free fall has nowhere to settle, and so it simply continues.
+goto ch1_swan
+
+*soup_cube
+add favor 1
+show p shock center
+p: Cubes! Good lord. Did she really? Then spheres are positively provincial. Cubes it is. How does one make soup into a cube?
+m: One serves it in a bowl, sir, and describes it boldly.
+show p smile center
+p: Marlowe, you are an artist.
+goto ch1_swan
+
+*ch1_swan
+show a neutral right
+n: Something large and white drifts out from behind the telescope, upside down, radiating contempt.
+show p smile center
+p: View the second. The Admiral.
+n: The Admiral is a swan. He was a gift. He holds, by the Young Master's decree, an honorary commission in the House fleet, and he has bitten two viscounts.
+p: He is to be promoted. Admiral of the Fleet, entire. Father can hardly object. He's the only officer we've got who is actually seaworthy.
+m: Sir?
+show p smug center
+p: Oh, you know. The fleet. Father's had all sixty hulls towed out of mothballs to glower at Solberg's yacht. Terribly fierce. Thirty-one of them are canvas.
+m: ...Canvas, sir.
+p: Painted! Stretched over scaffolding. Rather good brushwork. One can't tell from beyond a kilometre.
+show p neutral center
+p: The real ones were sold years ago to pay for... well. For this, I suppose. For me. For the hedges.
+n: He says it the way one mentions the weather. I file it the way one files a lit match.
+a: Honk.
+show p smile center
+p: Quite right, Admiral. Marlowe? The promotion?
+choice
+- "I shall have the commission drawn up on vellum, sir. He will want to eat it." => swan_yes
+- "Sir, a swan cannot outrank real captains. Not with the fleet at such a delicate moment." => swan_no
+
+*swan_yes
+add favor 1
+p: Vellum! Yes. With a ribbon. He's partial to ribbon.
+n: The Admiral regards me with one black eye. It is the look of a superior officer who has not yet decided whether I am crew or bread.
+goto ch2
+
+*swan_no
+add favor -1
+add heat 1
+show p neutral center
+p: Delicate moment? I say, Marlowe, you do keep up. I shall tell Father you take an interest in the fleet. He likes a man who takes an interest.
+n: I would rather he did not. A servant observed to be interested is a servant observed. I say none of this. I retrieve the marmalade.
+goto ch2
+
+# ---------------------------------------------------------------- chapter 2
+*ch2
+card Chapter Two | Forty Trunks and a Grievance
+bg dock
+n: The private dock of Thistlemere. Lord Solberg's yacht, the Unimpeachable, sits in our cradle like a swallowed insult.
+show v neutral left
+v: Marlowe. Is my son presentable?
+m: He is at the Axis, my lord, promoting a swan.
+v: Then he's out of the way. Good. Stand there and look as though we have more servants than they do.
+n: The airlock cycles. First through it: twelve crates stencilled MERIDIAN AIR - GRAND RESERVE. Then a sedan chair. Then, in the sedan chair, Lord Hadrian Solberg.
+show s smug right
+s: Varrow. Forgive my not standing. Your spin, you understand. One-point-oh-two of a gravity. On Meridian we find anything over one to be... striving.
+show v angry left
+v: Solberg. You'll find our gravity is like our fleet. There is rather more of it than you would prefer.
+s: Ah, yes. I counted the hulls on approach. Sixty! One does wonder how a house affords it.
+v: One may wonder a great many things. One may wonder them at dinner.
+n: They smile at each other. I have seen friendlier expressions on airlocks.
+hide all
+n: The lords depart by separate corridors, as lords do. That leaves the trunks, and the people who carry them.
+show q neutral right
+n: She is counting crates without appearing to. Grey livery, Meridian teal at the cuff, the posture of a person who has not been surprised since childhood.
+q: Quince. Steward to Lord Solberg. You will be Marlowe.
+m: I will. I generally am.
+q: His Lordship requires a bath drawn at point-eight gravities, a room facing away from the direction of spin, and that nobody refer to the comet.
+m: Which comet?
+show q smile right
+q: Very good.
+show t smile left
+t: 'Scuse me, sorry, which tap's the drinking water? Only I've got to top up the Grand Reserve before...
+show q angry right
+q: Tobe.
+show t worried left
+t: ...before nothing. Before nothing at all. Lovely dock.
+hide left
+n: The footman flees, clutching an empty bottle labelled MERIDIAN SPRING - GRAND RESERVE. I notice it. Noticing is the whole of my profession.
+show q neutral right
+n: Quince is watching me notice.
+choice
+- "Shall we be correct with each other, Steward? Schedules at six, grievances at nine." => q_formal
+- "Between ourselves: mine has just promoted a swan. What has yours done?" => q_joke
+- "Is your master here to start a war, Steward? I only ask for the catering." => q_probe
+
+*q_formal
+q: Correct. Yes. I find correctness restful. Six, then.
+n: She inclines her head precisely as far as protocol requires and not one degree further. I have met warmer bulkheads. But a bulkhead, at least, is honest about what it is keeping out.
+goto ch3
+
+*q_joke
+add trust 1
+show q smile right
+q: Mine travels with a bust of himself for the bedside table. In case he wakes in the night and requires reassurance.
+m: A swan and a bust. We are each well provided for.
+q: I think, Marlowe, that we shall manage to understand one another.
+goto ch3
+
+*q_probe
+add trust 1
+add heat 1
+show q shock right
+n: Her eyes go, very briefly, to the Varrow dockmaster, who is standing ten feet away and has abruptly become fascinated by a clipboard.
+show q neutral right
+q: You are direct. That is either courage or carelessness. Below stairs, tonight. Not here. Never here.
+goto ch3
+
+# ---------------------------------------------------------------- chapter 3
+*ch3
+card Chapter Three | Below Stairs
+bg pantry
+n: Eleven at night. Above us the lords are being civil over the fish, which is the most dangerous course. Below: the long table, the good teapot, and the only honest conversation on Halcyon Reach.
+show c neutral center
+c: Sit. Eat. Nobody's master is in this room.
+show t smile left
+show q neutral right
+t: Is it true yours has the rain on a timetable?
+c: It's true ours has the rain in arrears.
+q: I will say a thing plainly, Marlowe, because the hour is late and the tea is good. My lord did not come here for a birthday.
+q: He came to count your fleet. He has counted it. Sixty hulls frighten him, and Lord Solberg frightened is not a man who waits.
+show t worried left
+t: He's had the Long Spoon turned round.
+show q angry right
+q: Tobe.
+t: Well, he has! Biggest mass driver in the Lagrange, built for flinging ore, and it's pointing at your windows. Sorry. I liked your dock.
+t: Mind, if he ever does fire it, the lights go out from the farms to the opera house. Draws that much. Nobody's told him. Nobody dares.
+show c worried center
+n: Cook sets down the teapot very gently, the way one does when one would much prefer to throw it.
+c: And ours has sixty warships polished up and parked in plain view. Two frightened men with their fists up. I've seen this in the scullery. It ends in crockery.
+show q neutral right
+q: Then we understand one another. The question is what four servants can do about it.
+m: What servants always do. See to it that the right thing is overheard by the right person.
+q: Trade requires goods. What do you bring to the table, Marlowe?
+choice
+- Tell her everything: thirty-one of the sixty hulls are painted canvas. => share_canvas
+- Tell her the gentler truth: House Varrow is quietly, elegantly broke. => share_coffers
+- Tell her nothing yet. Trust is a thing one decants slowly. => share_nothing
+
+*share_canvas
+add trust 2
+set canvas 1
+show q shock right
+show t shock left
+q: Canvas.
+t: What, painted? Like scenery?
+show q neutral right
+q: You understand what you have handed me. If my lord learns this he will not be frightened any longer. He will be amused. An amused Solberg simply takes what he likes.
+m: Which is why I have handed it to you, Steward, and not to him.
+q: ...Yes. That is a great deal of trust. I find that I mean to deserve it.
+goto ch3_reply
+
+*share_coffers
+add trust 1
+add peace 1
+m: The house is poor. The silver is plate, the summer estate is sold, and the vintner has not been paid since spring. Lord Varrow does not want a war. He cannot afford the invitations.
+show q smile right
+q: A lord who needs money. Now that is a thing my master could be brought to understand. He thinks of very little else.
+goto ch3_reply
+
+*share_nothing
+add trust -1
+show q neutral right
+q: Prudent. I should do the same in your place.
+n: The tea goes on being good. The conversation does not.
+goto ch3_reply
+
+*ch3_reply
+if trust >= 2 goto q_water
+goto q_nowater
+
+*q_water
+set water 1
+show q worried right
+q: Then here is mine, and it is worth as much. Meridian is drying out. The reclamation plant failed in the winter. We ration baths. We ration tea.
+show t worried left
+t: The Grand Reserve's your tap water. I fill the bottles at night. He's never noticed. Says ours has 'more character'.
+q: He has not come for the Veil out of greed, Marlowe. Without that ice Meridian has perhaps two years. And he would die before he would say so to a Varrow.
+m: So. Mine has a comet he cannot afford to keep. Yours has money and nothing to drink.
+show c smile center
+c: Any two fishwives would've settled this by lunch.
+show q neutral right
+q: Fishwives are not burdened with honour. Neither lord can be seen to need. So each must discover the other's need for himself, and believe himself terribly clever.
+m: The need, mind. Not the weakness. A need makes a customer. A weakness makes a target.
+show q smile right
+q: I see why the boy keeps you. The gala, then. You pour for mine; I shall see that yours asks the right question.
+goto ch4
+
+*q_nowater
+show q neutral right
+q: Then I shall keep my own counsel as well. I will say only this: watch what my lord drinks, Marlowe. And where it comes from. Good night.
+hide right
+hide left
+show c worried center
+c: Well. That was a cold supper.
+c: Mind this, Marlowe. Tell a frightened man his enemy's weak, and he'll hit him. Tell him his enemy's wanting something, and he'll start naming a price. I've seen it at the fish market. Lords are no different. They only smell better.
+goto ch4
+
+# ---------------------------------------------------------------- chapter 4
+*ch4
+card Chapter Four | An Affair of Honour
+bg vista
+n: The birthday dawns in perfect, rescheduled sunshine. Overhead the far fields hang like a quilt on a line. I have been awake since four, ironing a cravat for a swan.
+show p angry center
+p: Marlowe! My sabres. The good ones. Great-grandfather's.
+m: Sir. May one ask whom we are stabbing?
+p: Solberg. At breakfast he looked directly at the Admiral and said... I can hardly repeat it.
+show a angry right
+a: Honk.
+p: He called him 'a handsome goose'.
+n: Ah.
+p: I have sent my card. He has accepted! We meet on the south lawn at nine. To first blood, or second. I forget which one is fashionable.
+n: The heir of Halcyon and the Lord of Meridian, with swords, on the very day both houses have their fists up. Wars have started over less. Most wars have started over less.
+choice
+- Swap the sabres for the silver cake knives and announce the Ceremonial First Cut. => duel_cake
+- "Sir. The insult was to the Admiral. Surely the order to engage is his to give?" => duel_swan
+- Inform Lord Varrow at once, and let a father deal with it. => duel_father
+
+*duel_cake
+add favor 1
+add peace 1
+hide right
+show s neutral right
+n: At nine, on the south lawn, before forty guests, I present two noblemen with matched cake knives on a velvet cushion, and announce the ancient Halcyon rite of the First Cut. I invented it at ten past eight.
+show s smug right
+s: Charming. On Meridian we simply eat the cake.
+show p smile center
+p: I say. Is this how duels go? It's rather jolly.
+n: They cut. There is applause. Lord Solberg is given the corner piece, honour is declared satisfied, and nobody is perforated.
+goto ch4_after
+
+*duel_swan
+add favor 1
+add peace 1
+show p shock center
+p: By Jove. Chain of command! He IS the senior officer. Admiral! Your orders, sir?
+show a neutral right
+n: The Admiral regards the Young Master. He regards the sabres. Then he tucks his head beneath his wing and goes to sleep.
+show p smile center
+p: He's standing the fleet down. Magnanimous! That's command for you, Marlowe. I shall write to Solberg that the Admiral accepts his apology.
+m: He has not apologised, sir.
+p: He won't know that until he's read it.
+goto ch4_after
+
+*duel_father
+add favor -2
+add heat -1
+hide all
+show v angry left
+v: A duel. With Solberg. Today. Have the boy shut in the orangery until the dancing, and have the sabres put somewhere he cannot reach. A shelf will do.
+show v neutral left
+v: You have sense, Marlowe. It is a rare thing in this house and I do not forget it.
+show p angry right
+p: You PEACHED, Marlowe. I shall never forgive you. I shall forgive you on Thursday at the earliest.
+n: The peace is kept. The Young Master is not speaking to me, which is a kind of peace as well, though I find I do not much care for it.
+goto ch5
+
+*ch4_after
+if favor >= 2 goto ch4_ally
+goto ch5
+
+*ch4_ally
+hide right
+show p neutral center
+n: Afterwards he lingers on the lawn, looking up at the far side of the world, and for a moment he does not look like a person who serves soup in cubes.
+p: I'm not actually an idiot, Marlowe. I know what the canvas is for. I know why Solberg's been counting.
+p: I just don't know what a fellow is supposed to DO about it. So I've been doing soup.
+m: Soup is a start, sir.
+show p smile center
+p: If there's ever something to be done, though. By me, I mean. You'll say?
+m: You will be the first to know, sir.
+set ally 1
+goto ch5
+
+# ---------------------------------------------------------------- chapter 5
+*ch5
+card Chapter Five | The Gala
+bg ballroom
+n: Nine in the evening. Four hundred guests, two orchestras, one swan in a cravat. The soup, in the end, was served in bowls. I have let the Young Master believe it was a triumph of geometry.
+n: Beyond the tall windows sixty hulls keep station in the dark. Thirty-one of them are flapping slightly.
+if canvas >= 1 goto gala_tobe
+goto gala_s
+
+*gala_tobe
+show t worried left
+t: Mister Marlowe! I never said anything. About the painted ones. Only I did ask a dock boy which were which, and he looked at me funny.
+add heat 1
+n: I close my eyes for precisely one second. It is all the schedule allows.
+hide left
+goto gala_s
+
+*gala_s
+show s neutral right
+n: Lord Solberg holds court beside an ice sculpture of himself. He brought it with him. I arrive at his elbow with the decanter. A servant pouring is furniture, and furniture may murmur.
+s: You. The Varrow boy's man. Is this the '71? I shall know if it is not the '71.
+choice
+- Murmur: "Do forgive the plate, my lord. The real silver was let go. Quietly. Like the vintner." => s_broke
+- Murmur: "Admire the fleet while you can, my lord. Canvas does fade so in sunlight." => s_canvas
+- [trust >= 2] Signal Quince. Stage a quarrel over unpaid bills where he cannot help but overhear. => s_staged
+- Pour the wine. Say nothing. Be furniture. => s_nothing
+
+*s_broke
+add peace 2
+add heat 1
+show s shock right
+s: Let go? Varrow, selling the spoons?
+show s smug right
+s: Well, well. A man who will sell his spoons will sell other things.
+n: I watch arithmetic happen behind his eyes. It is not the arithmetic of trajectories. It is the arithmetic of offers.
+goto gala_v
+
+*s_canvas
+add peace -2
+add heat 2
+show s shock right
+s: Canvas.
+show s smug right
+s: Canvas! Oh, that is delicious. I have been losing sleep over sailcloth.
+n: He laughs. It is the worst sound I have heard in thirty years of service. A frightened man is dangerous. A man who has just stopped being frightened is worse.
+n: Across the ballroom, Quince has gone very still.
+goto gala_v
+
+*s_staged
+add peace 3
+show q angry left
+q: ...three seasons unpaid, Marlowe! My lord's vintner will not extend House Varrow one more bottle on credit!
+m: Lower your voice, Steward! If it were known that His Lordship sold the summer estate merely to keep the hedges trimmed...
+n: We are appallingly indiscreet for about forty seconds. Then we notice Lord Solberg, and are mortified. Professionally.
+show s smug right
+s: Don't mind me. Sold the summer estate, did he? For hedges.
+show q neutral left
+n: He turns away, delighted, already composing an offer in his head. He believes he has caught two servants gossiping. In a sense, he has.
+hide left
+goto gala_v
+
+*s_nothing
+n: I pour. It is the '71. He does not know. He says that it is tolerable, and I remain furniture.
+goto gala_v
+
+*gala_v
+hide all
+show v neutral left
+n: Lord Varrow has taken up position beneath his own portrait, so that guests may compare. I bring him the brandy he pretends not to want.
+v: Marlowe. Solberg's people. You've had them underfoot for two days. What are they like?
+n: An opening. Lords so rarely ask a servant a question that they forget we are able to answer.
+choice
+- [water >= 1] "Thirsty, my lord. Meridian's reclamation plant has failed. They are rationing baths." => v_water
+- "An odd thing, my lord. His 'Grand Reserve' water. His footman fills the bottles from our taps." => v_bottles
+- "Their great mass driver is a bluff, my lord. Firing it would black out half of Meridian." => v_spoon
+- "Very correct, my lord. I could not say more." => v_nothing
+
+*v_water
+add peace 2
+add heat 1
+show v shock left
+v: Failed? Rationing? Solberg, in two inches of bath...
+show v smug left
+v: Then it isn't pride he wants out of that comet. It's a drink. A man will pay a very great deal for a drink, Marlowe.
+n: And there it is again: the arithmetic of offers. It looks much the same on either lord.
+goto after_gala
+
+*v_bottles
+add peace 1
+show v neutral left
+v: Our taps? Now why would a man with a whole cylinder of his own...
+n: I leave him with it. A lord's thought is like our weather: slow, and long in arrears. But it does, eventually, arrive.
+goto after_gala
+
+*v_spoon
+add peace -2
+add heat 1
+show v smug left
+v: Can't fire it? Then he has nothing but a wig and a yacht. Have the fleet signalled to close up around his berth. Let him see us properly.
+n: The fleet. Closing up. At close range, canvas has a seam. I have, I think, made a mistake of the kind that is measured from orbit.
+goto after_gala
+
+*v_nothing
+v: Hm. Correct. Yes. They would be.
+n: He turns back to his portrait. Of the two, the portrait looks the better informed.
+goto after_gala
+
+*after_gala
+if heat >= 3 goto caught
+goto summit
+
+# ---------------------------------------------------------------- caught?
+*caught
+card Interlude | A Word in the Study
+bg study
+show v angry left
+v: Stand there, Marlowe. No. There. In the light.
+v: My dockmaster tells me that my son's valet takes a remarkable interest in fleets, and keeps remarkably close company with foreign stewards.
+v: My grandfather would have put you out of an airlock. We are more civilised now. We have the algae vats.
+if ally >= 1 goto caught_saved
+n: I have an answer prepared. I have had one prepared for thirty years. It is a very good answer, and I can see in his face that it will make no difference at all.
+end Reassigned | Level Nine. The algae vats are warm, and no one there has Views. You read about what happened next in the news-sheets, like everybody else. They did not say whether it could have been stopped. News-sheets never do.
+
+*caught_saved
+show p smile right
+p: Father! There you are. Is Marlowe in trouble? He can't be. Everything Marlowe's done this week, he's done on my instructions.
+show v shock left
+v: Your instructions.
+p: I'm twenty. I have instructions now. I told him to keep an eye on the Solberg lot. One doesn't like to boast, but I've been running an intelligence service. With a swan.
+show v neutral left
+v: ...God help this house. Get out. Both of you.
+add heat -3
+n: In the corridor the Young Master lets out a long breath, and grins like a boy who has just got away with the marmalade.
+p: Was that the something to be done?
+m: It was one of them, sir.
+goto summit
+
+# ---------------------------------------------------------------- chapter 6
+*summit
+card Chapter Six | The Summit
+bg study
+n: Midnight. Lord Varrow's study. The war table glows between them: two little cylinders of light and, hanging in the middle, a mote labelled THE VEIL.
+n: I am here to pour. Quince is here to pour. We are furniture, and we are loaded.
+show v neutral left
+show s neutral right
+if peace >= 5 goto end_accord
+if peace >= 2 goto summit_tense
+goto summit_bad
+
+*end_accord
+v: Solberg. I have been thinking. The Veil. Damned nuisance of a thing. Costs me a fortune to picket.
+s: I have been thinking also. A comet is an untidy thing to quarrel over. So much... water.
+v: Supposing, purely as a kindness, I were to let Meridian draw from it. For a consideration.
+s: Supposing, purely as a courtesy, I were to pay House Varrow an annual sum. For its trouble.
+show v smug left
+v: I should want it understood that this was my idea.
+show s smug right
+s: I was about to insist that it was mine.
+n: They shake hands, each with the air of a man picking the other's pocket. Over the decanter, Quince catches my eye. Nothing so vulgar as a smile. A quarter-inch nod. From her, it is a parade.
+bg pantry
+show q smile right
+show t smile left
+show c smile center
+q: To the Veil Accord. Negotiated, the histories will say, by two great men.
+c: Histories get written upstairs.
+t: Does this mean I can stop filling the bottles?
+q: No.
+n: Above us, with a sound like applause, three days of banked rain finally let go.
+end The Veil Accord | Meridian drinks. Halcyon pays its vintner. Both lords dine out for years on how they outwitted the other. Nobody thanks the servants, which is how the servants know it was done properly.
+
+*summit_tense
+show v angry left
+v: The Veil is Halcyon's by right of capture.
+show s angry right
+s: The Veil is Meridian's by right of survey. And I will remind you where the Long Spoon is pointing.
+v: And I will remind you that there are sixty hulls around your yacht.
+n: Each of them has had half a thought tonight. Half is not enough. The table hums. In about a minute, one of them is going to say a thing that cannot be unsaid.
+choice
+- [ally >= 1] Open the door. The Young Master did ask to be told if there was something to be done. => final_perry
+- Catch Quince's eye. Two teapots, one war table. Accidents will happen. => final_tea
+- Remain furniture. It is not a servant's place. => end_war
+
+*final_perry
+show p smile center
+p: Father! Lord Solberg! I've a birthday wish, and it is still technically my birthday for another six minutes.
+p: The comet. I want it. Not for me! For the Admiral. Every fleet admiral needs a home port.
+p: Joint flag. Halcyon keeps the title deeds, Meridian keeps the taps, and everybody comes to my twenty-first.
+n: There is a silence of the kind usually reserved for cathedrals.
+show s shock right
+s: The boy proposes that we give the casus belli to a goose.
+p: Swan.
+show v neutral left
+v: ...It would get the thing off my books.
+show s neutral right
+s: ...One could not be said to have yielded. Not to a bird.
+n: And so the most dangerous object in the Lagrange becomes a naval base under the command of a swan. I have served this house for thirty years. It is the first time I have been proud of it.
+end The Admiral's Peace | Port Featherstonehaugh flies two flags and a rather large pennant with a swan on it. The treaty is eleven pages long and has been bitten twice. Peregrine Varrow begins, to general alarm, to take an interest in politics.
+
+*final_tea
+n: Quince stumbles. I have never seen Quince stumble, and it is a beautiful piece of work. Her teapot goes left. Mine, in sympathy, goes right.
+show v shock left
+show s shock right
+n: Lapsang over Halcyon. Darjeeling over Meridian. The war table fizzes, pops, displays for one moment a map of the wine cellar, and dies.
+v: MARLOWE!
+s: QUINCE!
+n: We are abject. We are inconsolable. The table will take a week to repair, and the only technician is on Meridian, and can be paid only by Halcyon.
+n: A week in which two lords must talk to one another without a map to point at. It is not peace. But it is a week, and servants can do a very great deal with a week.
+end Armistice by Teapot | The war is postponed owing to tea. Nobody upstairs can quite recall, afterwards, what they had been about to say. You and Quince have six days left, forty trunks to repack, and a plan.
+
+*summit_bad
+show v smug left
+v: I know precisely what your Long Spoon is worth, Solberg.
+show s smug right
+s: And I, Varrow, know precisely what your fleet is worth.
+n: Two men, each certain the other is helpless. I have armed them both, and with the wrong thing. There is nothing left on the tray that will serve.
+goto end_war
+
+*end_war
+show v angry left
+show s angry right
+n: One of them says it. I shall not record which. The histories will disagree in any case.
+hide all
+n: By dawn the Unimpeachable has gone, leaving its sedan chair behind. By noon the Long Spoon fires, and the lights of Meridian go out from the farms to the opera house.
+n: The shot strikes a warship made of canvas, which folds up like a deck chair. Nobody will say who is winning. Both cylinders dim their sunlines to save power.
+n: Quince's last note reaches me by a tradesman's channel. It reads: 'We were furniture when we ought to have been in the way.'
+end The Long Spoon | You lay the table for breakfast anyway. Somebody must. Overhead, in the half-light, eight kilometres of somebody else's fields wait to see what the masters will break next.
