@@ -29,6 +29,7 @@ input[type=range] { padding: 0; flex: 1; }
 label { color: var(--dim); }
 
 #bar { grid-area: bar; background: var(--panel); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; padding: 0 12px; }
+#bar button, #bar select { white-space: nowrap; flex: none; }
 #bar h1 { font-size: 15px; margin: 0 10px 0 0; color: var(--gold); font-weight: 600; white-space: nowrap; }
 #status { color: var(--dim); margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 0 1 auto; }
 #status.dirty { color: var(--gold); }
@@ -101,6 +102,17 @@ label { color: var(--dim); }
 .out.choice .port { color: var(--gold); } .out.if .port { color: var(--blue); } .out.goto .port, .out.fall .port { color: #8a90b8; }
 .port:hover { background: currentColor; }
 .out.broken .to { color: var(--bad); }
+.node.chapter { width: 300px; border-style: double; border-width: 4px; background: #20244a; }
+.node.chapter .nh { background: #313a78; }
+.node.chapter .lbl { font-size: 14px; }
+.node.portal { width: 220px; opacity: .8; border-style: dashed; cursor: pointer; }
+.node.portal .nh { cursor: pointer; border-radius: 8px; }
+.flow { margin-top: 5px; } .flab { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); margin-right: 5px; }
+.ins { border-top: 1px solid var(--line); }
+.in { padding: 3px 8px; font-size: 12px; color: var(--good); border-bottom: 1px solid #2a2f58; }
+.in.droptarget { background: #1f4a37; }
+#crumbs { position: absolute; left: 10px; top: 8px; display: flex; align-items: center; gap: 2px; background: #1c1f3acc; border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; z-index: 5; color: var(--dim); }
+#crumbs .here { color: var(--gold); font-weight: 600; }
 #hint { position: absolute; left: 12px; right: 150px; bottom: 12px; color: var(--dim); font-size: 12px; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #zoom { position: absolute; right: 12px; bottom: 10px; display: flex; gap: 6px; }
 
@@ -192,7 +204,8 @@ label { color: var(--dim); }
 </aside>
 <main id="stage">
   <div id="world"><svg id="edges"></svg><div id="nodes"></div></div>
-  <div id="hint">Drag scenes to arrange &middot; drag a port onto a scene to reroute &middot; scroll to zoom &middot; double-click for a new scene</div>
+  <div id="crumbs"></div>
+  <div id="hint">Double-click a chapter to open it &middot; drag to arrange &middot; drag a port onto a scene or chapter to reroute &middot; scroll to zoom &middot; double-click empty space for a new scene</div>
   <div id="zoom"><button id="fitBtn">Fit</button><button id="zoomOut">&minus;</button><button id="zoomIn">+</button></div>
 </main>
 <aside id="insp"></aside>
@@ -204,6 +217,7 @@ label { color: var(--dim); }
   <h2>How this works</h2>
   <ul>
     <li>Each box is a <b>scene</b>. Lines leaving it are its <b>choices</b> (gold), <b>conditions</b> (blue) and <b>jumps</b> (grey). A dashed line means the scene simply continues into the next one in the Scenes list.</li>
+    <li>A <b>chapter</b> is a group of scenes shown as one panel (double border). The panel lists the ways in, the ways out, and what the chapter <i>passes out</i>: the range of change it can make to each property, and the properties it depends on. Double-click it to open it; the bar at the top left leads back. Put a scene in a chapter from the scene's own panel, or by dragging it from the Scenes list on to the chapter.</li>
     <li>Select a scene to edit everything in it on the right. Drag blocks by their grip to reorder them, or drop one on another scene in the graph to move it there.</li>
     <li>Drag the round port at the end of a choice, condition or jump on to another scene to change where it leads.</li>
     <li><b>Consequences</b> are the green blocks: they change a property. They show as chips on scenes and beside the choices that lead to them.</li>
@@ -351,16 +365,20 @@ function change(fn, opts) {
 }
 let pointerDown = false, pendingRender = null;
 window.addEventListener("mousedown", () => pointerDown = true, true);
-window.addEventListener("mouseup", () => {
+function pointerReleased() {
   pointerDown = false;
   if (pendingRender) setTimeout(() => { if (pendingRender && !pointerDown) { const o = pendingRender; pendingRender = null; renderAll(o); } }, 0);
-}, true);
+}
+window.addEventListener("mouseup", pointerReleased, true);
+// a drag and drop ends with dragend, not mouseup
+window.addEventListener("dragend", pointerReleased, true);
+window.addEventListener("drop", pointerReleased, true);
 /** A whole number from a field, kept within what a story can hold. */
 function num(text) { return Math.max(-9999, Math.min(9999, parseInt(text, 10) || 0)); }
 function markDirty() { dirty = true; updateBar(); scheduleValidate(); }
 function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); doc = JSON.parse(undoStack.pop()); afterHistory(); }
 function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); doc = JSON.parse(redoStack.pop()); afterHistory(); }
-function afterHistory() { if (sel >= doc.scenes.length) sel = doc.scenes.length - 1; selItem = -1; markDirty(); renderAll(); }
+function afterHistory() { doc.chapters = doc.chapters || []; if (sel >= doc.scenes.length) sel = doc.scenes.length - 1; if (sel >= 0 && chapterOf(sel) !== curChapter) sel = -1; selItem = -1; markDirty(); renderAll(); }
 function updateBar() {
   $("#saveBtn").disabled = !dirty; $("#undoBtn").disabled = !undoStack.length; $("#redoBtn").disabled = !redoStack.length;
   const st = $("#status"); st.textContent = dirty ? "Unsaved changes" : "Saved to " + meta.path; st.title = meta.path; st.className = dirty ? "dirty" : "";
@@ -395,46 +413,184 @@ async function play(label) {
 }
 
 // ---------------------------------------------------------------- graph
+// The canvas shows one level at a time: the main graph (scenes outside any
+// chapter, plus one panel per chapter) or the inside of a single chapter
+// (its scenes, plus small "portal" nodes for where the story comes in from
+// and goes out to). `curChapter` says which; "" is the main graph.
 const NODE_W = 260, COL_W = 340;
+let curChapter = "", selChapter = null, lastPick = { key: null, t: 0 };
 function applyView() { $("#world").style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`; }
-function nodeEl(si) { return $(`#nodes .node[data-i="${si}"]`); }
+const chapterOf = si => (doc.scenes[si] && doc.scenes[si].chapter) || "";
+const chapterDef = name => doc.chapters.find(c => c.name === name);
+function nodeByKey(key) { return [...document.querySelectorAll("#nodes .node")].find(n => n.dataset.key === key) || null; }
+function nodeEl(si) { return nodeByKey("s" + si); }
+function nodeXY(n) { return [parseFloat(n.style.left) || 0, parseFloat(n.style.top) || 0]; }
+/** The node that stands for scene `si` at the level being shown. */
+function keyFor(si) {
+  const ch = chapterOf(si);
+  if (ch === curChapter) return "s" + si;
+  return curChapter ? "p" + si : "c:" + ch;
+}
+/** What a chapter looks like from outside: ways in, ways out, and what it does to the story's properties. */
+function chapterFlow(name) {
+  const members = [];
+  doc.scenes.forEach((s, i) => { if ((s.chapter || "") === name) members.push(i); });
+  const inside = new Set(members), entries = new Set(), out = [], internal = new Map(members.map(i => [i, []])), canLeave = new Set();
+  let ends = 0;
+  doc.scenes.forEach((s, si) => exits(si).forEach((o, oi) => {
+    const ti = o.target != null ? sceneIndex(o.target) : -1;
+    if (inside.has(si)) {
+      if (o.kind === "end") { ends++; canLeave.add(si); }
+      else if (ti >= 0 && inside.has(ti)) internal.get(si).push(ti);
+      else { out.push({ ...o, si, oi }); canLeave.add(si); }
+    } else if (ti >= 0 && inside.has(ti)) entries.add(ti);
+  }));
+  const start = sceneIndex("start");
+  if (inside.has(start)) entries.add(start);
+  if (!entries.size && members.length) entries.add(members[0]);
+  // the range of each property's net change over every way through the chapter
+  const memo = new Map(), visiting = new Set();
+  const range = i => {
+    if (memo.has(i)) return memo.get(i);
+    if (visiting.has(i)) return new Map();
+    visiting.add(i);
+    const own = effects(i), kids = internal.get(i).map(range), res = new Map();
+    for (const v of new Set([...own.map(e => e.var), ...kids.flatMap(k => [...k.keys()])])) {
+      let lo = Infinity, hi = -Infinity, sets = false;
+      for (const k of kids) { const r = k.get(v) || { lo: 0, hi: 0 }; lo = Math.min(lo, r.lo); hi = Math.max(hi, r.hi); sets = sets || !!r.sets; }
+      if (!kids.length || canLeave.has(i)) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+      const e = own.find(x => x.var === v);
+      if (e && e.set) sets = true; else if (e) { lo += e.n; hi += e.n; }
+      res.set(v, { lo, hi, sets });
+    }
+    visiting.delete(i); memo.set(i, res);
+    return res;
+  };
+  const changes = new Map();
+  for (const en of entries) for (const [v, r] of range(en)) {
+    const c = changes.get(v);
+    changes.set(v, c ? { lo: Math.min(c.lo, r.lo), hi: Math.max(c.hi, r.hi), sets: c.sets || r.sets } : { ...r });
+  }
+  const reads = new Set();
+  members.forEach(i => doc.scenes[i].items.forEach(it => {
+    if (it.t === "if") reads.add(it.var);
+    if (it.t === "choice") it.options.forEach(o => o.cond && reads.add(o.cond.var));
+  }));
+  return { members, entries: [...entries], exits: out, ends, changes, reads };
+}
+/** A chip for what a chapter passes out: "Detente -2…+3", "Suspicion +1", "Knows … set". */
+function rangeChip(id, r) {
+  if (!r.sets && r.lo === 0 && r.hi === 0) return null;
+  const v = varById(id), sign = n => (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n);
+  const span = r.lo === r.hi ? (r.lo ? " " + sign(r.lo) : "") : ` ${sign(r.lo)}…${sign(r.hi)}`;
+  const up = r.lo >= 0 && r.hi > 0, down = r.hi <= 0 && r.lo < 0;
+  const cls = !v || (!up && !down) ? "" : (up === v.good ? "good" : "bad");
+  return el("span", { class: "chip " + cls, text: varLabel(id) + (r.sets ? " set" : "") + span, title: "Net change to this property across every way through the chapter" });
+}
+function outRow(o, extraText) {
+  const ti = o.target != null ? sceneIndex(o.target) : -1;
+  const broken = o.kind !== "end" && o.kind !== "fall" && ti < 0;
+  const far = ti >= 0 && chapterOf(ti) !== curChapter ? ` (${chapterOf(ti) || "main graph"})` : "";
+  return el("div", { class: `out ${o.kind}` + (broken ? " broken" : ""), "data-si": o.si, "data-oi": o.oi },
+    el("div", { class: "txt", text: (extraText || "") + (o.cond ? `[${varLabel(o.cond.var)} ${OP_SYM[o.cond.op]} ${o.cond.val}] ` : "") + o.text }),
+    o.kind !== "end" && el("div", { class: "to" }, "→ " + (o.target || "nowhere") + far, " ", ti >= 0 && o.kind === "choice" ? effects(ti).map(e => effectChip(e)) : null),
+    o.kind !== "end" && el("span", { class: "port", title: "Drag to another scene or chapter to change where this leads" }));
+}
+function sceneNode(s, si) {
+  const outs = exits(si).map((o, oi) => ({ ...o, si, oi })), fx = effects(si);
+  const bg = s.items.find(it => it.t === "bg");
+  const cast = [...new Set(s.items.filter(it => it.t === "show").map(it => it.who))].map(charById).filter(Boolean);
+  const firstSay = s.items.find(it => it.t === "say"), card = s.items.find(it => it.t === "card");
+  const lines = s.items.filter(it => it.t === "say").length;
+  return el("div", { class: "node" + (si === sel ? " sel" : ""), "data-key": "s" + si, "data-i": si },
+    el("div", { class: "nh" },
+      el("span", { class: "lbl", text: s.label || "(unnamed)" }),
+      s.label === "start" && el("span", { class: "tag", text: "START" }),
+      outs.some(o => o.kind === "end") && el("span", { class: "tag end", text: "END" })),
+    el("div", { class: "nb" },
+      (bg || cast.length > 0) && el("div", { class: "scene" },
+        bg && el("img", { class: "thumb", src: bgUrl(bg.name), title: bg.name, draggable: false }),
+        el("div", { class: "cast" }, cast.map(ch => avatar(ch)))),
+      card && el("div", { class: "snip", style: "color:#c9a0ff", text: card.title + (card.sub ? " — " + card.sub : "") }),
+      firstSay && el("div", { class: "snip", text: firstSay.text }),
+      el("div", { style: "margin-top:4px" }, el("span", { class: "chip", text: `${lines} line${lines === 1 ? "" : "s"}` }), fx.map(e => effectChip(e)))),
+    el("div", { class: "outs" }, outs.map(o => outRow(o))));
+}
+function chapterNode(c) {
+  const f = chapterFlow(c.name);
+  const bgs = [...new Set(f.members.flatMap(i => doc.scenes[i].items.filter(it => it.t === "bg").map(it => it.name)))].slice(0, 3);
+  const cast = [...new Set(f.members.flatMap(i => doc.scenes[i].items.filter(it => it.t === "show").map(it => it.who)))].map(charById).filter(Boolean).slice(0, 6);
+  const passes = [...f.changes].map(([v, r]) => rangeChip(v, r)).filter(Boolean);
+  return el("div", { class: "node chapter" + (selChapter === c.name ? " sel" : ""), "data-key": "c:" + c.name, "data-c": c.name },
+    el("div", { class: "nh" },
+      el("span", { class: "lbl", text: c.name }),
+      el("span", { class: "tag", text: `${f.members.length} scene${f.members.length === 1 ? "" : "s"}` }),
+      f.ends > 0 && el("span", { class: "tag end", text: f.ends > 1 ? f.ends + " ENDS" : "END" }),
+      el("button", { class: "ghost open", title: "Open this chapter (or double-click)", text: "Open ▸" })),
+    el("div", { class: "nb" },
+      (bgs.length > 0 || cast.length > 0) && el("div", { class: "scene" },
+        bgs.map(b => el("img", { class: "thumb", style: "width:48px;height:27px", src: bgUrl(b), title: b, draggable: false })),
+        el("div", { class: "cast" }, cast.map(ch => avatar(ch)))),
+      c.note && el("div", { class: "snip", text: c.note }),
+      passes.length > 0 && el("div", { class: "flow" }, el("span", { class: "flab", text: "passes out" }), passes),
+      f.reads.size > 0 && el("div", { class: "flow" }, el("span", { class: "flab", text: "depends on" }), [...f.reads].map(v => el("span", { class: "chip", text: varLabel(v) })))),
+    el("div", { class: "ins" }, f.entries.map(i => el("div", { class: "in", "data-entry": i, title: "A way into this chapter", text: "▸ " + doc.scenes[i].label }))),
+    el("div", { class: "outs" }, f.exits.map(o => outRow(o, doc.scenes[o.si].label + ": "))));
+}
+function portalNode(si, outs) {
+  const ch = chapterOf(si);
+  return el("div", { class: "node portal", "data-key": "p" + si, "data-p": si, title: "Outside this chapter. Click to go there." },
+    el("div", { class: "nh" }, el("span", { class: "lbl", text: (outs.length ? "↪ " : "↩ ") + doc.scenes[si].label }), el("span", { class: "tag warn", text: ch || "main graph" })),
+    el("div", { class: "outs" }, outs.map(o => outRow(o))));
+}
 function renderGraph() {
+  if (curChapter && !chapterDef(curChapter)) curChapter = "";
+  if (selChapter && !chapterDef(selChapter)) selChapter = null;
   const host = $("#nodes"); host.textContent = "";
-  doc.scenes.forEach((s, si) => {
-    const outs = exits(si), fx = effects(si);
-    const bg = s.items.find(it => it.t === "bg");
-    const cast = [...new Set(s.items.filter(it => it.t === "show").map(it => it.who))].map(charById).filter(Boolean);
-    const firstSay = s.items.find(it => it.t === "say");
-    const card = s.items.find(it => it.t === "card");
-    const lines = s.items.filter(it => it.t === "say").length;
-    const node = el("div", { class: "node" + (si === sel ? " sel" : ""), "data-i": si, style: `left:${s.pos[0]}px;top:${s.pos[1]}px` },
-      el("div", { class: "nh" },
-        el("span", { class: "lbl", text: s.label || "(unnamed)" }),
-        s.label === "start" && el("span", { class: "tag", text: "START" }),
-        outs.some(o => o.kind === "end") && el("span", { class: "tag end", text: "END" })),
-      el("div", { class: "nb" },
-        (bg || cast.length > 0) && el("div", { class: "scene" },
-          bg && el("img", { class: "thumb", src: bgUrl(bg.name), title: bg.name, draggable: false }),
-          el("div", { class: "cast" }, cast.map(ch => avatar(ch)))),
-        card && el("div", { class: "snip", style: "color:#c9a0ff", text: card.title + (card.sub ? " — " + card.sub : "") }),
-        firstSay && el("div", { class: "snip", text: firstSay.text }),
-        el("div", { style: "margin-top:4px" }, el("span", { class: "chip", text: `${lines} line${lines === 1 ? "" : "s"}` }), fx.map(e => effectChip(e)))),
-      el("div", { class: "outs" }, outs.map((o, oi) => {
-        const ti = o.target != null ? sceneIndex(o.target) : -1;
-        const broken = o.kind !== "end" && o.kind !== "fall" && ti < 0;
-        return el("div", { class: `out ${o.kind}` + (broken ? " broken" : ""), "data-o": oi },
-          el("div", { class: "txt", text: (o.cond ? `[${varLabel(o.cond.var)} ${OP_SYM[o.cond.op]} ${o.cond.val}] ` : "") + o.text }),
-          o.kind !== "end" && el("div", { class: "to" }, "→ " + (o.target || "nowhere"), " ", ti >= 0 && o.kind === "choice" ? effects(ti).map(e => effectChip(e)) : null),
-          o.kind !== "end" && el("span", { class: "port", title: "Drag to another scene to change where this leads" }));
-      })));
-    host.append(node);
-  });
+  const placed = [], unplaced = [];
+  const add = (node, pos, owner) => { host.append(node); if (pos) { node.style.left = pos[0] + "px"; node.style.top = pos[1] + "px"; placed.push(node); } else unplaced.push([node, owner]); };
+  doc.scenes.forEach((s, si) => { if ((s.chapter || "") === curChapter) add(sceneNode(s, si), s.pos, s); });
+  if (!curChapter) doc.chapters.forEach(c => add(chapterNode(c), c.pos, c));
+  // anything without a position yet is laid out now, once
+  if (unplaced.length) {
+    const fresh = unplaced.length > placed.length ? computeLayout() : null;
+    for (const [node, owner] of unplaced) {
+      owner.pos = fresh ? fresh.get(node.dataset.key) || [0, 0] : freeSpot(0, 0);
+      node.style.left = owner.pos[0] + "px"; node.style.top = owner.pos[1] + "px";
+    }
+  }
+  if (curChapter) {
+    // portals: outside scenes that lead in go on the left, where we lead out to on the right
+    const mine = new Set(doc.scenes.map((_, i) => i).filter(i => chapterOf(i) === curChapter));
+    const ins = new Map(), outs = new Set();
+    doc.scenes.forEach((s, si) => exits(si).forEach((o, oi) => {
+      const ti = o.target != null ? sceneIndex(o.target) : -1;
+      if (ti < 0 || o.kind === "end") return;
+      if (!mine.has(si) && mine.has(ti)) { if (!ins.has(si)) ins.set(si, []); ins.get(si).push({ ...o, si, oi }); }
+      if (mine.has(si) && !mine.has(ti)) outs.add(ti);
+    }));
+    const boxes = [...host.querySelectorAll(".node")].map(n => [...nodeXY(n), n.offsetHeight]);
+    const x0 = Math.min(0, ...boxes.map(b => b[0])), x1 = Math.max(0, ...boxes.map(b => b[0])), top = Math.min(0, ...boxes.map(b => b[1]));
+    let yIn = top, yOut = top;
+    for (const [si, links] of ins) { const n = portalNode(si, links); host.append(n); n.style.left = (x0 - COL_W) + "px"; n.style.top = yIn + "px"; yIn += n.offsetHeight + 24; }
+    for (const si of outs) { if (ins.has(si)) continue; const n = portalNode(si, []); host.append(n); n.style.left = (x1 + COL_W) + "px"; n.style.top = yOut + "px"; yOut += n.offsetHeight + 24; }
+  }
   markProblems();
   drawEdges();
+  renderCrumbs();
 }
-function portPoint(si, oi) {
-  const s = doc.scenes[si], row = $(`.out[data-o="${oi}"]`, nodeEl(si));
-  return [s.pos[0] + NODE_W + 8, s.pos[1] + row.offsetTop + row.offsetHeight / 2];
+function renderCrumbs() {
+  const host = $("#crumbs"); host.textContent = "";
+  appendAll(host,
+    el("button", { class: curChapter ? "ghost" : "ghost here", text: doc.title || "Story", title: "The main graph", onclick: () => enterChapter("") }),
+    curChapter && [el("span", { text: "▸" }), el("button", { class: "ghost here", text: curChapter })],
+    !curChapter && el("button", { class: "ghost", text: "+ Chapter", title: "Add an empty chapter to group scenes in", onclick: () => newChapter() }),
+    !curChapter && !doc.chapters.length && doc.scenes.some(s => s.items.some(it => it.t === "card")) &&
+      el("button", { class: "ghost", text: "Chapters from chapter cards", title: "Group the scenes into chapters, starting a new one at every chapter card", onclick: chaptersFromCards }));
+}
+function rowPoint(row) {
+  const n = row.closest(".node"), [x, y] = nodeXY(n);
+  return [x + n.offsetWidth + 8, y + row.offsetTop + row.offsetHeight / 2];
 }
 function curve(a, b) {
   const dx = Math.max(70, Math.abs(b[0] - a[0]) / 2);
@@ -443,117 +599,190 @@ function curve(a, b) {
 function drawEdges() {
   const svg = $("#edges");
   svg.innerHTML = '<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>';
-  doc.scenes.forEach((s, si) => exits(si).forEach((o, oi) => {
-    const ti = o.target != null ? sceneIndex(o.target) : -1;
+  document.querySelectorAll("#nodes .out[data-si]").forEach(row => {
+    const si = +row.dataset.si, o = exits(si)[+row.dataset.oi];
+    const ti = o && o.target != null ? sceneIndex(o.target) : -1;
     if (ti < 0 || o.kind === "end") return;
-    const t = doc.scenes[ti];
+    const from = row.closest(".node"), to = nodeByKey(keyFor(ti));
+    if (!to || to === from) return;
+    const [tx, ty] = nodeXY(to), entry = to.querySelector(`.in[data-entry="${ti}"]`);
     const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    p.setAttribute("d", curve(portPoint(si, oi), [t.pos[0] - 3, t.pos[1] + 18]));
-    p.setAttribute("class", o.kind + (si === sel || ti === sel ? " hot" : ""));
+    p.setAttribute("d", curve(rowPoint(row), [tx - 3, ty + (entry ? entry.offsetTop + entry.offsetHeight / 2 : 18)]));
+    p.setAttribute("class", o.kind + (from.classList.contains("sel") || to.classList.contains("sel") ? " hot" : ""));
     p.setAttribute("marker-end", "url(#arr)");
     svg.append(p);
-  }));
-}
-function markProblems() {
-  document.querySelectorAll("#nodes .node").forEach(n => {
-    const label = doc.scenes[+n.dataset.i].label;
-    n.classList.toggle("error", problems.some(p => p.scene === label && p.level === "error"));
   });
 }
-/** Longest-path layering from the start scene; returns a position per scene. */
+function markProblems() {
+  const bad = label => problems.some(p => p.scene === label && p.level === "error");
+  document.querySelectorAll("#nodes .node").forEach(n => {
+    if (n.dataset.i != null) n.classList.toggle("error", bad(doc.scenes[+n.dataset.i].label));
+    else if (n.dataset.c != null) n.classList.toggle("error", doc.scenes.some(s => (s.chapter || "") === n.dataset.c && bad(s.label)));
+  });
+}
+/** Longest-path layering of the level being shown; returns a position per node key. */
 function computeLayout() {
-  if (!doc.scenes.length) return [];
-  const n = doc.scenes.length, depth = new Array(n).fill(-1), state = new Array(n).fill(0);
-  const succ = doc.scenes.map((_, i) => exits(i).map(o => o.target != null ? sceneIndex(o.target) : -1).filter(t => t >= 0));
-  const order = [];
-  (function visit(i) { if (state[i]) return; state[i] = 1; succ[i].forEach(visit); state[i] = 2; order.push(i); })(Math.max(0, sceneIndex("start")));
-  order.reverse();
-  const rank = new Map(order.map((i, k) => [i, k]));
-  for (const i of order) { if (depth[i] < 0) depth[i] = 0; for (const t of succ[i]) if (rank.has(t) && rank.get(t) > rank.get(i)) depth[t] = Math.max(depth[t], depth[i] + 1); }
-  const maxDepth = Math.max(0, ...depth);
-  doc.scenes.forEach((_, i) => { if (depth[i] < 0) depth[i] = maxDepth + 1; });
-  const cols = new Map();
-  doc.scenes.forEach((_, i) => { if (!cols.has(depth[i])) cols.set(depth[i], []); cols.get(depth[i]).push(i); });
-  const pos = new Array(n), preds = doc.scenes.map(() => []);
+  const els = [...document.querySelectorAll("#nodes .node:not(.portal)")], keys = els.map(n => n.dataset.key), pos = new Map();
+  if (!keys.length) return pos;
+  const index = new Map(keys.map((k, i) => [k, i])), n = keys.length;
+  const succ = keys.map(() => []);
+  els.forEach((node, i) => node.querySelectorAll(".out[data-si]").forEach(row => {
+    const o = exits(+row.dataset.si)[+row.dataset.oi], ti = o && o.target != null ? sceneIndex(o.target) : -1;
+    const t = ti >= 0 ? index.get(keyFor(ti)) : undefined;
+    if (t !== undefined && t !== i && !succ[i].includes(t)) succ[i].push(t);
+  }));
+  const preds = keys.map(() => []);
   succ.forEach((ts, i) => ts.forEach(t => preds[t].push(i)));
+  // roots: the start scene (or the chapter holding it), then anything nothing leads to, then the rest
+  const startKey = sceneIndex("start") >= 0 ? keyFor(sceneIndex("start")) : null;
+  const roots = [index.get(startKey), ...keys.map((_, i) => i).filter(i => !preds[i].length), ...keys.map((_, i) => i)].filter(i => i !== undefined);
+  const state = new Array(n).fill(0), order = [];
+  const visit = i => { if (state[i]) return; state[i] = 1; succ[i].forEach(visit); state[i] = 2; order.push(i); };
+  roots.forEach(visit);
+  order.reverse();
+  const rank = new Map(order.map((i, k) => [i, k])), depth = new Array(n).fill(0);
+  for (const i of order) for (const t of succ[i]) if (rank.get(t) > rank.get(i)) depth[t] = Math.max(depth[t], depth[i] + 1);
+  const cols = new Map();
+  keys.forEach((_, i) => { if (!cols.has(depth[i])) cols.set(depth[i], []); cols.get(depth[i]).push(i); });
   // lay columns out left to right, wrapping into bands like lines of text
-  const PER_BAND = 8, depths = [...cols.keys()].sort((a, b) => a - b);
+  // chapter panels are large and few, so fewer to a row
+  const PER_BAND = curChapter ? 8 : 4, depths = [...cols.keys()].sort((a, b) => a - b), at = new Array(n);
   let bandTop = 0;
   for (let band = 0; band * PER_BAND <= depths[depths.length - 1]; band++) {
     const mine = depths.filter(d => Math.floor(d / PER_BAND) === band);
-    const height = i => (nodeEl(i) ? nodeEl(i).offsetHeight : 160) + 34;
+    const height = i => els[i].offsetHeight + 34;
     const colHeight = d => cols.get(d).reduce((a, i) => a + height(i), 0);
     const bandHeight = Math.max(0, ...mine.map(colHeight));
     for (const d of mine) {
       const list = cols.get(d);
-      const want = i => { const ys = preds[i].filter(p => pos[p] && pos[p][1] >= bandTop).map(p => pos[p][1]); return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : i * 10; };
+      const want = i => { const ys = preds[i].filter(p => at[p] && at[p][1] >= bandTop).map(p => at[p][1]); return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : i * 10; };
       list.sort((a, b) => want(a) - want(b));
       let y = bandTop + (bandHeight - colHeight(d)) / 2;
-      for (const i of list) { pos[i] = [(d % PER_BAND) * COL_W, Math.round(y)]; y += height(i); }
+      for (const i of list) { at[i] = [(d % PER_BAND) * COL_W, Math.round(y)]; y += height(i); }
     }
     bandTop += bandHeight + 110;
   }
+  keys.forEach((k, i) => pos.set(k, at[i]));
   return pos;
 }
-function layoutMissing() {
-  const missing = doc.scenes.filter(s => !s.pos);
-  if (!missing.length) return;
-  doc.scenes.forEach(s => { if (!s.pos) { s.pos = [0, 0]; s.fresh = true; } });
-  renderGraph();
-  const pos = computeLayout();
-  doc.scenes.forEach((s, i) => { if (s.fresh) { s.pos = pos[i]; delete s.fresh; } });
-}
+/** The object whose `pos` a node on the canvas shows (a scene or a chapter). */
+function ownerOf(node) { return node.dataset.i != null ? doc.scenes[+node.dataset.i] : node.dataset.c != null ? chapterDef(node.dataset.c) : null; }
 function tidyLayout() {
-  if (!doc.scenes.length) return;
-  change(() => { const pos = computeLayout(); doc.scenes.forEach((s, i) => s.pos = pos[i]); });
+  if (!document.querySelector("#nodes .node:not(.portal)")) return;
+  change(() => { const pos = computeLayout(); document.querySelectorAll("#nodes .node:not(.portal)").forEach(n => { const o = ownerOf(n); if (o && pos.get(n.dataset.key)) o.pos = pos.get(n.dataset.key); }); });
   fit();
 }
 function fit() {
-  if (!doc.scenes.length) return;
-  const st = $("#stage"), xs = doc.scenes.map(s => s.pos[0]), ys = doc.scenes.map(s => s.pos[1]);
-  const x0 = Math.min(...xs) - 40, y0 = Math.min(...ys) - 40, x1 = Math.max(...xs) + NODE_W + 60, y1 = Math.max(...ys) + 320;
+  const nodes = [...document.querySelectorAll("#nodes .node")];
+  if (!nodes.length) return;
+  const st = $("#stage"), boxes = nodes.map(n => [...nodeXY(n), n.offsetWidth, n.offsetHeight]);
+  const x0 = Math.min(...boxes.map(b => b[0])) - 40, y0 = Math.min(...boxes.map(b => b[1])) - 60;
+  const x1 = Math.max(...boxes.map(b => b[0] + b[2])) + 60, y1 = Math.max(...boxes.map(b => b[1] + b[3])) + 60;
   view.k = Math.max(0.12, Math.min(1, st.clientWidth / (x1 - x0), st.clientHeight / (y1 - y0)));
   view.x = (st.clientWidth - (x1 - x0) * view.k) / 2 - x0 * view.k; view.y = (st.clientHeight - (y1 - y0) * view.k) / 2 - y0 * view.k;
   applyView();
 }
-function centerOn(si) {
-  if (!doc.scenes[si]) return;
-  const s = doc.scenes[si], st = $("#stage"), n = nodeEl(si);
+function centerNode(n) {
+  if (!n) return;
+  const st = $("#stage"), [x, y] = nodeXY(n);
   if (view.k < 0.55) view.k = 0.85;
-  view.x = st.clientWidth / 2 - (s.pos[0] + NODE_W / 2) * view.k; view.y = st.clientHeight / 2 - (s.pos[1] + (n ? n.offsetHeight / 2 : 80)) * view.k;
+  view.x = st.clientWidth / 2 - (x + n.offsetWidth / 2) * view.k; view.y = st.clientHeight / 2 - (y + n.offsetHeight / 2) * view.k;
   applyView();
 }
+function centerOn(si) { if (doc.scenes[si]) centerNode(nodeEl(si)); }
+/** Select a scene, going into (or out of) its chapter if it is not on the level being shown. */
 function select(si, item, center) {
-  sel = si; selItem = item == null ? -1 : item;
+  const moved = si >= 0 && doc.scenes[si] && chapterOf(si) !== curChapter;
+  if (moved) curChapter = chapterOf(si);
+  sel = si; selItem = item == null ? -1 : item; selChapter = null;
   renderGraph(); renderInspector(); if (tab === "scenes") renderLeft();
-  if (center && si >= 0) centerOn(si);
+  if (moved) fit();
+  if ((center || moved) && si >= 0) centerOn(si);
   if (selItem >= 0) { const b = $(`#insp .blk[data-i="${selItem}"]`); if (b) b.scrollIntoView({ block: "center" }); }
+}
+function selectChapter(name) {
+  if (curChapter) curChapter = "";
+  sel = -1; selItem = -1; selChapter = name;
+  renderGraph(); renderInspector(); if (tab === "scenes") renderLeft();
+}
+/** Show the inside of a chapter ("" for the main graph). */
+function enterChapter(name) {
+  const from = curChapter;
+  curChapter = name; sel = -1; selItem = -1; selChapter = name ? null : (from || null);
+  renderGraph(); renderInspector(); if (tab === "scenes") renderLeft();
+  fit();
+}
+function newChapter(members) {
+  let name;
+  change(() => {
+    name = uniqueId("Chapter", doc.chapters.map(c => c.name)).replace("_", " ");
+    doc.chapters.push({ name, pos: null, note: "" });
+    (members || []).forEach(i => { doc.scenes[i].chapter = name; doc.scenes[i].pos = null; });
+    curChapter = ""; sel = -1; selChapter = name;
+  });
+  return name;
+}
+/** Start a chapter at every scene that opens with a chapter card. */
+function chaptersFromCards() {
+  change(() => {
+    let current = "";
+    doc.scenes.forEach(s => {
+      const card = s.items.find(it => it.t === "card");
+      if (card && card.title) {
+        current = [card.title, card.sub].filter(Boolean).join(": ").replace(/\|/g, "/");
+        if (!chapterDef(current)) doc.chapters.push({ name: current, pos: null, note: "" });
+      }
+      if (current) { s.chapter = current; s.pos = null; }
+    });
+    sel = -1; selChapter = null;
+  });
+  fit();
+}
+function moveToChapter(si, name) {
+  change(() => { const s = doc.scenes[si]; if ((s.chapter || "") === name) return; s.chapter = name; s.pos = null; if (si === sel) curChapter = name; });
+  if (si === sel) { fit(); centerOn(si); }
 }
 function stagePoint(ev) { const r = $("#stage").getBoundingClientRect(); return [(ev.clientX - r.left - view.x) / view.k, (ev.clientY - r.top - view.y) / view.k]; }
 function addScene(at, from) {
   let label;
   change(() => {
     label = uniqueId("scene", doc.scenes.map(s => s.label));
-    const base = sel >= 0 ? doc.scenes[sel].pos : [0, 0];
-    doc.scenes.splice(sel >= 0 && !from ? sel + 1 : doc.scenes.length, 0, { label, pos: at || freeSpot(base[0] + COL_W, base[1]), items: [{ t: "say", who: "n", text: "..." }] });
+    const here = sel >= 0 && chapterOf(sel) === curChapter;
+    const base = here ? doc.scenes[sel].pos : [0, 0];
+    // keep a chapter's scenes together in the file: after the selected one, else after its last
+    let index = doc.scenes.length;
+    if (here && !from) index = sel + 1;
+    else if (curChapter) { const last = doc.scenes.map((s, i) => (s.chapter || "") === curChapter ? i : -1).filter(i => i >= 0).pop(); if (last !== undefined) index = last + 1; }
+    doc.scenes.splice(index, 0, { label, chapter: curChapter, pos: at || freeSpot(base[0] + (here ? COL_W : 0), base[1]), items: [{ t: "say", who: "n", text: "..." }] });
     if (from) from(label);
-    sel = sceneIndex(label); selItem = -1;
+    sel = sceneIndex(label); selItem = -1; selChapter = null;
   });
   return label;
 }
-/** The nearest place at or below (x, y) that no scene already occupies. */
+/** The nearest place at or below (x, y) that nothing on the canvas already occupies. */
 function freeSpot(x, y) {
-  const hit = () => doc.scenes.some((s, i) => s.pos && Math.abs(s.pos[0] - x) < NODE_W + 20 && y < s.pos[1] + (nodeEl(i) ? nodeEl(i).offsetHeight : 200) + 20 && y + 120 > s.pos[1]);
-  for (let tries = 0; tries < 60 && hit(); tries++) y += 60;
+  const boxes = [...document.querySelectorAll("#nodes .node")].filter(n => n.style.left).map(n => [...nodeXY(n), n.offsetHeight]);
+  const hit = () => boxes.some(b => Math.abs(b[0] - x) < NODE_W + 20 && y < b[1] + b[2] + 20 && y + 120 > b[1]);
+  for (let tries = 0; tries < 80 && hit(); tries++) y += 60;
   return [x, y];
 }
-function retarget(si, o, label) {
-  change(() => {
-    const s = doc.scenes[si];
-    if (o.kind === "choice") s.items[o.item].options[o.opt].target = label;
-    else if (o.kind === "fall") s.items.push({ t: "goto", target: label });
-    else s.items[o.item].target = label;
-  });
+function applyTarget(si, o, label) {
+  const s = doc.scenes[si];
+  if (o.kind === "choice") s.items[o.item].options[o.opt].target = label;
+  else if (o.kind === "fall") s.items.push({ t: "goto", target: label });
+  else s.items[o.item].target = label;
+}
+function retarget(si, o, label) { change(() => applyTarget(si, o, label)); }
+/** Which scene a drop on the canvas means: a scene, a portal, a chapter's way in, or a chapter (its first way in). */
+function dropScene(target) {
+  if (!target || !target.closest) return -1;
+  const entry = target.closest(".in[data-entry]"), node = target.closest(".node");
+  if (entry) return +entry.dataset.entry;
+  if (!node) return -1;
+  if (node.dataset.i != null) return +node.dataset.i;
+  if (node.dataset.p != null) return +node.dataset.p;
+  const f = chapterFlow(node.dataset.c);
+  return f.entries.length ? f.entries[0] : -1;
 }
 function setupStage() {
   const stage = $("#stage");
@@ -564,37 +793,44 @@ function setupStage() {
     view.x = mx - (mx - view.x) * k / view.k; view.y = my - (my - view.y) * k / view.k; view.k = k; applyView();
   }, { passive: false });
   stage.addEventListener("mousedown", ev => {
-    if (ev.button !== 0) return;
+    if (ev.button !== 0 || ev.target.closest("#crumbs") || ev.target.closest("#zoom")) return;
     const port = ev.target.closest(".port"), node = ev.target.closest(".node");
     if (port) {
       ev.preventDefault();
-      const si = +node.dataset.i, oi = +port.parentElement.dataset.o, o = exits(si)[oi], a = portPoint(si, oi);
+      const row = port.parentElement, si = +row.dataset.si, o = exits(si)[+row.dataset.oi], a = rowPoint(row);
       const rubber = document.createElementNS("http://www.w3.org/2000/svg", "path"); rubber.setAttribute("class", "rubber"); $("#edges").append(rubber);
-      const move = e => { rubber.setAttribute("d", curve(a, stagePoint(e))); document.querySelectorAll(".node.droptarget").forEach(n => n.classList.remove("droptarget")); const t = e.target.closest && e.target.closest(".node"); if (t) t.classList.add("droptarget"); };
+      const clear = () => document.querySelectorAll(".droptarget").forEach(n => n.classList.remove("droptarget"));
+      const move = e => { rubber.setAttribute("d", curve(a, stagePoint(e))); clear(); const t = e.target.closest && (e.target.closest(".in[data-entry]") || e.target.closest(".node")); if (t) t.classList.add("droptarget"); };
       const up = e => {
-        window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); rubber.remove();
-        const t = document.elementFromPoint(e.clientX, e.clientY); const tn = t && t.closest(".node");
-        document.querySelectorAll(".node.droptarget").forEach(n => n.classList.remove("droptarget"));
-        if (tn) retarget(si, o, doc.scenes[+tn.dataset.i].label);
-        else if (t && t.closest("#stage")) { const at = stagePoint(e); addScene([Math.round(at[0]), Math.round(at[1] - 18)], label => { const s = doc.scenes[si]; if (o.kind === "choice") s.items[o.item].options[o.opt].target = label; else if (o.kind === "fall") s.items.push({ t: "goto", target: label }); else s.items[o.item].target = label; }); }
+        window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); rubber.remove(); clear();
+        const t = document.elementFromPoint(e.clientX, e.clientY), ti = dropScene(t);
+        if (ti >= 0) retarget(si, o, doc.scenes[ti].label);
+        else if (t && t.closest("#stage") && !t.closest(".node")) { const at = stagePoint(e); addScene([Math.round(at[0]), Math.round(at[1] - 18)], label => applyTarget(si, o, label)); }
       };
       window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
     } else if (node) {
-      const si = +node.dataset.i, s = doc.scenes[si], start = [ev.clientX, ev.clientY], orig = [...s.pos], before = snapshot();
+      if (ev.target.closest("button.open")) { enterChapter(node.dataset.c); return; }
+      if (node.dataset.p != null) { select(+node.dataset.p, -1, true); return; }
+      const owner = ownerOf(node), start = [ev.clientX, ev.clientY], orig = nodeXY(node), before = snapshot();
       let moved = false;
       const move = e => {
         const dx = (e.clientX - start[0]) / view.k, dy = (e.clientY - start[1]) / view.k;
         if (!moved && Math.abs(dx) + Math.abs(dy) < 4) return;
-        moved = true; s.pos = [Math.round(orig[0] + dx), Math.round(orig[1] + dy)];
-        node.style.left = s.pos[0] + "px"; node.style.top = s.pos[1] + "px"; drawEdges();
+        moved = true; owner.pos = [Math.round(orig[0] + dx), Math.round(orig[1] + dy)];
+        node.style.left = owner.pos[0] + "px"; node.style.top = owner.pos[1] + "px"; drawEdges();
       };
+      const pick = () => { if (node.dataset.c != null) { if (selChapter !== node.dataset.c) selectChapter(node.dataset.c); } else if (+node.dataset.i !== sel) select(+node.dataset.i); };
       const up = () => {
         window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
-        if (moved) { undoStack.push(before); redoStack = []; markDirty(); }
-        if (!moved && si !== sel) select(si); else if (!moved) { /* already selected */ }
+        if (moved) { undoStack.push(before); redoStack = []; markDirty(); return; }
+        // selecting redraws the panel, which can swallow the browser's own double-click: detect it here
+        const now = performance.now(), key = node.dataset.key;
+        if (node.dataset.c != null && lastPick.key === key && now - lastPick.t < 450) { lastPick = { key: null, t: now }; enterChapter(node.dataset.c); return; }
+        lastPick = { key, t: now };
+        pick();
       };
       if (ev.target.closest(".nh") || !ev.target.closest(".out")) { window.addEventListener("mousemove", move); window.addEventListener("mouseup", up); }
-      else if (si !== sel) select(si);
+      else pick();
     } else {
       const start = [ev.clientX - view.x, ev.clientY - view.y]; stage.classList.add("panning");
       const move = e => { view.x = e.clientX - start[0]; view.y = e.clientY - start[1]; applyView(); };
@@ -602,14 +838,22 @@ function setupStage() {
       window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
     }
   });
-  stage.addEventListener("dblclick", ev => { if (!ev.target.closest(".node") && !ev.target.closest("#zoom")) { const at = stagePoint(ev); addScene([Math.round(at[0] - NODE_W / 2), Math.round(at[1] - 20)], () => {}); } });
-  // blocks dragged from the inspector can be dropped on a scene
-  stage.addEventListener("dragover", ev => { const n = ev.target.closest(".node"); if (drag && drag.type === "item" && n) { ev.preventDefault(); n.classList.add("droptarget"); } });
+  stage.addEventListener("dblclick", ev => {
+    // the double-click that just opened a chapter must not also act on whatever is now under the pointer
+    if (lastPick.key === null && performance.now() - lastPick.t < 600) return;
+    const node = ev.target.closest(".node");
+    if (node && node.dataset.c != null) { if (curChapter !== node.dataset.c) enterChapter(node.dataset.c); }
+    else if (!node && !ev.target.closest("#zoom") && !ev.target.closest("#crumbs")) { const at = stagePoint(ev); addScene([Math.round(at[0] - NODE_W / 2), Math.round(at[1] - 20)], () => {}); }
+  });
+  // a block from the inspector can be dropped on a scene; a scene from the Scenes list on a chapter
+  const accepts = n => drag && n && ((drag.type === "item" && n.dataset.i != null) || (drag.type === "scene" && n.dataset.c != null));
+  stage.addEventListener("dragover", ev => { const n = ev.target.closest(".node"); if (accepts(n)) { ev.preventDefault(); n.classList.add("droptarget"); } });
   stage.addEventListener("dragleave", ev => { const n = ev.target.closest && ev.target.closest(".node"); if (n) n.classList.remove("droptarget"); });
   stage.addEventListener("drop", ev => {
-    const n = ev.target.closest(".node"); if (!drag || drag.type !== "item" || !n) return;
-    ev.preventDefault(); const to = +n.dataset.i, d = drag;
-    if (to !== d.scene) moveItem(d.scene, d.item, to, -1);
+    const n = ev.target.closest(".node"); if (!accepts(n)) return;
+    ev.preventDefault(); const d = drag;
+    if (d.type === "scene") moveToChapter(d.scene, n.dataset.c);
+    else if (+n.dataset.i !== d.scene) moveItem(d.scene, d.item, +n.dataset.i, -1);
   });
   $("#zoomIn").onclick = () => { view.k = Math.min(2, view.k * 1.2); applyView(); };
   $("#zoomOut").onclick = () => { view.k = Math.max(0.12, view.k / 1.2); applyView(); };
@@ -635,7 +879,7 @@ function opts(list, value, extra) {
 }
 const speakerOpts = () => [{ value: "n", label: "Narration" }, ...doc.characters.map(c => ({ value: c.id, label: c.name || c.id }))];
 const shownOpts = () => doc.characters.filter(c => c.sprite).map(c => ({ value: c.id, label: c.name || c.id }));
-const sceneOpts = () => doc.scenes.map(s => ({ value: s.label, label: s.label }));
+const sceneOpts = () => doc.scenes.map(s => ({ value: s.label, label: s.chapter && s.chapter !== curChapter ? `${s.label}  (${s.chapter.split(":")[0]})` : s.label }));
 const varOpts = () => doc.vars.map(v => ({ value: v.id, label: v.label || v.id }));
 const NEW_SCENE = "\u0000new";
 function targetSelect(value, onPick) {
@@ -720,9 +964,44 @@ function blockBody(s, it, i) {
       el("button", { style: "margin-top:6px", text: "+ Option", onclick: () => set(() => it.options.push({ text: "Another way", target: s.label, cond: null })) })];
   }
 }
+function chapterInspector(host, c) {
+  const f = chapterFlow(c.name), passes = [...f.changes].map(([v, r]) => rangeChip(v, r)).filter(Boolean);
+  const scenesOf = list => el("div", {}, list.map(i => el("span", { class: "chip link", text: doc.scenes[i].label, onclick: () => select(i, -1, true) })));
+  appendAll(host,
+    el("div", { class: "ihead" },
+      el("input", { type: "text", value: c.name, title: "Chapter name", onchange: ev => {
+        const to = ev.target.value.trim().replace(/\|/g, "/");
+        if (!to || to === c.name) { ev.target.value = c.name; return; }
+        if (chapterDef(to)) { toast(`There is already a chapter called '${to}'`, true); ev.target.value = c.name; return; }
+        change(() => { doc.scenes.forEach(s => { if (s.chapter === c.name) s.chapter = to; }); if (selChapter === c.name) selChapter = to; c.name = to; });
+      } }),
+      el("button", { class: "primary", text: "Open \u25B8", onclick: () => enterChapter(c.name) }),
+      el("button", { class: "ghost danger", title: "Dissolve: its scenes go back to the main graph", text: "\u2715", onclick: () => {
+        if (f.members.length && !confirm(`Dissolve '${c.name}'? Its ${f.members.length} scene(s) return to the main graph; nothing is deleted.`)) return;
+        change(() => { doc.scenes.forEach(s => { if (s.chapter === c.name) { s.chapter = ""; s.pos = null; } }); doc.chapters.splice(doc.chapters.indexOf(c), 1); selChapter = null; });
+      } })),
+    bindText(el("textarea", { rows: 2, placeholder: "A note about this chapter (for you; not shown in the game)" }), c, "note"),
+    el("div", { class: "sect", text: "Passes out to the story" }),
+    passes.length ? el("div", {}, passes) : el("div", { class: "sub", style: "color:var(--dim)", text: "This chapter changes no properties." }),
+    passes.length > 0 && el("div", { class: "sub", style: "color:var(--dim);margin-top:4px", text: "The range covers every route through the chapter. Open it to see and edit the consequences that add up to this." }),
+    el("div", { class: "sect", text: "Depends on" }),
+    f.reads.size ? el("div", {}, [...f.reads].map(v => el("span", { class: "chip link", text: varLabel(v), title: "Open in Properties", onclick: () => { tab = "props"; renderLeft(); const card = $(`#leftBody .card[data-id="${v}"]`); if (card) card.scrollIntoView({ block: "center" }); } })))
+                 : el("div", { class: "sub", style: "color:var(--dim)", text: "Nothing: no condition inside tests a property." }),
+    el("div", { class: "sect", text: "Ways in" }), scenesOf(f.entries),
+    el("div", { class: "sect", text: "Ways out" }),
+    f.exits.length ? f.exits.map(o => el("div", { class: "brow wayout", style: "margin-top:4px" },
+      el("span", { class: "chip link", text: doc.scenes[o.si].label, onclick: () => select(o.si, o.item == null ? -1 : o.item, true) }),
+      el("span", { style: "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim)", text: o.text }),
+      el("span", { text: "\u2192" }), targetSelect(o.target, label => applyTarget(o.si, o, label))))
+      : el("div", { class: "sub", style: "color:var(--dim)", text: f.ends ? "None: the story ends inside." : "None yet." }),
+    el("div", { class: "sect", text: `Scenes (${f.members.length})` }), scenesOf(f.members),
+    el("button", { style: "margin-top:10px", text: "+ Scene in this chapter", onclick: () => { enterChapter(c.name); addScene(null, null); centerOn(sel); } }));
+  host.querySelectorAll("textarea").forEach(grow);
+}
 function renderInspector() {
   const host = $("#insp"); host.textContent = "";
-  if (sel < 0 || !doc.scenes[sel]) { host.append(el("div", { class: "empty", text: "Select a scene in the graph to edit its lines, choices and consequences." })); return; }
+  if (selChapter && chapterDef(selChapter)) { chapterInspector(host, chapterDef(selChapter)); return; }
+  if (sel < 0 || !doc.scenes[sel]) { host.append(el("div", { class: "empty", text: curChapter ? "Select a scene to edit its lines, choices and consequences." : "Select a scene or a chapter. Double-click a chapter to open it." })); return; }
   const s = doc.scenes[sel];
   const mine = problems.filter(p => p.scene === s.label);
   host.append(el("div", { class: "ihead" },
@@ -742,6 +1021,12 @@ function renderInspector() {
       if (!confirm(`Delete scene '${s.label}'?` + (refs ? ` ${refs} other scene(s) lead here and will need rerouting.` : ""))) return;
       change(() => { doc.scenes.splice(sel, 1); sel = Math.min(sel, doc.scenes.length - 1); selItem = -1; });
     } })));
+  const NEW_CHAPTER = "\u0000new";
+  host.append(el("div", { class: "brow chapterpick", style: "margin-bottom:8px" }, el("label", { text: "Chapter" }),
+    el("select", { title: "Which chapter this scene belongs to", onchange: ev => {
+      if (ev.target.value === NEW_CHAPTER) { const i = sel; const name = newChapter([i]); select(i, -1, true); toast(`'${s.label}' is now in ${name}. Rename the chapter from the main graph.`); }
+      else moveToChapter(sel, ev.target.value);
+    } }, opts([{ value: "", label: "None (main graph)" }, ...doc.chapters.map(c => ({ value: c.name, label: c.name }))], s.chapter || "", [{ value: NEW_CHAPTER, label: "+ New chapter\u2026" }]))));
   mine.filter(p => p.item == null).forEach(p => host.append(el("div", { class: "pmsg " + p.level, text: p.msg })));
   s.items.forEach((it, i) => {
     const probs = mine.filter(p => p.item === i);
@@ -920,12 +1205,16 @@ function renderScenes(host) {
     bindText(el("input", { type: "text", placeholder: "Title (shown on the title screen)", style: "width:100%;font-weight:600" }), doc, "title", () => { const o = $("#storySel").selectedOptions[0]; if (o) o.textContent = doc.title || "Untitled story"; }),
     bindText(el("input", { type: "text", placeholder: "Subtitle", style: "width:100%;margin-top:6px" }), doc, "subtitle")));
   host.append(el("input", { type: "text", placeholder: "Filter scenes…", value: sceneFilter, style: "width:100%;margin-bottom:8px", oninput: ev => { sceneFilter = ev.target.value; const pos = ev.target.selectionStart; renderLeft(); const f = $("#leftBody input"); f.focus(); f.setSelectionRange(pos, pos); } }),
-    el("div", { class: "sub", style: "color:var(--dim);margin-bottom:6px", text: "The order matters only where a scene continues into the next one. Drag to reorder." }));
+    el("div", { class: "sub", style: "color:var(--dim);margin-bottom:6px", text: "The order matters only where a scene continues into the next one. Drag to reorder, or drag a scene on to a chapter in the main graph to move it there." }));
+  if (doc.chapters.length) host.append(el("div", { class: "card" }, el("div", { class: "sect", style: "margin-top:0", text: "Chapters" }),
+    doc.chapters.map(c => el("div", { class: "srow" + (curChapter === c.name ? " on" : ""), onclick: () => enterChapter(c.name) },
+      el("span", { style: "flex:1 0 auto", text: c.name }), el("span", { class: "chip", text: String(doc.scenes.filter(x => x.chapter === c.name).length) })))));
   doc.scenes.forEach((s, si) => {
-    if (sceneFilter && !s.label.toLowerCase().includes(sceneFilter.toLowerCase())) return;
+    if (sceneFilter && !(s.label + " " + (s.chapter || "")).toLowerCase().includes(sceneFilter.toLowerCase())) return;
     const level = problems.some(p => p.scene === s.label && p.level === "error") ? "error" : problems.some(p => p.scene === s.label) ? "warning" : "";
-    const row = el("div", { class: "srow" + (si === sel ? " on" : ""), draggable: true, onclick: () => select(si, -1, true) },
+    const row = el("div", { class: "srow scene" + (si === sel ? " on" : ""), draggable: true, onclick: () => select(si, -1, true) },
       el("span", { class: "grip", text: "☰" }), el("span", { style: "flex:1 0 auto", text: s.label || "(unnamed)" }),
+      s.chapter && el("span", { class: "tag", style: "background:#313a78", text: s.chapter.split(":")[0] }),
       effects(si).map(e => effectChip(e)), level && el("span", { class: "dot " + level }));
     row.addEventListener("dragstart", ev => { drag = { type: "scene", scene: si }; ev.dataTransfer.setData("text/plain", "scene"); ev.dataTransfer.effectAllowed = "move"; });
     row.addEventListener("dragend", () => { drag = null; document.querySelectorAll(".dropbefore,.dropafter").forEach(n => n.classList.remove("dropbefore", "dropafter")); });
@@ -974,9 +1263,10 @@ async function loadStory(id) {
   doc = data.doc; meta = data.meta; problems = data.problems; parseErrors = data.parse_errors;
   undoStack = []; redoStack = []; dirty = false; selItem = -1; openChar = null; sceneFilter = ""; view = { x: 40, y: 40, k: 1 };
   renderStoryMenu(); applyView();
-  layoutMissing();
-  sel = doc.scenes.length ? Math.max(0, sceneIndex("start")) : -1;
-  renderAll(); renderProblems(); fit(); centerOn(sel);
+  doc.chapters = doc.chapters || []; curChapter = ""; selChapter = null;
+  // open on the main graph; if the story has no chapters, on its first scene
+  sel = doc.scenes.length && !doc.chapters.length ? Math.max(0, sceneIndex("start")) : -1;
+  renderAll(); renderProblems(); fit(); if (sel >= 0) centerOn(sel);
   document.title = (doc.title || "Untitled story") + " - Story Editor";
   if (parseErrors.length) { toast(`${parseErrors.length} line(s) of the story file could not be understood; they are kept as notes.`, true); $("#probs").classList.add("show"); }
   if (art.open) openArt();

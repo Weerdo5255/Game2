@@ -16,10 +16,12 @@ const PORT = 7933, URL = `http://127.0.0.1:${PORT}/`;
 const server = spawn(exe, ['--editor', '--story', story, '--port', String(PORT), '--no-browser', '--procedural'], { stdio: 'ignore' });
 const out = process.argv[2] || tmp;
 const assert = (c, m) => { if (!c) { console.log('FAIL: ' + m); process.exitCode = 1; } else console.log('ok: ' + m); };
+let browser = null;
 (async () => {
   await new Promise(r => setTimeout(r, 800));
-  const b = await chromium.launch();
+  const b = browser = await chromium.launch();
   const p = await b.newPage({ viewport: { width: 1600, height: 900 } });
+  p.setDefaultTimeout(8000);
   const errs = [];
   p.on('pageerror', e => errs.push('pageerror: ' + e.message));
   p.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
@@ -30,7 +32,11 @@ const assert = (c, m) => { if (!c) { console.log('FAIL: ' + m); process.exitCode
   const D = () => p.evaluate(() => doc);
   const idx = l => p.evaluate(l => sceneIndex(l), l);
 
-  // 1. select a scene by clicking its node
+  // scenes live inside chapters: go to one by name
+  const go = l => p.evaluate(l => select(sceneIndex(l), -1, true), l);
+
+  // 1. open a chapter, then select a scene by clicking its node
+  await p.dblclick('.node.chapter[data-c^="One:"] .nb');
   const si = await idx('soup_yes');
   await p.click(`.node[data-i="${si}"] .nh`);
   assert(await p.inputValue('#insp .ihead input') === 'soup_yes', 'clicking a node selects the scene');
@@ -52,14 +58,14 @@ const assert = (c, m) => { if (!c) { console.log('FAIL: ' + m); process.exitCode
   d = await D();
   assert(d.scenes[si].items.some(i => i.t === 'add' && i.var === 'heat' && i.n === 2), 'consequence added: Suspicion +2');
   assert((await p.textContent(`.node[data-i="${si}"]`)).includes('Suspicion +2'), 'consequence chip shown on the scene');
-  const start = await idx('start');
+  const start = await idx('ch1');
   assert((await p.textContent(`.node[data-i="${start}"] .outs`)).includes('Suspicion +2'), 'consequence shown beside the choice that leads there');
 
   // 4. reroute by dragging the port on to another scene
   const target = await idx('soup_no');
   const port = await p.locator(`.node[data-i="${si}"] .port`).boundingBox();
   const tnode = await p.locator(`.node[data-i="${target}"] .nh`).boundingBox();
-  await p.mouse.move(port.x + 7, port.y + 7); await p.mouse.down();
+  await p.mouse.move(port.x + port.width / 2, port.y + port.height / 2); await p.mouse.down();
   await p.mouse.move(tnode.x + 60, tnode.y + 10, { steps: 8 }); await p.mouse.up();
   d = await D();
   assert(d.scenes[si].items.find(i => i.t === 'goto').target === 'soup_no', 'dragging a port reroutes the jump');
@@ -96,22 +102,24 @@ const assert = (c, m) => { if (!c) { console.log('FAIL: ' + m); process.exitCode
   assert(moved[moved.length - 1].t === 'goto' && moved[moved.length - 2].t === 'add', 'moved block lands before the closing jump');
 
   // 9. choice editing: text, new option, retarget to a new scene
-  await p.click(`.node[data-i="${start}"] .nh`);
+  const choiceScene = 'ch1';
+  await go(choiceScene);
   await p.locator('#insp .blk.choice .opt textarea').first().fill('"Chilled, sir. Dukes litigate."');
   await p.click('#insp .blk.choice button:has-text("+ Option")');
   d = await D();
-  let ch = d.scenes[start].items.find(i => i.t === 'choice');
+  let ch = d.scenes[await idx(choiceScene)].items.find(i => i.t === 'choice');
   assert(ch.options.length === 4 && ch.options[0].text.startsWith('"Chilled, sir'), 'choice text edited and option added');
   const scenesBefore = d.scenes.length;
   await p.locator('#insp .blk.choice .opt').nth(3).locator('select').first().selectOption({ label: '+ New scene…' });
   d = await D();
-  ch = d.scenes[start].items.find(i => i.t === 'choice');
+  ch = d.scenes[await idx(choiceScene)].items.find(i => i.t === 'choice');
   assert(d.scenes.length === scenesBefore + 1 && d.scenes.some(s => s.label === ch.options[3].target), 'option can lead to a brand new scene');
+  assert(d.scenes.find(s => s.label === ch.options[3].target).chapter === d.scenes[await idx(choiceScene)].chapter, 'a new scene joins the chapter it was made in');
   // condition on an option
-  await p.click(`.node[data-i="${await idx('start')}"] .nh`);
+  await go(choiceScene);
   await p.locator('#insp .blk.choice .opt').nth(3).locator('input[type=checkbox]').check();
   d = await D();
-  assert(d.scenes[await idx('start')].items.find(i => i.t === 'choice').options[3].cond, 'option can be made conditional');
+  assert(d.scenes[await idx(choiceScene)].items.find(i => i.t === 'choice').options[3].cond, 'option can be made conditional');
   await p.screenshot({ path: out + '/e2.png' });
 
   // 10. cast: rename, recolour hair, property of a character
@@ -138,6 +146,7 @@ const assert = (c, m) => { if (!c) { console.log('FAIL: ' + m); process.exitCode
   await p.click('.tabs button[data-tab="props"]');
   const card = p.locator('#leftBody .card[data-id="heat"]');
   await card.locator('input[type=text]').first().fill('Scrutiny');
+  await go('soup_no');
   await p.waitForTimeout(400);
   assert((await p.textContent(`.node[data-i="${await idx('soup_no')}"]`)).includes('Scrutiny +2'), 'renaming a property label updates its consequence chips');
   await card.locator('.chip.link').first().click();
@@ -147,13 +156,13 @@ const assert = (c, m) => { if (!c) { console.log('FAIL: ' + m); process.exitCode
   // 12. scenes tab: drag to reorder
   await p.click('.tabs button[data-tab="scenes"]');
   const order0 = (await D()).scenes.map(s => s.label);
-  await p.dragAndDrop('#leftBody .srow >> nth=2', '#leftBody .srow >> nth=0', { targetPosition: { x: 60, y: 2 } });
+  await p.dragAndDrop('#leftBody .srow.scene >> nth=2', '#leftBody .srow.scene >> nth=0', { targetPosition: { x: 60, y: 2 } });
   const order1 = (await D()).scenes.map(s => s.label);
   assert(order1[0] === order0[2], `dragging in the Scenes list reorders scenes (${order0[2]} first)`);
   await p.click('#undoBtn');
 
   // 13. validation shows problems, and they clear
-  await p.click(`.node[data-i="${await idx('soup_cube')}"] .nh`);
+  await go('soup_cube');
   await p.locator('#insp .blk.goto select').selectOption('soup_cube');   // loop to itself: fine
   await p.click('#insp .addbar button:has-text("Jump")');
   await p.waitForTimeout(700);
@@ -193,4 +202,4 @@ const assert = (c, m) => { if (!c) { console.log('FAIL: ' + m); process.exitCode
   console.log('page errors:', JSON.stringify(real));
   if (real.length) process.exitCode = 1;
   await b.close();
-})().catch(e => { console.log('CRASH', e.message); process.exitCode = 1; }).finally(() => { server.kill(); fs.rmSync(tmp, { recursive: true, force: true }); });
+})().catch(e => { console.log('CRASH', e.message); process.exitCode = 1; }).finally(async () => { if (browser) await browser.close().catch(() => {}); server.kill(); fs.rmSync(tmp, { recursive: true, force: true }); });

@@ -86,12 +86,28 @@ pub enum Item {
     Comment { text: String },
 }
 
+/// A chapter: a named group of scenes that the editor shows as one panel
+/// on the main graph and opens as a graph of its own. Chapters are for
+/// organising a large story; the game itself does not look at them.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ChapterDef {
+    pub name: String,
+    /// Position of the chapter's panel on the main graph.
+    #[serde(default)]
+    pub pos: Option<(f32, f32)>,
+    #[serde(default)]
+    pub note: String,
+}
+
 /// A labelled run of the story. Flow falls through to the next scene in
 /// the document unless the scene ends in a jump, a choice or an ending.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Scene {
     pub label: String,
-    /// Position on the editor's canvas.
+    /// The chapter this scene belongs to ("" for the main graph).
+    #[serde(default)]
+    pub chapter: String,
+    /// Position on the editor's canvas (the chapter's own, if it is in one).
     #[serde(default)]
     pub pos: Option<(f32, f32)>,
     #[serde(default)]
@@ -111,6 +127,8 @@ pub struct Doc {
     pub characters: Vec<CharDef>,
     #[serde(default)]
     pub vars: Vec<VarDef>,
+    #[serde(default)]
+    pub chapters: Vec<ChapterDef>,
     #[serde(default)]
     pub scenes: Vec<Scene>,
 }
@@ -166,6 +184,8 @@ enum Line {
     Title(String, String),
     Character(CharDef),
     Var(VarDef),
+    Chapter(ChapterDef),
+    InChapter(String),
     Label(String),
     Pos(f32, f32),
     Option(Opt),
@@ -180,6 +200,9 @@ fn parse_line(line: &str) -> Result<Line, String> {
             if nums.len() == 2 {
                 return Ok(Line::Pos(nums[0], nums[1]));
             }
+        }
+        if let Some(name) = text.strip_prefix("@chapter ") {
+            return Ok(Line::InChapter(name.trim().to_string()));
         }
         return Ok(Line::Item(Item::Comment { text: text.to_string() }));
     }
@@ -244,6 +267,15 @@ fn parse_line(line: &str) -> Result<Line, String> {
             }
             return Ok(Line::Var(v));
         }
+        "chapter" => {
+            let parts: Vec<&str> = rest.splitn(3, '|').map(str::trim).collect();
+            let xy: Vec<f32> = parts.get(1).unwrap_or(&"").split_whitespace().filter_map(|v| v.parse().ok()).collect();
+            return Ok(Line::Chapter(ChapterDef {
+                name: parts[0].to_string(),
+                pos: if xy.len() == 2 { Some((xy[0], xy[1])) } else { None },
+                note: parts.get(2).unwrap_or(&"").to_string(),
+            }));
+        }
         "bg" if toks.len() == 2 => Item::Bg { name: toks[1].into() },
         "show" if toks.len() == 4 => Item::Show { who: toks[1].into(), expr: toks[2].into(), slot: toks[3].into() },
         "hide" if toks.len() == 2 => Item::Hide { slot: toks[1].into() },
@@ -295,6 +327,13 @@ impl Doc {
                 }
                 Line::Character(c) => doc.characters.push(c),
                 Line::Var(v) => doc.vars.push(v),
+                Line::Chapter(c) => doc.chapters.push(c),
+                Line::InChapter(name) => match doc.scenes.last_mut() {
+                    // like the position marker, it sits straight under the label
+                    Some(scene) if scene.items.is_empty() && scene.chapter.is_empty() && !scene.label.is_empty() => scene.chapter = name,
+                    Some(scene) => scene.items.push(Item::Comment { text: format!("(@chapter {})", name) }),
+                    None => doc.header.push(format!("(@chapter {})", name)),
+                },
                 Line::Label(label) => doc.scenes.push(Scene { label, ..Scene::default() }),
                 Line::Pos(x, y) => match doc.scenes.last_mut() {
                     // the marker is the line straight after the label; anything else is a note
@@ -358,6 +397,19 @@ impl Doc {
             pipe_free(&mut v.label);
             id(&mut v.character);
         }
+        // every chapter a scene names exists, once
+        for c in &mut self.chapters {
+            pipe_free(&mut c.name);
+            c.note = one_line(&c.note);
+        }
+        for scene in &mut self.scenes {
+            scene.chapter = one_line(&scene.chapter).replace('|', "/");
+            if !scene.chapter.is_empty() && !self.chapters.iter().any(|c| c.name == scene.chapter) {
+                self.chapters.push(ChapterDef { name: scene.chapter.clone(), ..Default::default() });
+            }
+        }
+        let mut seen = HashSet::new();
+        self.chapters.retain(|c| !c.name.is_empty() && seen.insert(c.name.clone()));
         for scene in &mut self.scenes {
             id(&mut scene.label);
             for item in &mut scene.items {
@@ -404,7 +456,7 @@ impl Doc {
                     }
                     Item::Comment { text } => {
                         *text = comment_line(text);
-                        if text.starts_with("@pos ") {
+                        if text.starts_with("@pos ") || text.starts_with("@chapter ") {
                             text.insert(0, '(');
                         }
                     }
@@ -454,10 +506,21 @@ impl Doc {
             }
             out.push_str(&format!("var {} | {} | {} | {}\n", v.id, v.label, v.initial, flags.join(" ")));
         }
+        if !self.chapters.is_empty() {
+            out.push('\n');
+        }
+        for c in &self.chapters {
+            let pos = c.pos.map(|(x, y)| format!("{} {}", x.round(), y.round())).unwrap_or_default();
+            out.push_str(format!("chapter {} | {} | {}", c.name, pos, c.note).trim_end_matches([' ', '|']));
+            out.push('\n');
+        }
         for scene in &self.scenes {
             out.push('\n');
             if !scene.label.is_empty() {
                 out.push_str(&format!("*{}\n", scene.label));
+                if !scene.chapter.is_empty() {
+                    out.push_str(&format!("# @chapter {}\n", scene.chapter));
+                }
                 if let Some((x, y)) = scene.pos {
                     out.push_str(&format!("# @pos {} {}\n", x.round(), y.round()));
                 }
@@ -1017,6 +1080,23 @@ mod tests {
         // a loop through a line of dialogue is a legitimate story
         let (ok, _) = Doc::parse("*start\nn: Round again.\ngoto start\n");
         assert!(!problems(&ok).iter().any(|p| p.msg.contains("hang")));
+    }
+
+    #[test]
+    fn chapters_round_trip_and_do_not_change_the_game() {
+        let src = "chapter One | 10 20 | the opening\nchapter Empty\n*start\n# @chapter One\n# @pos 1 2\nn: Hi.\n*two\n# @chapter Two\nn: Bye.\nend Done | .\n*three\nn: x\n# @chapter Late\n";
+        let (mut doc, errors) = Doc::parse(src);
+        assert!(errors.is_empty());
+        assert_eq!((doc.scenes[0].chapter.as_str(), doc.scenes[0].pos), ("One", Some((1.0, 2.0))));
+        assert_eq!(doc.chapters[0], ChapterDef { name: "One".into(), pos: Some((10.0, 20.0)), note: "the opening".into() });
+        // a marker anywhere else is only a note
+        assert_eq!(doc.scenes[2].chapter, "");
+        doc.sanitize();
+        assert_eq!(doc.chapters.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["One", "Empty", "Two"]);
+        assert!(doc.survives_text().is_ok());
+        let plain = Doc::parse("*start\nn: Hi.\n*two\nn: Bye.\nend Done | .\n*three\nn: x\n").0;
+        assert_eq!(Script::compile(&doc).cmds.len(), Script::compile(&plain).cmds.len() + 0);
+        assert_eq!(Script::compile(&doc).labels, Script::compile(&plain).labels);
     }
 
     #[test]

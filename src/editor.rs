@@ -96,6 +96,7 @@ impl Library {
                     vars: vec![VarDef { id: "resolve".into(), label: "Resolve".into(), good: true, character: "hero".into(), ..Default::default() }],
                     scenes: vec![Scene {
                         label: "start".into(),
+                        chapter: String::new(),
                         pos: Some((0.0, 0.0)),
                         items: vec![
                             Item::Card { title: "Chapter One".into(), sub: String::new() },

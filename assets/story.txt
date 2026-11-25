@@ -6,6 +6,7 @@
 # title Name | Subtitle      shown on the title screen
 # character id | Name | #colour | portrait | look     who can speak; portrait is p v s q t c a, or - for none
 # var id | Label | start | flags                      a property; flags: meter=N good bad hidden character=id
+# chapter Name | x y | note   a group of scenes, shown as one panel in the editor (the game ignores it)
 # *label                      starts a scene; flow falls through to the next scene unless it jumps
 # card Title | Subtitle       chapter card
 # bg name                     change background (clears the cast)
@@ -38,8 +39,17 @@ var canvas | Quince knows the fleet is canvas | 0 | good character=q hidden
 var water | Knows Meridian is short of water | 0 | good hidden
 var ally | Peregrine has offered to help | 0 | good character=p hidden
 
+chapter Prologue
+chapter One: A Breakfast at the Axis
+chapter Two: Forty Trunks and a Grievance
+chapter Three: Below Stairs
+chapter Four: An Affair of Honour
+chapter Five: The Gala
+chapter Interlude: A Word in the Study
+chapter Six: The Summit
+
 *start
-# @pos 0 134
+# @chapter Prologue
 card Prologue | Thistlemere, Halcyon Reach
 bg pantry
 n: Morning on Halcyon Reach arrives the way everything arrives here: on schedule, by committee, and three minutes late so that His Lordship may feel he was waited for.
@@ -61,6 +71,9 @@ n: The bell board chimes. Third row, gold tag. The Axis.
 show c smile right
 c: He's wanting breakfast up the hub again. Mind the marmalade. It wanders.
 # ---------------------------------------------------------------- chapter 1
+
+*ch1
+# @chapter One: A Breakfast at the Axis
 card Chapter One | A Breakfast at the Axis
 bg axis
 n: At the hub of the cylinder there is no gravity, no dignity, and, as of this morning, one croissant in a slow polar orbit around the heir to Thistlemere.
@@ -76,7 +89,7 @@ choice
 - "Spheres are last year, sir. Lady Okoro did spheres. One hears that cubes are coming." => soup_cube
 
 *soup_yes
-# @pos 340 2
+# @chapter One: A Breakfast at the Axis
 add favor 1
 show p smile center
 p: Chilled! You see, this is why I keep you. Father's man would have said 'no' and then something about insurance.
@@ -84,7 +97,7 @@ n: I make a note to rehearse the spheres. I make a second note to ensure the reh
 goto ch1_swan
 
 *soup_no
-# @pos 340 216
+# @chapter One: A Breakfast at the Axis
 add favor -1
 show p angry center
 p: The Bishop was perfectly all right. They got him out with a broom. Really, Marlowe, one begins to suspect you of gravity.
@@ -92,7 +105,7 @@ n: He sulks, rotating gently. A sulk in free fall has nowhere to settle, and so 
 goto ch1_swan
 
 *soup_cube
-# @pos 340 430
+# @chapter One: A Breakfast at the Axis
 add favor 1
 show p shock center
 p: Cubes! Good lord. Did she really? Then spheres are positively provincial. Cubes it is. How does one make soup into a cube?
@@ -102,7 +115,7 @@ p: Marlowe, you are an artist.
 goto ch1_swan
 
 *ch1_swan
-# @pos 680 166
+# @chapter One: A Breakfast at the Axis
 show a neutral right
 n: Something large and white drifts out from behind the telescope, upside down, radiating contempt.
 show p smile center
@@ -125,14 +138,14 @@ choice
 - "Sir, a swan cannot outrank real captains. Not with the fleet at such a delicate moment." => swan_no
 
 *swan_yes
-# @pos 1020 116
+# @chapter One: A Breakfast at the Axis
 add favor 1
 p: Vellum! Yes. With a ribbon. He's partial to ribbon.
 n: The Admiral regards me with one black eye. It is the look of a superior officer who has not yet decided whether I am crew or bread.
 goto ch2
 
 *swan_no
-# @pos 1020 296
+# @chapter One: A Breakfast at the Axis
 add favor -1
 add heat 1
 show p neutral center
@@ -142,7 +155,7 @@ goto ch2
 # ---------------------------------------------------------------- chapter 2
 
 *ch2
-# @pos 1360 117
+# @chapter Two: Forty Trunks and a Grievance
 card Chapter Two | Forty Trunks and a Grievance
 bg dock
 n: The private dock of Thistlemere. Lord Solberg's yacht, the Unimpeachable, sits in our cradle like a swallowed insult.
@@ -184,13 +197,13 @@ choice
 - "Is your master here to start a war, Steward? I only ask for the catering." => q_probe
 
 *q_formal
-# @pos 1700 19
+# @chapter Two: Forty Trunks and a Grievance
 q: Correct. Yes. I find correctness restful. Six, then.
 n: She inclines her head precisely as far as protocol requires and not one degree further. I have met warmer bulkheads. But a bulkhead, at least, is honest about what it is keeping out.
 goto ch3
 
 *q_joke
-# @pos 1700 199
+# @chapter Two: Forty Trunks and a Grievance
 add trust 1
 show q smile right
 q: Mine travels with a bust of himself for the bedside table. In case he wakes in the night and requires reassurance.
@@ -199,7 +212,7 @@ q: I think, Marlowe, that we shall manage to understand one another.
 goto ch3
 
 *q_probe
-# @pos 1700 413
+# @chapter Two: Forty Trunks and a Grievance
 add trust 1
 add heat 1
 show q shock right
@@ -210,7 +223,7 @@ goto ch3
 # ---------------------------------------------------------------- chapter 3
 
 *ch3
-# @pos 2040 115
+# @chapter Three: Below Stairs
 card Chapter Three | Below Stairs
 bg pantry
 n: Eleven at night. Above us the lords are being civil over the fish, which is the most dangerous course. Below: the long table, the good teapot, and the only honest conversation on Halcyon Reach.
@@ -241,7 +254,7 @@ choice
 - Tell her nothing yet. Trust is a thing one decants slowly. => share_nothing
 
 *share_canvas
-# @pos 2380 0
+# @chapter Three: Below Stairs
 add trust 2
 set canvas 1
 show q shock right
@@ -255,7 +268,7 @@ q: ...Yes. That is a great deal of trust. I find that I mean to deserve it.
 goto ch3_reply
 
 *share_coffers
-# @pos 2380 218
+# @chapter Three: Below Stairs
 add trust 1
 add peace 1
 m: The house is poor. The silver is plate, the summer estate is sold, and the vintner has not been paid since spring. Lord Varrow does not want a war. He cannot afford the invitations.
@@ -264,7 +277,7 @@ q: A lord who needs money. Now that is a thing my master could be brought to und
 goto ch3_reply
 
 *share_nothing
-# @pos 2380 432
+# @chapter Three: Below Stairs
 add trust -1
 show q neutral right
 q: Prudent. I should do the same in your place.
@@ -272,12 +285,12 @@ n: The tea goes on being good. The conversation does not.
 goto ch3_reply
 
 *ch3_reply
-# @pos 0 1013
+# @chapter Three: Below Stairs
 if trust >= 2 goto q_water
 goto q_nowater
 
 *q_water
-# @pos 340 883
+# @chapter Three: Below Stairs
 set water 1
 show q worried right
 q: Then here is mine, and it is worth as much. Meridian is drying out. The reclamation plant failed in the winter. We ration baths. We ration tea.
@@ -295,7 +308,7 @@ q: I see why the boy keeps you. The gala, then. You pour for mine; I shall see t
 goto ch4
 
 *q_nowater
-# @pos 340 1117
+# @chapter Three: Below Stairs
 show q neutral right
 q: Then I shall keep my own counsel as well. I will say only this: watch what my lord drinks, Marlowe. And where it comes from. Good night.
 hide right
@@ -307,7 +320,7 @@ goto ch4
 # ---------------------------------------------------------------- chapter 4
 
 *ch4
-# @pos 680 889
+# @chapter Four: An Affair of Honour
 card Chapter Four | An Affair of Honour
 bg vista
 n: The birthday dawns in perfect, rescheduled sunshine. Overhead the far fields hang like a quilt on a line. I have been awake since four, ironing a cravat for a swan.
@@ -327,7 +340,7 @@ choice
 - Inform Lord Varrow at once, and let a father deal with it. => duel_father
 
 *duel_cake
-# @pos 1020 756
+# @chapter Four: An Affair of Honour
 add favor 1
 add peace 1
 hide right
@@ -341,7 +354,7 @@ n: They cut. There is applause. Lord Solberg is given the corner piece, honour i
 goto ch4_after
 
 *duel_swan
-# @pos 1020 990
+# @chapter Four: An Affair of Honour
 add favor 1
 add peace 1
 show p shock center
@@ -355,7 +368,7 @@ p: He won't know that until he's read it.
 goto ch4_after
 
 *duel_father
-# @pos 1020 1224
+# @chapter Four: An Affair of Honour
 add favor -2
 add heat -1
 hide all
@@ -369,12 +382,12 @@ n: The peace is kept. The Young Master is not speaking to me, which is a kind of
 goto ch5
 
 *ch4_after
-# @pos 1360 1013
+# @chapter Four: An Affair of Honour
 if favor >= 2 goto ch4_ally
 goto ch5
 
 *ch4_ally
-# @pos 1700 1000
+# @chapter Four: An Affair of Honour
 hide right
 show p neutral center
 n: Afterwards he lingers on the lawn, looking up at the far side of the world, and for a moment he does not look like a person who serves soup in cubes.
@@ -389,7 +402,7 @@ goto ch5
 # ---------------------------------------------------------------- chapter 5
 
 *ch5
-# @pos 2040 967
+# @chapter Five: The Gala
 card Chapter Five | The Gala
 bg ballroom
 n: Nine in the evening. Four hundred guests, two orchestras, one swan in a cravat. The soup, in the end, was served in bowls. I have let the Young Master believe it was a triumph of geometry.
@@ -398,7 +411,7 @@ if canvas >= 1 goto gala_tobe
 goto gala_s
 
 *gala_tobe
-# @pos 2380 1000
+# @chapter Five: The Gala
 show t worried left
 t: Mister Marlowe! I never said anything. About the painted ones. Only I did ask a dock boy which were which, and he looked at me funny.
 add heat 1
@@ -407,7 +420,7 @@ hide left
 goto gala_s
 
 *gala_s
-# @pos 0 1754
+# @chapter Five: The Gala
 show s neutral right
 n: Lord Solberg holds court beside an ice sculpture of himself. He brought it with him. I arrive at his elbow with the decanter. A servant pouring is furniture, and furniture may murmur.
 s: You. The Varrow boy's man. Is this the '71? I shall know if it is not the '71.
@@ -418,7 +431,7 @@ choice
 - Pour the wine. Say nothing. Be furniture. => s_nothing
 
 *s_broke
-# @pos 340 1576
+# @chapter Five: The Gala
 add peace 2
 add heat 1
 show s shock right
@@ -429,7 +442,7 @@ n: I watch arithmetic happen behind his eyes. It is not the arithmetic of trajec
 goto gala_v
 
 *s_canvas
-# @pos 340 1774
+# @chapter Five: The Gala
 add peace -2
 add heat 2
 show s shock right
@@ -441,7 +454,7 @@ n: Across the ballroom, Quince has gone very still.
 goto gala_v
 
 *s_staged
-# @pos 340 1972
+# @chapter Five: The Gala
 add peace 3
 show q angry left
 q: ...three seasons unpaid, Marlowe! My lord's vintner will not extend House Varrow one more bottle on credit!
@@ -455,12 +468,12 @@ hide left
 goto gala_v
 
 *s_nothing
-# @pos 340 2186
+# @chapter Five: The Gala
 n: I pour. It is the '71. He does not know. He says that it is tolerable, and I remain furniture.
 goto gala_v
 
 *gala_v
-# @pos 680 1763
+# @chapter Five: The Gala
 hide all
 show v neutral left
 n: Lord Varrow has taken up position beneath his own portrait, so that guests may compare. I bring him the brandy he pretends not to want.
@@ -473,7 +486,7 @@ choice
 - "Very correct, my lord. I could not say more." => v_nothing
 
 *v_water
-# @pos 1020 1568
+# @chapter Five: The Gala
 add peace 2
 add heat 1
 show v shock left
@@ -484,7 +497,7 @@ n: And there it is again: the arithmetic of offers. It looks much the same on ei
 goto after_gala
 
 *v_bottles
-# @pos 1020 1782
+# @chapter Five: The Gala
 add peace 1
 show v neutral left
 v: Our taps? Now why would a man with a whole cylinder of his own...
@@ -492,7 +505,7 @@ n: I leave him with it. A lord's thought is like our weather: slow, and long in 
 goto after_gala
 
 *v_spoon
-# @pos 1020 1996
+# @chapter Five: The Gala
 add peace -2
 add heat 1
 show v smug left
@@ -501,19 +514,19 @@ n: The fleet. Closing up. At close range, canvas has a seam. I have, I think, ma
 goto after_gala
 
 *v_nothing
-# @pos 1020 2210
+# @chapter Five: The Gala
 v: Hm. Correct. Yes. They would be.
 n: He turns back to his portrait. Of the two, the portrait looks the better informed.
 goto after_gala
 
 *after_gala
-# @pos 1360 1877
+# @chapter Five: The Gala
 if heat >= 3 goto caught
 goto summit
 # ---------------------------------------------------------------- caught?
 
 *caught
-# @pos 1700 1840
+# @chapter Interlude: A Word in the Study
 card Interlude | A Word in the Study
 bg study
 show v angry left
@@ -525,7 +538,7 @@ n: I have an answer prepared. I have had one prepared for thirty years. It is a 
 end Reassigned | Level Nine. The algae vats are warm, and no one there has Views. You read about what happened next in the news-sheets, like everybody else. They did not say whether it could have been stopped. News-sheets never do.
 
 *caught_saved
-# @pos 2040 1864
+# @chapter Interlude: A Word in the Study
 show p smile right
 p: Father! There you are. Is Marlowe in trouble? He can't be. Everything Marlowe's done this week, he's done on my instructions.
 show v shock left
@@ -541,7 +554,7 @@ goto summit
 # ---------------------------------------------------------------- chapter 6
 
 *summit
-# @pos 2380 1810
+# @chapter Six: The Summit
 card Chapter Six | The Summit
 bg study
 n: Midnight. Lord Varrow's study. The war table glows between them: two little cylinders of light and, hanging in the middle, a mote labelled THE VEIL.
@@ -553,7 +566,7 @@ if peace >= 2 goto summit_tense
 goto summit_bad
 
 *end_accord
-# @pos 0 2484
+# @chapter Six: The Summit
 v: Solberg. I have been thinking. The Veil. Damned nuisance of a thing. Costs me a fortune to picket.
 s: I have been thinking also. A comet is an untidy thing to quarrel over. So much... water.
 v: Supposing, purely as a kindness, I were to let Meridian draw from it. For a consideration.
@@ -575,7 +588,7 @@ n: Above us, with a sound like applause, three days of banked rain finally let g
 end The Veil Accord | Meridian drinks. Halcyon pays its vintner. Both lords dine out for years on how they outwitted the other. Nobody thanks the servants, which is how the servants know it was done properly.
 
 *summit_tense
-# @pos 0 2688
+# @chapter Six: The Summit
 show v angry left
 v: The Veil is Halcyon's by right of capture.
 show s angry right
@@ -588,7 +601,7 @@ choice
 - Remain furniture. It is not a servant's place. => end_war
 
 *final_perry
-# @pos 340 2563
+# @chapter Six: The Summit
 show p smile center
 p: Father! Lord Solberg! I've a birthday wish, and it is still technically my birthday for another six minutes.
 p: The comet. I want it. Not for me! For the Admiral. Every fleet admiral needs a home port.
@@ -605,7 +618,7 @@ n: And so the most dangerous object in the Lagrange becomes a naval base under t
 end The Admiral's Peace | Port Featherstonehaugh flies two flags and a rather large pennant with a swan on it. The treaty is eleven pages long and has been bitten twice. Peregrine Varrow begins, to general alarm, to take an interest in politics.
 
 *final_tea
-# @pos 340 2761
+# @chapter Six: The Summit
 n: Quince stumbles. I have never seen Quince stumble, and it is a beautiful piece of work. Her teapot goes left. Mine, in sympathy, goes right.
 show v shock left
 show s shock right
@@ -617,7 +630,7 @@ n: A week in which two lords must talk to one another without a map to point at.
 end Armistice by Teapot | The war is postponed owing to tea. Nobody upstairs can quite recall, afterwards, what they had been about to say. You and Quince have six days left, forty trunks to repack, and a plan.
 
 *summit_bad
-# @pos 0 3021
+# @chapter Six: The Summit
 show v smug left
 v: I know precisely what your Long Spoon is worth, Solberg.
 show s smug right
@@ -626,7 +639,7 @@ n: Two men, each certain the other is helpless. I have armed them both, and with
 goto end_war
 
 *end_war
-# @pos 340 2959
+# @chapter Six: The Summit
 show v angry left
 show s angry right
 n: One of them says it. I shall not record which. The histories will disagree in any case.

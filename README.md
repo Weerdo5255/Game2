@@ -58,8 +58,18 @@ opens a visual editor for the story in your browser (it prints the address,
 directly; the game reads that file each time it starts, so there is nothing
 to rebuild.
 
-![Editor](docs/editor.png)
+![Editor: the main graph, one panel per chapter](docs/editor.png)
 
+![Editor: inside a chapter](docs/editor-chapter.png)
+
+- **Chapters** keep a large story manageable. The main graph shows each
+  chapter as one panel listing its ways in, its ways out, and what it *passes
+  out* to the rest of the story: the range of change it can make to each
+  property over every route through it (for example "Quince's trust −1…+2"),
+  and the properties its conditions depend on. Double-click a panel to open
+  the chapter as a graph of its own; scenes outside it that lead in or out
+  appear as dashed portals you can click to follow. The bar at the top left
+  leads back up. Edit a consequence inside and the panel outside updates.
 - **The graph** shows every scene as a box. Gold lines are choices, blue are
   conditions, grey are jumps, and a dashed line means the scene simply
   continues into the next one. Drag scenes to arrange them; drag the round
@@ -81,6 +91,22 @@ to rebuild.
   **Play** and **Play from here** save and launch the game at that scene.
 - Undo and redo work on everything; the first save of a session keeps the
   previous file as `story.txt.bak`.
+
+### Working with chapters
+
+- Put a scene in a chapter with the **Chapter** menu at the top of its panel,
+  or drag it from the Scenes list on to a chapter panel. New scenes join the
+  chapter you are in.
+- **+ Chapter** (top left of the main graph) adds an empty one. For a story
+  with none, **Chapters from chapter cards** groups the scenes automatically,
+  starting a chapter at each chapter card.
+- Drag a chapter's way out on to another chapter (or one of its ways in) to
+  reroute the story between chapters without opening either.
+- Dissolving a chapter returns its scenes to the main graph; nothing is
+  deleted. Chapters are for organising: the game plays the same with or
+  without them.
+- In the story file a chapter is a `chapter Name | x y | note` line and each
+  member scene carries `# @chapter Name` under its label.
 
 ### Several stories
 
@@ -207,8 +233,12 @@ cargo build && node tools/editor_e2e.js
 cargo build && node tools/editor_art_e2e.js
 ```
 
+```bash
+cargo build && node tools/editor_chapters_e2e.js
+```
+
 The second covers the story library and the Art view, against a mock ComfyUI
-server (also needs Python 3).
+server (also needs Python 3); the third covers chapters.
 
 The ComfyUI suite has its own tests (no network or GPU needed):
 
