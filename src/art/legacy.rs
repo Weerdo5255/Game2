@@ -1,12 +1,32 @@
-//! All artwork is procedural pixel art: backgrounds and character sprites
-//! are drawn in code with a limited palette and ordered dithering.
+//! The original 384x216 pixel art. Kept only as a placeholder and as a
+//! reference while the high-resolution art is being painted.
+#![allow(dead_code)]
 
 use crate::gfx::*;
 use std::f32::consts::{PI, TAU};
 
-pub const BACKGROUNDS: &[&str] = &["pantry", "axis", "dock", "vista", "vista_night", "ballroom", "study"];
-pub const SPRITES: &[&str] = &["p", "v", "s", "q", "t", "c", "a"];
-pub const EXPRS: &[&str] = &["neutral", "smile", "worried", "angry", "smug", "shock"];
+const W: i32 = 384;
+const H: i32 = 216;
+
+/// Paint a legacy background, scaled 3x to fill a full-size canvas.
+pub fn upscaled_bg(c: &mut Canvas, name: &str, t: f32) {
+    let mut lo = Canvas::new(W, H);
+    draw_bg(&mut lo, name, t);
+    upscale(c, &lo);
+}
+
+/// Paint a legacy sprite, scaled 3x.
+pub fn upscaled_sprite(c: &mut Canvas, who: &str, expr: &str) {
+    upscale(c, &sprite(who, expr));
+}
+
+fn upscale(c: &mut Canvas, lo: &Canvas) {
+    for y in 0..c.h {
+        for x in 0..c.w {
+            c.put(x, y, lo.get(x / 3, y / 3));
+        }
+    }
+}
 
 pub const SPR_W: i32 = 112;
 pub const SPR_H: i32 = 152;

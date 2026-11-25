@@ -4,10 +4,11 @@ use crate::art;
 use crate::gfx::*;
 use crate::script::{Cmd, Script, Vm};
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 pub const SPEAKERS: &[&str] = &["n", "m", "p", "v", "s", "q", "t", "c", "a"];
 const SAVE_FILE: &str = "below_stairs.sav";
-const COLS: usize = 44;
+const COLS: usize = 64;
 const LINES: usize = 4;
 const FADE_HALF: f32 = 0.3;
 
@@ -68,6 +69,10 @@ pub struct Game {
     toasts: Vec<(String, u32, f32)>,
     note: Option<(String, f32)>,
     sprites: HashMap<(String, String), Canvas>,
+    /// Cached static painting of the current background: (name, canvas, animated).
+    bg_cache: Option<(String, Canvas, bool)>,
+    /// Directory of enhanced art that overrides the procedural paintings.
+    art_dir: Option<PathBuf>,
     cur_pc: usize,
     pub quit: bool,
 }
@@ -92,13 +97,13 @@ fn wrap(text: &str, cols: usize) -> Vec<String> {
 
 /// Vertical layout of the choice menu: (top of box, [(y, height) per option]).
 fn choice_layout(opts: &[(Vec<String>, String)]) -> (i32, i32, Vec<(i32, i32)>) {
-    let total: i32 = opts.iter().map(|o| o.0.len() as i32 * 10 + 8).sum::<i32>() + 8;
+    let total: i32 = opts.iter().map(|o| o.0.len() as i32 * 24 + 22).sum::<i32>() + 24;
     let top = (H - total) / 2;
-    let mut y = top + 6;
+    let mut y = top + 14;
     let rows = opts
         .iter()
         .map(|o| {
-            let h = o.0.len() as i32 * 10 + 8;
+            let h = o.0.len() as i32 * 24 + 22;
             y += h;
             (y - h, h)
         })
@@ -109,11 +114,11 @@ fn choice_layout(opts: &[(Vec<String>, String)]) -> (i32, i32, Vec<(i32, i32)>) 
 const TITLE_ITEMS: [&str; 3] = ["New Game", "Continue", "Quit"];
 
 fn title_item_y(i: usize) -> i32 {
-    132 + i as i32 * 15
+    392 + i as i32 * 44
 }
 
 impl Game {
-    pub fn new(script: Script) -> Game {
+    pub fn new(script: Script, art_dir: Option<PathBuf>) -> Game {
         Game {
             script,
             vm: Vm::default(),
@@ -126,6 +131,8 @@ impl Game {
             toasts: Vec::new(),
             note: None,
             sprites: HashMap::new(),
+            bg_cache: None,
+            art_dir,
             cur_pc: 0,
             quit: false,
         }
@@ -219,7 +226,7 @@ impl Game {
                     let opts = opts
                         .iter()
                         .filter(|o| o.cond.as_ref().map_or(true, |c| self.vm.test(c)))
-                        .map(|o| (wrap(&o.text, 41), o.target.clone()))
+                        .map(|o| (wrap(&o.text, 58), o.target.clone()))
                         .collect();
                     self.mode = Mode::Choice { opts, sel: 0 };
                     return;
@@ -386,7 +393,7 @@ impl Game {
                 let mut hit = None;
                 for i in 0..n {
                     let y = title_item_y(i);
-                    if (inp.mouse.1 >= y - 3 && inp.mouse.1 < y + 11) && (inp.mouse.0 - W / 2).abs() < 60 && avail(i) {
+                    if (inp.mouse.1 >= y - 10 && inp.mouse.1 < y + 34) && (inp.mouse.0 - W / 2).abs() < 170 && avail(i) {
                         hit = Some(i);
                     }
                 }
@@ -433,7 +440,7 @@ impl Game {
                 let (_, _, rows) = choice_layout(opts);
                 let hit = rows
                     .iter()
-                    .position(|(y, h)| inp.mouse.1 >= *y && inp.mouse.1 < y + h && inp.mouse.0 >= 16 && inp.mouse.0 < W - 16);
+                    .position(|(y, h)| inp.mouse.1 >= *y && inp.mouse.1 < y + h && inp.mouse.0 >= 96 && inp.mouse.0 < W - 96);
                 if let (Some(i), true) = (hit, inp.mouse_moved || inp.click) {
                     *sel = i;
                 }
@@ -452,60 +459,78 @@ impl Game {
         }
     }
 
+    /// Draw the current background (cached static painting plus overlay).
+    fn draw_bg(&mut self, c: &mut Canvas, name: &str) {
+        if name.is_empty() {
+            c.clear(BLACK);
+            return;
+        }
+        if self.bg_cache.as_ref().map_or(true, |b| b.0 != name) {
+            let (img, animated) = art::background(name, self.art_dir.as_deref());
+            self.bg_cache = Some((name.to_string(), img, animated));
+        }
+        let (_, img, animated) = self.bg_cache.as_ref().unwrap();
+        c.px.copy_from_slice(&img.px);
+        if *animated {
+            art::animate(c, name, self.time);
+        }
+    }
+
     pub fn render(&mut self, c: &mut Canvas) {
         match &self.mode {
             Mode::Title { sel } => {
-                art::draw_bg(c, "vista_night", self.time);
-                c.text_c(W / 2, 22, "BELOW STAIRS,", GOLD, 2);
-                c.text_c(W / 2, 44, "ABOVE STARS", GOLD, 2);
-                c.text_c(W / 2, 68, "A tale of Halcyon Reach", rgb(200, 210, 255), 1);
-                c.panel(W / 2 - 64, 124, 128, 52);
+                let sel = *sel;
+                self.draw_bg(c, "vista_night");
+                c.rect_blend(0, 0, W, 250, rgba(8, 8, 28, 120));
+                c.text_c(W / 2, 54, "BELOW STAIRS,", GOLD, 6);
+                c.text_c(W / 2, 118, "ABOVE STARS", GOLD, 6);
+                c.text_c(W / 2, 196, "A tale of Halcyon Reach", rgb(200, 210, 255), 2);
+                c.panel(W / 2 - 170, 372, 340, 150);
                 for (i, item) in TITLE_ITEMS.iter().enumerate() {
                     let enabled = i != 1 || Game::has_save();
                     let col = if !enabled {
                         rgb(90, 96, 140)
-                    } else if i == *sel {
+                    } else if i == sel {
                         GOLD
                     } else {
                         WHITE
                     };
-                    c.text_c(W / 2, title_item_y(i), item, col, 1);
-                    if i == *sel {
-                        c.text_sh(W / 2 - 56, title_item_y(i), ">", GOLD, 1);
+                    c.text_c(W / 2, title_item_y(i), item, col, 3);
+                    if i == sel {
+                        c.text_sh(W / 2 - 150, title_item_y(i), ">", GOLD, 3);
                     }
                 }
-                c.text_c(W / 2, 186, "Enter/Space/Click: advance   Arrows: choose", rgb(200, 210, 255), 1);
-                c.text_c(W / 2, 198, "Ctrl: skip  F5: save  F9: load  Esc: title", rgb(200, 210, 255), 1);
+                c.rect_blend(0, 556, W, 92, rgba(8, 8, 28, 150));
+                c.text_c(W / 2, 572, "Enter / Space / Click: advance    Arrows: choose", rgb(200, 210, 255), 2);
+                c.text_c(W / 2, 604, "Ctrl: skip   F5: save   F9: load   Esc: title", rgb(200, 210, 255), 2);
             }
             Mode::Card { title, sub, t } => {
                 c.clear(rgb(8, 8, 24));
-                for x in 0..W {
-                    if hash(x, 0, 12) % 9 == 0 {
-                        let y = (hash(x, 1, 12) % H as u32) as i32;
-                        c.put(x, y, rgb(120, 130, 190));
-                    }
+                for i in 0..260 {
+                    let (x, y) = ((hash(i, 0, 12) % W as u32) as i32, (hash(i, 1, 12) % H as u32) as i32);
+                    c.cover(x, y, rgb(150, 160, 220), 0.3 + hashf(i, 2, 12) * 0.7);
                 }
-                c.text_c(W / 2, 84, title, GOLD, 2);
-                c.hline(W / 2 - 80, 106, 160, rgb(112, 128, 208));
-                c.text_c(W / 2, 114, sub, rgb(214, 222, 255), 1);
+                c.text_c(W / 2, 248, title, GOLD, 4);
+                c.rect(W / 2 - 240, 300, 480, 2, rgb(112, 128, 208));
+                c.text_c(W / 2, 322, sub, rgb(214, 222, 255), 2);
                 c.fade(256u32.saturating_sub((*t * 640.0) as u32));
             }
             _ => self.render_scene(c),
         }
         if let Some((msg, _)) = &self.note {
-            let w = msg.len() as i32 * 8 + 12;
-            c.panel(W / 2 - w / 2, 4, w, 16);
-            c.text(W / 2 - w / 2 + 6, 8, msg, WHITE);
+            let w = msg.len() as i32 * 16 + 36;
+            c.panel(W / 2 - w / 2, 12, w, 40);
+            c.text_sh(W / 2 - w / 2 + 18, 24, msg, WHITE, 2);
         }
         if let Some((t, _)) = &self.fade {
             let k = 1.0 - (t - FADE_HALF).abs() / FADE_HALF;
             c.fade((k.clamp(0.0, 1.0) * 256.0) as u32);
         }
-        c.quantize();
     }
 
     fn render_scene(&mut self, c: &mut Canvas) {
-        art::draw_bg(c, &self.bg, self.time);
+        let bg = self.bg.clone();
+        self.draw_bg(c, &bg);
 
         // cast; whoever is not speaking is dimmed
         let speaking = match &self.mode {
@@ -515,25 +540,26 @@ impl Game {
         for (i, slot) in self.slots.iter().enumerate() {
             let Some(s) = slot else { continue };
             let key = (s.who.clone(), s.expr.clone());
-            let spr = self.sprites.entry(key).or_insert_with(|| art::sprite(&s.who, &s.expr));
-            let x = 24 + i as i32 * 112;
-            let mut y = 10 + ((1.0 - s.appear) * 6.0) as i32;
+            let dir = self.art_dir.as_deref();
+            let spr = self.sprites.entry(key).or_insert_with(|| art::sprite(&s.who, &s.expr, dir));
+            let x = 72 + i as i32 * art::SPR_W;
+            let mut y = 30 + ((1.0 - s.appear) * 18.0) as i32;
             if s.who == "a" || self.bg == "axis" {
                 // the Admiral bobs; at the axis, so does everyone
-                y += ((self.time * 1.6 + i as f32).sin() * 2.5) as i32;
+                y += ((self.time * 1.6 + i as f32).sin() * 7.0) as i32;
             }
             let dim = speaking.as_ref().map_or(false, |w| w != &s.who);
-            c.blit(spr, x, y, dim, (s.appear * 16.0) as u32);
+            c.blit(spr, x, y, dim, (s.appear * 256.0) as u32);
         }
 
         match &self.mode {
             Mode::Say { who, pages, page, shown } => {
                 let (name, col) = speaker(who);
-                c.panel(8, 152, W - 16, 58);
+                c.panel(24, 456, W - 48, 174);
                 if !name.is_empty() {
-                    let w = name.len() as i32 * 8 + 12;
-                    c.panel(14, 141, w, 15);
-                    c.text(20, 145, name, col);
+                    let w = name.len() as i32 * 16 + 36;
+                    c.panel(44, 424, w, 40);
+                    c.text_sh(62, 436, name, col, 2);
                 }
                 let text_col = if who == "n" { col } else { WHITE };
                 let mut left = *shown as usize;
@@ -541,7 +567,7 @@ impl Game {
                 for (i, line) in pages[*page].iter().enumerate() {
                     let n = line.chars().count();
                     let part: String = line.chars().take(left).collect();
-                    c.text_sh(16, 161 + i as i32 * 11, &part, text_col, 1);
+                    c.text_sh(64, 484 + i as i32 * 34, &part, text_col, 2);
                     if left < n {
                         done = false;
                         break;
@@ -549,38 +575,38 @@ impl Game {
                     left -= n;
                 }
                 if done && (self.time * 3.0) as i32 % 2 == 0 {
-                    c.tri(W - 24, 201, W - 16, 201, W - 20, 205, GOLD);
+                    c.tri(W - 76, 602, W - 52, 602, W - 64, 614, GOLD);
                 }
                 self.render_hud(c);
             }
             Mode::Choice { opts, sel } => {
                 c.fade(96);
                 let (top, total, rows) = choice_layout(opts);
-                c.panel(16, top, W - 32, total);
+                c.panel(96, top, W - 192, total);
                 for (i, ((lines, _), (y, h))) in opts.iter().zip(rows.iter()).enumerate() {
                     let on = i == *sel;
                     if on {
-                        c.rect(19, *y, W - 38, *h - 2, rgb(48, 64, 150));
-                        c.text(24, y + 4, ">", GOLD);
+                        c.rect_blend(104, *y, W - 208, *h - 4, rgba(70, 92, 200, 150));
+                        c.text_sh(114, y + 10, ">", GOLD, 2);
                     }
                     for (j, line) in lines.iter().enumerate() {
-                        c.text_sh(36, y + 4 + j as i32 * 10, line, if on { GOLD } else { rgb(214, 222, 255) }, 1);
+                        c.text_sh(144, y + 10 + j as i32 * 24, line, if on { GOLD } else { rgb(214, 222, 255) }, 2);
                     }
                 }
                 self.render_hud(c);
             }
             Mode::Ending { title, lines, t } => {
-                c.fade(192);
-                let h = lines.len() as i32 * 11;
-                let top = (H - h - 70) / 2;
-                c.text_c(W / 2, top, "- AN ENDING -", rgb(150, 160, 220), 1);
-                c.text_c(W / 2, top + 16, title, GOLD, 2);
-                c.hline(W / 2 - 100, top + 38, 200, rgb(112, 128, 208));
+                c.fade(200);
+                let h = lines.len() as i32 * 30;
+                let top = (H - h - 190) / 2;
+                c.text_c(W / 2, top, "- AN ENDING -", rgb(150, 160, 220), 2);
+                c.text_c(W / 2, top + 40, title, GOLD, 4);
+                c.rect(W / 2 - 300, top + 92, 600, 2, rgb(112, 128, 208));
                 for (i, line) in lines.iter().enumerate() {
-                    c.text_sh(16, top + 46 + i as i32 * 11, line, WHITE, 1);
+                    c.text_c(W / 2, top + 116 + i as i32 * 30, line, WHITE, 2);
                 }
                 if *t > 1.0 && (self.time * 2.0) as i32 % 2 == 0 {
-                    c.text_c(W / 2, top + 54 + h, "Press Enter", rgb(150, 160, 220), 1);
+                    c.text_c(W / 2, top + 140 + h, "Press Enter", rgb(150, 160, 220), 2);
                 }
             }
             _ => {}
@@ -592,17 +618,18 @@ impl Game {
             ("DETENTE", self.vm.var("peace"), 7, rgb(120, 230, 150)),
             ("SUSPICION", self.vm.var("heat"), 4, rgb(255, 110, 100)),
         ];
-        for (i, (label, val, max, col)) in rows.iter().enumerate() {
-            let y = 5 + i as i32 * 11;
-            let px = W - 8 - 49;
-            c.text_sh(px - 4 - label.len() as i32 * 8, y, label, WHITE, 1);
-            for k in 0..*max {
-                c.rect(px + k * 7, y, 6, 7, OUTLINE);
-                c.rect(px + k * 7 + 1, y + 1, 4, 5, if k < *val { *col } else { rgb(60, 64, 100) });
+        c.rect_blend(W - 330, 8, 322, 60, rgba(8, 8, 28, 130));
+        for (i, (label, val, _, col)) in rows.iter().enumerate() {
+            let y = 16 + i as i32 * 26;
+            let px = W - 16 - 7 * 20;
+            c.text_sh(px - 12 - label.len() as i32 * 16, y, label, WHITE, 2);
+            for k in 0..rows[i].2 {
+                c.rect(px + k * 20, y, 17, 16, OUTLINE);
+                c.rect(px + k * 20 + 2, y + 2, 13, 12, if k < *val { *col } else { rgb(60, 64, 100) });
             }
         }
         for (i, (msg, col, _)) in self.toasts.iter().rev().take(4).enumerate() {
-            c.text_sh(8, 5 + i as i32 * 11, msg, *col, 1);
+            c.text_sh(20, 16 + i as i32 * 26, msg, *col, 2);
         }
     }
 }
