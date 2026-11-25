@@ -166,8 +166,9 @@ fn json_str(s: &str) -> String {
     format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
-/// Write every procedural painting as a PNG guide, plus masks and a
-/// `manifest.json` describing them, for the ComfyUI suite.
+/// Write every procedural painting as a PNG guide for the ComfyUI suite:
+/// `bg_*.png`, `spr_*.png` (RGBA), `flat_*.png` (sprite on grey), `mask_*.png`
+/// (silhouette), `face_*.png` (expression region) and `manifest.json`.
 pub fn export_guides(dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {}", dir.display(), e))?;
     let mut entries = Vec::new();
@@ -197,6 +198,12 @@ pub fn export_guides(dir: &Path) -> Result<(), String> {
             let c = procedural_sprite(who, expr);
             let file = format!("spr_{}_{}.png", who, expr);
             c.save_png(&dir.join(&file), true)?;
+            // the sprite on a neutral backdrop, as the img2img starting image
+            let mut flat = Canvas::new(SPR_W, SPR_H);
+            flat.clear(rgb(128, 128, 128));
+            flat.blit(&c, 0, 0, false, 256);
+            let flat_file = format!("flat_{}_{}.png", who, expr);
+            flat.save_png(&dir.join(&flat_file), false)?;
             // silhouette: white where the character is
             let mut mask = Canvas::new(SPR_W, SPR_H);
             for (m, p) in mask.px.iter_mut().zip(c.px.iter()) {
@@ -207,9 +214,9 @@ pub fn export_guides(dir: &Path) -> Result<(), String> {
             mask.save_png(&dir.join(&mask_file), false)?;
             let base = if *expr == "neutral" { "null".to_string() } else { json_str(&format!("spr_{}_neutral", who)) };
             entries.push(format!(
-                "    {{\"id\": {}, \"kind\": \"sprite\", \"file\": {}, \"output\": {}, \"width\": {}, \"height\": {}, \"character\": {}, \"expression\": {}, \"base\": {}, \"mask\": {}, \"face_mask\": {}, \"face_rect\": [{}, {}, {}, {}], \"prompt\": {}, \"expression_prompt\": {}}}",
+                "    {{\"id\": {}, \"kind\": \"sprite\", \"file\": {}, \"output\": {}, \"width\": {}, \"height\": {}, \"character\": {}, \"expression\": {}, \"base\": {}, \"flat\": {}, \"mask\": {}, \"face_mask\": {}, \"face_rect\": [{}, {}, {}, {}], \"prompt\": {}, \"expression_prompt\": {}}}",
                 json_str(&format!("spr_{}_{}", who, expr)), json_str(&file), json_str(&file), SPR_W, SPR_H,
-                json_str(who), json_str(expr), base, json_str(&mask_file), json_str(&face_file),
+                json_str(who), json_str(expr), base, json_str(&flat_file), json_str(&mask_file), json_str(&face_file),
                 fx, fy, fw, fh, json_str(sprite_prompt(who)), json_str(expr_prompt(expr))
             ));
         }

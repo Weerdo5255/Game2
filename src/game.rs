@@ -226,7 +226,7 @@ impl Game {
                     let opts = opts
                         .iter()
                         .filter(|o| o.cond.as_ref().map_or(true, |c| self.vm.test(c)))
-                        .map(|o| (wrap(&o.text, 58), o.target.clone()))
+                        .map(|o| (wrap(&o.text, 54), o.target.clone()))
                         .collect();
                     self.mode = Mode::Choice { opts, sel: 0 };
                     return;

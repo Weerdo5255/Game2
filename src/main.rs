@@ -3,6 +3,7 @@
 //!   cargo run --release                    play
 //!   cargo run --release -- --procedural    ignore assets/enhanced
 //!   cargo run --release -- --art-dir DIR   load enhanced art from DIR
+//!   cargo run --release -- --window 800x450  initial window size (resizable)
 //!   cargo run --release -- --export-guides DIR
 //!       write every painting as a PNG guide for the ComfyUI suite
 //!   cargo run -- --autoplay 0,1,2 --shots shots/
@@ -16,7 +17,7 @@ mod script;
 
 use game::{Game, Input};
 use gfx::{Canvas, H, W};
-use minifb::{Key, KeyRepeat, MouseButton, MouseMode, ScaleMode, Window, WindowOptions};
+use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -61,16 +62,51 @@ fn main() {
         headless(game, picks, arg("--shots"));
         return;
     }
-    if let Err(e) = windowed(game) {
+    let size = arg("--window")
+        .and_then(|s| s.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?))))
+        .filter(|&(w, h): &(usize, usize)| w >= 160 && h >= 90)
+        .unwrap_or((W as usize, H as usize));
+    if let Err(e) = windowed(game, size) {
         eprintln!("could not open a window: {}", e);
         std::process::exit(1);
     }
 }
 
-fn windowed(mut game: Game) -> Result<(), minifb::Error> {
+/// Where the frame sits inside a window of the given size: (scale, x offset, y offset).
+fn letterbox(ww: usize, wh: usize) -> (f32, f32, f32) {
+    let (fw, fh) = (W as f32, H as f32);
+    let s = (ww as f32 / fw).min(wh as f32 / fh).max(0.01);
+    (s, (ww as f32 - fw * s) / 2.0, (wh as f32 - fh * s) / 2.0)
+}
+
+/// Scale the frame into a window-sized buffer, keeping its aspect ratio.
+/// (Done here rather than by minifb, whose aspect-preserving mode crashes.)
+fn present(canvas: &Canvas, out: &mut Vec<u32>, ww: usize, wh: usize) {
+    out.clear();
+    out.resize(ww * wh, 0);
+    let (s, ox, oy) = letterbox(ww, wh);
+    let src_x: Vec<Option<usize>> = (0..ww)
+        .map(|x| Some(((x as f32 + 0.5 - ox) / s).floor()).filter(|v| *v >= 0.0 && *v < W as f32).map(|v| v as usize))
+        .collect();
+    for y in 0..wh {
+        let sy = ((y as f32 + 0.5 - oy) / s).floor();
+        if sy < 0.0 || sy >= H as f32 {
+            continue;
+        }
+        let row = &canvas.px[sy as usize * W as usize..][..W as usize];
+        for (px, sx) in out[y * ww..][..ww].iter_mut().zip(&src_x) {
+            if let Some(sx) = sx {
+                *px = row[*sx];
+            }
+        }
+    }
+}
+
+fn windowed(mut game: Game, size: (usize, usize)) -> Result<(), minifb::Error> {
     let (fw, fh) = (W as usize, H as usize);
-    let opts = WindowOptions { resize: true, scale_mode: ScaleMode::AspectRatioStretch, ..WindowOptions::default() };
-    let mut window = Window::new("Below Stairs, Above Stars", fw, fh, opts)?;
+    let opts = WindowOptions { resize: true, ..WindowOptions::default() };
+    let mut window = Window::new("Below Stairs, Above Stars", size.0, size.1, opts)?;
+    let mut scaled = Vec::new();
     window.set_target_fps(60);
     let mut canvas = Canvas::new(W, H);
     let mut last = Instant::now();
@@ -83,8 +119,8 @@ fn windowed(mut game: Game) -> Result<(), minifb::Error> {
         let down = window.get_mouse_down(MouseButton::Left);
         // map window coordinates to the letterboxed frame
         let (ww, wh) = window.get_size();
-        let s = (ww as f32 / fw as f32).min(wh as f32 / fh as f32).max(0.01);
-        let (ox, oy) = ((ww as f32 - fw as f32 * s) / 2.0, (wh as f32 - fh as f32 * s) / 2.0);
+        let (ww, wh) = (ww.max(1), wh.max(1));
+        let (s, ox, oy) = letterbox(ww, wh);
         let mouse = window
             .get_mouse_pos(MouseMode::Pass)
             .map(|(x, y)| (((x - ox) / s) as i32, ((y - oy) / s) as i32))
@@ -106,7 +142,12 @@ fn windowed(mut game: Game) -> Result<(), minifb::Error> {
 
         game.update(&inp, dt);
         game.render(&mut canvas);
-        window.update_with_buffer(&canvas.px, fw, fh)?;
+        if (ww, wh) == (fw, fh) {
+            window.update_with_buffer(&canvas.px, fw, fh)?;
+        } else {
+            present(&canvas, &mut scaled, ww, wh);
+            window.update_with_buffer(&scaled, ww, wh)?;
+        }
     }
     Ok(())
 }

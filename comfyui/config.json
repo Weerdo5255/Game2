@@ -1,0 +1,57 @@
+{
+  "server": "http://127.0.0.1:8188",
+
+  "checkpoint": "sd_xl_base_1.0.safetensors",
+  "controlnet": "diffusers_xl_canny_full.safetensors",
+  "control_preprocess": "canny",
+  "canny_low": 0.08,
+  "canny_high": 0.25,
+
+  "sampler": "dpmpp_2m",
+  "scheduler": "karras",
+  "steps": 30,
+  "cfg": 6.0,
+  "seed": 20261125,
+
+  "negative": "pixel art, cartoon, anime, flat colours, cel shading, 3d render, plastic, low quality, blurry, jpeg artifacts, deformed, extra limbs, extra fingers, text, watermark, signature, logo, frame, border",
+
+  "kinds": {
+    "background": {
+      "workflow": "background.json",
+      "width": 1360,
+      "height": 768,
+      "denoise": 0.6,
+      "control_strength": 0.8,
+      "control_end": 0.9,
+      "style_prefix": "realistic cinematic matte painting, ",
+      "style_suffix": ", highly detailed, physically based lighting, volumetric light, rich materials, depth, film still, 35mm"
+    },
+    "sprite": {
+      "workflow": "sprite_base.json",
+      "width": 832,
+      "height": 1128,
+      "denoise": 0.55,
+      "control_strength": 0.9,
+      "control_end": 1.0,
+      "alpha_grow": -3,
+      "alpha_feather": 3,
+      "alpha_sigma": 1.5,
+      "style_prefix": "realistic painted bust portrait, ",
+      "style_suffix": ", head and shoulders, facing the viewer, detailed skin and fabric, soft studio key light from upper left, plain neutral grey background"
+    },
+    "expression": {
+      "workflow": "sprite_expression.json",
+      "denoise": 0.65,
+      "control_strength": 1.0,
+      "control_end": 1.0,
+      "face_grow": 10,
+      "face_feather": 9,
+      "face_sigma": 4.0
+    }
+  },
+
+  "overrides": {
+    "bg_vista_night": {"denoise": 0.5},
+    "spr_a_*": {"style_prefix": "realistic wildlife painting, ", "style_suffix": ", detailed white feathers, soft studio key light from upper left, plain neutral grey background"}
+  }
+}

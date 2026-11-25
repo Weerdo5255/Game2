@@ -1,0 +1,127 @@
+{
+  "_comment": "Signatures of the core ComfyUI nodes these workflows use, transcribed from the ComfyUI source (nodes.py, comfy_extras/nodes_canny.py, nodes_mask.py, nodes_compositing.py, nodes_post_processing.py; comfy/samplers.py for the sampler and scheduler names). Used to validate workflows offline and by the test mock server. Re-check with: python3 enhance.py verify-specs --comfy-src /path/to/ComfyUI",
+  "_verified_against": "comfyanonymous/ComfyUI commit a2103ae",
+  "nodes": {
+    "CheckpointLoaderSimple": {
+      "inputs": {"ckpt_name": {"type": "COMBO", "models": "checkpoints"}},
+      "outputs": ["MODEL", "CLIP", "VAE"]
+    },
+    "ControlNetLoader": {
+      "inputs": {"control_net_name": {"type": "COMBO", "models": "controlnet"}},
+      "outputs": ["CONTROL_NET"]
+    },
+    "CLIPTextEncode": {
+      "inputs": {"text": {"type": "STRING"}, "clip": {"type": "CLIP"}},
+      "outputs": ["CONDITIONING"]
+    },
+    "LoadImage": {
+      "inputs": {"image": {"type": "COMBO", "uploaded": true}},
+      "outputs": ["IMAGE", "MASK"]
+    },
+    "ImageScale": {
+      "inputs": {
+        "image": {"type": "IMAGE"},
+        "upscale_method": {"type": "COMBO", "options": ["nearest-exact", "bilinear", "area", "bicubic", "lanczos"]},
+        "width": {"type": "INT", "min": 0, "max": 16384},
+        "height": {"type": "INT", "min": 0, "max": 16384},
+        "crop": {"type": "COMBO", "options": ["disabled", "center"]}
+      },
+      "outputs": ["IMAGE"]
+    },
+    "Canny": {
+      "inputs": {
+        "image": {"type": "IMAGE"},
+        "low_threshold": {"type": "FLOAT", "min": 0.01, "max": 0.99},
+        "high_threshold": {"type": "FLOAT", "min": 0.01, "max": 0.99}
+      },
+      "outputs": ["IMAGE"]
+    },
+    "ControlNetApplyAdvanced": {
+      "inputs": {
+        "positive": {"type": "CONDITIONING"},
+        "negative": {"type": "CONDITIONING"},
+        "control_net": {"type": "CONTROL_NET"},
+        "image": {"type": "IMAGE"},
+        "strength": {"type": "FLOAT", "min": 0.0, "max": 10.0},
+        "start_percent": {"type": "FLOAT", "min": 0.0, "max": 1.0},
+        "end_percent": {"type": "FLOAT", "min": 0.0, "max": 1.0},
+        "vae": {"type": "VAE", "optional": true}
+      },
+      "outputs": ["CONDITIONING", "CONDITIONING"]
+    },
+    "VAEEncode": {
+      "inputs": {"pixels": {"type": "IMAGE"}, "vae": {"type": "VAE"}},
+      "outputs": ["LATENT"]
+    },
+    "VAEDecode": {
+      "inputs": {"samples": {"type": "LATENT"}, "vae": {"type": "VAE"}},
+      "outputs": ["IMAGE"]
+    },
+    "SetLatentNoiseMask": {
+      "inputs": {"samples": {"type": "LATENT"}, "mask": {"type": "MASK"}},
+      "outputs": ["LATENT"]
+    },
+    "KSampler": {
+      "inputs": {
+        "model": {"type": "MODEL"},
+        "seed": {"type": "INT", "min": 0, "max": 18446744073709551615},
+        "steps": {"type": "INT", "min": 1, "max": 10000},
+        "cfg": {"type": "FLOAT", "min": 0.0, "max": 100.0},
+        "sampler_name": {"type": "COMBO", "options": ["euler", "euler_cfg_pp", "euler_ancestral", "euler_ancestral_cfg_pp", "heun", "heunpp2", "exp_heun_2_x0", "exp_heun_2_x0_sde", "dpm_2", "dpm_2_ancestral", "lms", "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral", "dpmpp_2s_ancestral_cfg_pp", "dpmpp_sde", "dpmpp_sde_gpu", "dpmpp_2m", "dpmpp_2m_cfg_pp", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_2m_sde_heun", "dpmpp_2m_sde_heun_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm", "ipndm", "ipndm_v", "deis", "cfgpp_ud10_ab", "res_multistep", "res_multistep_cfg_pp", "res_multistep_ancestral", "res_multistep_ancestral_cfg_pp", "gradient_estimation", "gradient_estimation_cfg_pp", "er_sde", "seeds_2", "seeds_3", "sa_solver", "sa_solver_pece", "ddim", "uni_pc", "uni_pc_bh2"], "server_list": true},
+        "scheduler": {"type": "COMBO", "options": ["simple", "sgm_uniform", "karras", "exponential", "ddim_uniform", "beta", "normal", "linear_quadratic", "kl_optimal"], "server_list": true},
+        "positive": {"type": "CONDITIONING"},
+        "negative": {"type": "CONDITIONING"},
+        "latent_image": {"type": "LATENT"},
+        "denoise": {"type": "FLOAT", "min": 0.0, "max": 1.0}
+      },
+      "outputs": ["LATENT"]
+    },
+    "ImageToMask": {
+      "inputs": {"image": {"type": "IMAGE"}, "channel": {"type": "COMBO", "options": ["red", "green", "blue", "alpha"]}},
+      "outputs": ["MASK"]
+    },
+    "MaskToImage": {
+      "inputs": {"mask": {"type": "MASK"}},
+      "outputs": ["IMAGE"]
+    },
+    "InvertMask": {
+      "inputs": {"mask": {"type": "MASK"}},
+      "outputs": ["MASK"]
+    },
+    "GrowMask": {
+      "inputs": {
+        "mask": {"type": "MASK"},
+        "expand": {"type": "INT", "min": -16384, "max": 16384},
+        "tapered_corners": {"type": "BOOLEAN"}
+      },
+      "outputs": ["MASK"]
+    },
+    "ImageBlur": {
+      "inputs": {
+        "image": {"type": "IMAGE"},
+        "blur_radius": {"type": "INT", "min": 1, "max": 31},
+        "sigma": {"type": "FLOAT", "min": 0.1, "max": 10.0}
+      },
+      "outputs": ["IMAGE"]
+    },
+    "ImageCompositeMasked": {
+      "inputs": {
+        "destination": {"type": "IMAGE"},
+        "source": {"type": "IMAGE"},
+        "x": {"type": "INT", "min": 0, "max": 16384},
+        "y": {"type": "INT", "min": 0, "max": 16384},
+        "resize_source": {"type": "BOOLEAN"},
+        "mask": {"type": "MASK", "optional": true}
+      },
+      "outputs": ["IMAGE"]
+    },
+    "JoinImageWithAlpha": {
+      "inputs": {"image": {"type": "IMAGE"}, "alpha": {"type": "MASK"}},
+      "outputs": ["IMAGE"]
+    },
+    "SaveImage": {
+      "inputs": {"images": {"type": "IMAGE"}, "filename_prefix": {"type": "STRING"}},
+      "outputs": []
+    }
+  }
+}
