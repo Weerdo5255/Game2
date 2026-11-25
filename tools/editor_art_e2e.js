@@ -35,7 +35,8 @@ let browser = null;
   procs.push(spawn(exe, ['--editor', '--story', mainStory, '--stories', path.join(tmp, 'stories'), '--comfy-dir', path.join(tmp, 'comfyui'),
     '--port', String(PORT), '--no-browser', '--job-timeout', '20'], { stdio: 'ignore' }));
   await sleep(800);
-  const sent = () => JSON.parse(fs.readFileSync(log, 'utf8'));
+  // the mock writes its log a moment after accepting a workflow: wait until n have been logged
+  const sent = async n => { for (let i = 0; i < 100; i++) { try { const d = JSON.parse(fs.readFileSync(log, 'utf8')); if (d.prompts.length >= n) return d; } catch (e) { /* not written yet */ } await sleep(60); } throw new Error(`the mock never logged ${n} workflows`); };
   const classes = p => Object.values(p).map(n => n.class_type);
 
   const b = browser = await chromium.launch();
@@ -82,7 +83,8 @@ let browser = null;
   await jobsIdle();
   const enh = path.join(tmp, 'stories', 'second-tale', 'enhanced');
   assert(fs.existsSync(path.join(enh, 'bg_vista.png')), 'the enhanced background lands in the story\'s own folder');
-  assert(classes(sent().prompts[0]).includes('VAEEncode') && classes(sent().prompts[0]).includes('ControlNetApplyAdvanced'), 'default workflow: img2img with ControlNet');
+  const first = (await sent(1)).prompts[0];
+  assert(classes(first).includes('VAEEncode') && classes(first).includes('ControlNetApplyAdvanced'), 'default workflow: img2img with ControlNet');
   await p.waitForFunction(() => document.querySelector('#art .acard .badge.enh'));
   assert(await p.locator('#art .acard .badge.enh').count() === 1, 'the card shows it as enhanced');
 
@@ -92,10 +94,10 @@ let browser = null;
   assert(JSON.parse(fs.readFileSync(path.join(tmp, 'stories', 'second-tale', 'art.json'), 'utf8')).workflows.background === 'background_reimagine.json', 'the workflow choice is remembered per story');
   await p.locator('#art .acard:has-text("pantry")').locator('button:has-text("Send")').first().click();
   await jobsIdle();
-  assert(classes(sent().prompts[1]).includes('EmptyLatentImage'), 'chosen workflow is used: reimagine starts from noise');
+  assert(classes((await sent(2)).prompts[1]).includes('EmptyLatentImage'), 'chosen workflow is used: reimagine starts from noise');
   await p.locator('#art .acard:has-text("vista") >> nth=0').locator('select').selectOption({ label: 'Refine (light second pass)' });
   await jobsIdle();
-  const refine = sent();
+  const refine = await sent(3);
   assert(!classes(refine.prompts[2]).some(c => c.startsWith('ControlNet')) && refine.files.includes('bsas_second-tale_bg_vista_current.png'), 'a one-off workflow: refine starts from the current enhanced image');
 
   // a character: own prompt, neutral then expressions built on it
@@ -104,7 +106,7 @@ let browser = null;
   await sleep(300);
   await p.click('#art .crow button:has-text("Send all six")');
   await jobsIdle();
-  const all = sent(), spr = all.prompts.slice(3);
+  const all = await sent(9), spr = all.prompts.slice(3);
   assert(spr.length === 6 && fs.readdirSync(enh).filter(f => f.startsWith('spr_hero_')).length === 6, 'all six expressions were generated');
   assert(spr.every(q => JSON.stringify(q).includes('a weathered sea captain with a white beard')), "the story's own prompt for the character is used");
   assert(!classes(spr[0]).includes('SetLatentNoiseMask') && spr.slice(1).every(q => classes(q).includes('SetLatentNoiseMask')), 'neutral first, then face-only expression passes');
