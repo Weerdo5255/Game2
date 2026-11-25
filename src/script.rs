@@ -128,7 +128,7 @@ pub fn parse_color(s: &str) -> Option<u32> {
     u32::from_str_radix(hex, 16).ok().map(|v| 0xFF00_0000 | v)
 }
 
-fn valid_id(s: &str) -> bool {
+pub fn valid_id(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
@@ -255,6 +255,8 @@ fn parse_line(line: &str) -> Result<Line, String> {
         }
         _ => match line.split_once(": ") {
             Some((who, text)) if !who.contains(' ') => Item::Say { who: who.into(), text: text.trim().into() },
+            // a line of dialogue not yet written: "who:" and nothing else
+            None if toks.len() == 1 && line.ends_with(':') && line.len() > 1 => Item::Say { who: line[..line.len() - 1].into(), text: String::new() },
             _ => return Err(format!("cannot parse '{}'", line)),
         },
     };
@@ -281,13 +283,26 @@ impl Doc {
                 Line::Var(v) => doc.vars.push(v),
                 Line::Label(label) => doc.scenes.push(Scene { label, ..Scene::default() }),
                 Line::Pos(x, y) => match doc.scenes.last_mut() {
-                    Some(scene) if scene.items.is_empty() => scene.pos = Some((x, y)),
-                    _ => {}
+                    // the marker is the line straight after the label; anything else is a note
+                    Some(scene) if scene.items.is_empty() && scene.pos.is_none() && !scene.label.is_empty() => scene.pos = Some((x, y)),
+                    Some(scene) => scene.items.push(Item::Comment { text: format!("(@pos {} {})", x, y) }),
+                    None => doc.header.push(format!("(@pos {} {})", x, y)),
                 },
-                Line::Option(opt) => match doc.scenes.last_mut().and_then(|s| s.items.last_mut()) {
-                    Some(Item::Choice { options }) => options.push(opt),
-                    _ => errors.push(format!("story line {}: option outside of a 'choice' block", n + 1)),
-                },
+                Line::Option(opt) => {
+                    // an option belongs to the choice above it, even past notes in between
+                    let items = doc.scenes.last_mut().map(|s| &mut s.items);
+                    let choice = items.and_then(|items| items.iter_mut().rev().find(|i| !matches!(i, Item::Comment { .. })));
+                    match choice {
+                        Some(Item::Choice { options }) => options.push(opt),
+                        _ => {
+                            errors.push(format!("story line {}: option outside of a 'choice' block", n + 1));
+                            if doc.scenes.is_empty() {
+                                doc.scenes.push(Scene::default());
+                            }
+                            doc.scenes.last_mut().unwrap().items.push(Item::Comment { text: format!("UNPARSED: {}", line) });
+                        }
+                    }
+                }
                 Line::Item(Item::Comment { text }) if doc.scenes.is_empty() => doc.header.push(text),
                 Line::Item(item) => {
                     if doc.scenes.is_empty() {
@@ -305,6 +320,16 @@ impl Doc {
         let id = |s: &mut String| *s = s.trim().to_string();
         let pipe_free = |s: &mut String| *s = one_line(s).replace('|', "/");
         self.header.iter_mut().for_each(|h| *h = comment_line(h));
+        // items of an unlabelled scene anywhere but first would be absorbed by the scene before it
+        let mut i = 1;
+        while i < self.scenes.len() {
+            if self.scenes[i].label.trim().is_empty() {
+                let stray = self.scenes.remove(i);
+                self.scenes[i - 1].items.extend(stray.items);
+            } else {
+                i += 1;
+            }
+        }
         for c in &mut self.characters {
             id(&mut c.id);
             pipe_free(&mut c.name);
@@ -361,7 +386,12 @@ impl Doc {
                             }
                         }
                     }
-                    Item::Comment { text } => *text = comment_line(text),
+                    Item::Comment { text } => {
+                        *text = comment_line(text);
+                        if text.starts_with("@pos ") {
+                            text.insert(0, '(');
+                        }
+                    }
                 }
             }
         }
@@ -466,6 +496,42 @@ impl Doc {
             out.push(self.scenes.get(i + 1).map(|s| s.label.clone()).unwrap_or_default());
         }
         out
+    }
+
+    /// Scenes flow can reach from the top of scene `i` before anything is
+    /// put in front of the player (a line, a choice, a card or an ending).
+    fn silent_exits(&self, i: usize) -> Vec<String> {
+        let mut out = Vec::new();
+        for item in &self.scenes[i].items {
+            match item {
+                Item::If { target, .. } => out.push(target.clone()),
+                Item::Goto { target } => {
+                    out.push(target.clone());
+                    return out;
+                }
+                Item::Say { .. } | Item::Choice { .. } | Item::Card { .. } | Item::End { .. } => return out,
+                _ => {}
+            }
+        }
+        out.push(self.scenes.get(i + 1).map(|s| s.label.clone()).unwrap_or_default());
+        out
+    }
+
+    /// Whether writing this document as text and reading it back gives the
+    /// same document. The editor refuses to save one that would not.
+    pub fn survives_text(&self) -> Result<(), String> {
+        let (again, errors) = Doc::parse(&self.to_text());
+        if let Some(e) = errors.first() {
+            return Err(format!("something is incomplete and cannot be written to the story file ({})", e.replacen("story line", "it would be line", 1)));
+        }
+        if &again != self {
+            let scene = self.scenes.iter().zip(again.scenes.iter()).find(|(a, b)| a != b).map(|(a, _)| a.label.clone());
+            return Err(match scene {
+                Some(s) => format!("scene '{}' holds something that cannot be written to the story file", s),
+                None => "the cast, properties or scene list hold something that cannot be written to the story file".into(),
+            });
+        }
+        Ok(())
     }
 
     /// Everything wrong with the story. `exprs`, `bgs` and `sprites` are the
@@ -614,8 +680,33 @@ impl Doc {
                 push("warning", s, None, "the story runs off the end here; finish with an ending or a jump".into());
             }
         }
-        // scenes nothing leads to
         let index: HashMap<&str, usize> = self.scenes.iter().enumerate().map(|(i, s)| (s.label.as_str(), i)).collect();
+        // jumps that can chase each other for ever without anything reaching the screen
+        let silent: Vec<Vec<usize>> = (0..self.scenes.len()).map(|i| self.silent_exits(i).iter().filter_map(|t| index.get(t.as_str()).copied()).collect()).collect();
+        let mut state = vec![0u8; self.scenes.len()];
+        fn cycles(i: usize, g: &[Vec<usize>], state: &mut [u8], hits: &mut Vec<usize>) {
+            state[i] = 1;
+            for &t in &g[i] {
+                if state[t] == 1 {
+                    hits.push(t);
+                } else if state[t] == 0 {
+                    cycles(t, g, state, hits);
+                }
+            }
+            state[i] = 2;
+        }
+        let mut hits = Vec::new();
+        for i in 0..self.scenes.len() {
+            if state[i] == 0 {
+                cycles(i, &silent, &mut state, &mut hits);
+            }
+        }
+        hits.sort();
+        hits.dedup();
+        for i in hits {
+            push("error", &self.scenes[i].label, None, "jumps can circle back here without a line, choice or ending in between, which would hang the game".into());
+        }
+        // scenes nothing leads to
         let mut reached = vec![false; self.scenes.len()];
         let mut stack: Vec<usize> = index.get("start").copied().into_iter().collect();
         while let Some(i) = stack.pop() {
@@ -736,7 +827,8 @@ impl Vm {
     /// must handle, with its index. `Add` is applied here and also returned
     /// so the game can announce it.
     pub fn next(&mut self, s: &Script) -> Option<(usize, Cmd)> {
-        loop {
+        // the validator rejects jump loops, but never trust a story file with the CPU
+        for _ in 0..100_000 {
             let i = self.pc;
             let cmd = s.cmds.get(i)?.clone();
             self.pc += 1;
@@ -757,6 +849,7 @@ impl Vm {
                 _ => return Some((i, cmd)),
             }
         }
+        None
     }
 }
 
@@ -843,9 +936,65 @@ mod tests {
     fn unparseable_lines_are_kept_and_reported() {
         let (doc, errors) = Doc::parse("*start\nthis is not a command\nn: Hello.\n- orphan => start\n");
         assert_eq!(errors.len(), 2);
-        assert_eq!(doc.scenes[0].items.len(), 2);
+        assert_eq!(doc.scenes[0].items.len(), 3);
+        assert!(doc.to_text().contains("# UNPARSED: - orphan => start"));
         assert!(doc.to_text().contains("# UNPARSED: this is not a command"));
         assert!(problems(&doc).iter().any(|p| p.msg.contains("could not be understood")));
+    }
+
+    #[test]
+    fn options_survive_notes_and_bad_lines_between_them() {
+        let (doc, errors) = Doc::parse("*start\nchoice\n- A => start\n# why B\n- B => start\n-C => start\n- D => start\n");
+        assert_eq!(errors.len(), 1);
+        match &doc.scenes[0].items[0] {
+            Item::Choice { options } => assert_eq!(options.iter().map(|o| o.text.as_str()).collect::<Vec<_>>(), ["A", "B", "D"]),
+            other => panic!("{:?}", other),
+        }
+        let (orphan, errors) = Doc::parse("*start\nn: Hi.\n- lost => start\n");
+        assert_eq!(errors.len(), 1);
+        assert!(orphan.to_text().contains("# UNPARSED: - lost => start"));
+    }
+
+    #[test]
+    fn incomplete_blocks_are_caught_before_saving() {
+        let mut doc = story();
+        doc.sanitize();
+        assert!(doc.survives_text().is_ok());
+        // an unwritten line of dialogue is fine
+        doc.scenes[0].items.push(Item::Say { who: "p".into(), text: String::new() });
+        assert!(doc.survives_text().is_ok());
+        for bad in [
+            Item::Add { var: String::new(), n: 1 },
+            Item::Goto { target: String::new() },
+            Item::Show { who: String::new(), expr: "neutral".into(), slot: "left".into() },
+            Item::Choice { options: vec![Opt { cond: Some(Cond { var: String::new(), op: ">=".into(), val: 1 }), text: "A".into(), target: "start".into() }] },
+        ] {
+            let mut broken = doc.clone();
+            broken.scenes[0].items.push(bad.clone());
+            assert!(broken.survives_text().is_err(), "{:?}", bad);
+        }
+        // a note that looks like a position marker must not move the scene
+        let mut tricky = doc.clone();
+        tricky.scenes[0].items.insert(0, Item::Comment { text: "@pos 1 2".into() });
+        tricky.sanitize();
+        assert!(tricky.survives_text().is_ok());
+    }
+
+    #[test]
+    fn silent_jump_loops_are_errors_and_cannot_hang() {
+        let (doc, _) = Doc::parse("*start\nn: Hi.\ngoto hub\n*hub\nshow p smile left\ngoto hub\n");
+        assert!(problems(&doc).iter().any(|p| p.level == "error" && p.msg.contains("hang")));
+        let s = Script::compile(&doc);
+        let mut vm = Vm::new(&s);
+        vm.jump(&s, "hub");
+        vm.pc += 1; // past the show, into the bare loop
+        let (looping, _) = Doc::parse("*start\ngoto start\n");
+        let s2 = Script::compile(&looping);
+        assert!(Vm::new(&s2).next(&s2).is_none());
+        let _ = vm;
+        // a loop through a line of dialogue is a legitimate story
+        let (ok, _) = Doc::parse("*start\nn: Round again.\ngoto start\n");
+        assert!(!problems(&ok).iter().any(|p| p.msg.contains("hang")));
     }
 
     #[test]

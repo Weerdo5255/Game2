@@ -7,13 +7,15 @@
 
 use crate::art;
 use crate::gfx::Canvas;
-use crate::script::{Doc, Problem, OPS, SLOTS};
+use crate::script::{valid_id, Doc, Problem, OPS, SLOTS};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 const PAGE: &str = include_str!("editor.html");
 const MAX_BODY: usize = 8 << 20;
@@ -42,7 +44,12 @@ fn problems(doc: &Doc) -> Vec<Problem> {
 fn read_request(stream: &mut TcpStream) -> Option<Request> {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
+    // one deadline for the whole request, however slowly it trickles in
+    let deadline = Instant::now() + Duration::from_secs(20);
     let head_end = loop {
+        if Instant::now() > deadline {
+            return None;
+        }
         if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
             break i;
         }
@@ -67,6 +74,9 @@ fn read_request(stream: &mut TcpStream) -> Option<Request> {
     }
     let mut body = buf[head_end + 4..].to_vec();
     while body.len() < len {
+        if Instant::now() > deadline {
+            return None;
+        }
         let n = stream.read(&mut chunk).ok()?;
         if n == 0 {
             return None;
@@ -121,8 +131,12 @@ fn query_map(query: &str) -> HashMap<String, String> {
 
 impl State {
     fn origin_ok(&self, req: &Request) -> bool {
-        let hosts = [format!("127.0.0.1:{}", self.port), format!("localhost:{}", self.port)];
-        if !req.headers.get("host").map_or(false, |h| hosts.contains(h)) {
+        // The page must be addressed as this machine (any port, so a forwarded
+        // port works): a hostile site that points its own name at 127.0.0.1
+        // still sends its own name here.
+        let Some(host) = req.headers.get("host") else { return false };
+        let name = host.rsplit_once(':').filter(|(_, p)| p.chars().all(|c| c.is_ascii_digit())).map_or(host.as_str(), |(n, _)| n);
+        if name != "127.0.0.1" && name != "localhost" {
             return false;
         }
         if req.method == "GET" {
@@ -130,7 +144,7 @@ impl State {
         }
         // writes must come from our own page, as JSON (which browsers will
         // not send cross-site without a preflight that we never answer)
-        let own_origin = req.headers.get("origin").map_or(true, |o| hosts.iter().any(|h| *o == format!("http://{}", h)));
+        let own_origin = req.headers.get("origin").map_or(true, |o| *o == format!("http://{}", host));
         own_origin && req.headers.get("content-type").map_or(false, |c| c.starts_with("application/json"))
     }
 
@@ -187,7 +201,8 @@ impl State {
 
     fn handle(&self, req: Request, stream: &mut TcpStream) {
         if !self.origin_ok(&req) {
-            return respond(stream, "403 Forbidden", "text/plain", false, b"forbidden");
+            let msg = format!("Forbidden. Open the story editor at http://127.0.0.1:{}/ in a browser on this machine.", self.port);
+            return respond(stream, "403 Forbidden", "text/plain", false, msg.as_bytes());
         }
         let fail = |stream: &mut TcpStream, msg: String| respond_json(stream, "400 Bad Request", &json!({ "error": msg }));
         match (req.method.as_str(), req.path.as_str()) {
@@ -203,7 +218,7 @@ impl State {
                 Ok(doc) => respond_json(stream, "200 OK", &json!({ "problems": problems(&doc) })),
                 Err(e) => fail(stream, e),
             },
-            ("PUT", "/api/story") => match self.doc_from(&req.body).and_then(|doc| self.save(&doc).map(|_| doc)) {
+            ("PUT", "/api/story") => match self.doc_from(&req.body).and_then(|doc| doc.survives_text().and_then(|_| self.save(&doc)).map(|_| doc)) {
                 Ok(doc) => respond_json(stream, "200 OK", &json!({ "ok": true, "doc": doc, "problems": problems(&doc) })),
                 Err(e) => fail(stream, e),
             },
@@ -221,7 +236,8 @@ impl State {
                 let id = q.get("id").cloned().unwrap_or_default();
                 let look: BTreeMap<String, String> =
                     q.get("look").map(|l| l.split(',').filter_map(|kv| kv.split_once('=')).map(|(k, v)| (k.to_string(), v.to_string())).collect()).unwrap_or_default();
-                if !art::SPRITES.contains(&base.as_str()) || !art::EXPRS.contains(&expr.as_str()) {
+                // the id becomes part of a file name: story ids only
+                if !art::SPRITES.contains(&base.as_str()) || !art::EXPRS.contains(&expr.as_str()) || !(id.is_empty() || valid_id(&id)) {
                     return respond(stream, "404 Not Found", "text/plain", false, b"no such portrait");
                 }
                 let key = format!("{}?{}", req.path, req.query);
@@ -304,15 +320,30 @@ pub fn serve(story: PathBuf, port: u16, art_dir: Option<PathBuf>, browser: bool)
         open_browser(&url);
     }
     let state = Arc::new(State { story, port, art_dir, cache: Mutex::new(HashMap::new()), backed_up: Mutex::new(false) });
+    let active = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming() {
-        let Ok(mut stream) = stream else { continue };
-        let state = state.clone();
-        std::thread::spawn(move || {
-            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+        let Ok(mut stream) = stream else {
+            std::thread::sleep(Duration::from_millis(50));
+            continue;
+        };
+        // a browser opens a handful of connections; far more than that is not a browser
+        if active.load(Ordering::Relaxed) >= 64 {
+            continue;
+        }
+        let (state, active) = (state.clone(), active.clone());
+        active.fetch_add(1, Ordering::Relaxed);
+        let counter = active.clone();
+        let spawned = std::thread::Builder::new().spawn(move || {
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+            let _ = stream.set_write_timeout(Some(Duration::from_secs(20)));
             if let Some(req) = read_request(&mut stream) {
                 state.handle(req, &mut stream);
             }
+            active.fetch_sub(1, Ordering::Relaxed);
         });
+        if spawned.is_err() {
+            counter.fetch_sub(1, Ordering::Relaxed);
+        }
     }
     Ok(())
 }

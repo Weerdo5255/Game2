@@ -196,10 +196,10 @@ impl Game {
     /// Execute script commands until something needs to be shown.
     fn run(&mut self) {
         self.mode = Mode::Run;
-        loop {
+        // bounded, so a story that only shuffles the cast in a loop cannot freeze the game
+        for _ in 0..100_000 {
             let Some((i, cmd)) = self.vm.next(&self.script) else {
-                self.to_title();
-                return;
+                break;
             };
             match cmd {
                 Cmd::Bg(name) => {
@@ -250,6 +250,7 @@ impl Game {
                 _ => {}
             }
         }
+        self.to_title();
     }
 
     fn save(&mut self) {

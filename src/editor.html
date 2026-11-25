@@ -304,8 +304,19 @@ function change(fn, opts) {
   redoStack = [];
   fn();
   markDirty();
-  renderAll(opts);
+  // A field commits when focus leaves it, which is in the middle of the
+  // click that took the focus. Rebuilding the page then would destroy the
+  // thing being clicked, so wait until the mouse button is released.
+  if (pointerDown) pendingRender = opts || {}; else renderAll(opts);
 }
+let pointerDown = false, pendingRender = null;
+window.addEventListener("mousedown", () => pointerDown = true, true);
+window.addEventListener("mouseup", () => {
+  pointerDown = false;
+  if (pendingRender) setTimeout(() => { if (pendingRender && !pointerDown) { const o = pendingRender; pendingRender = null; renderAll(o); } }, 0);
+}, true);
+/** A whole number from a field, kept within what a story can hold. */
+function num(text) { return Math.max(-9999, Math.min(9999, parseInt(text, 10) || 0)); }
 function markDirty() { dirty = true; updateBar(); scheduleValidate(); }
 function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); doc = JSON.parse(undoStack.pop()); afterHistory(); }
 function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); doc = JSON.parse(redoStack.pop()); afterHistory(); }
@@ -328,8 +339,10 @@ function scheduleValidate() {
 }
 async function save() {
   try {
+    const sent = snapshot();
     const r = await api("PUT", "/api/story", doc);
-    problems = r.problems; parseErrors = []; dirty = false; updateBar(); markProblems(); renderProblems();
+    // anything typed while the request was on its way is still unsaved
+    problems = r.problems; parseErrors = []; dirty = snapshot() !== sent; updateBar(); markProblems(); renderProblems();
     toast("Saved");
     return true;
   } catch (e) { toast("Could not save: " + e.message, true); return false; }
@@ -409,6 +422,7 @@ function markProblems() {
 }
 /** Longest-path layering from the start scene; returns a position per scene. */
 function computeLayout() {
+  if (!doc.scenes.length) return [];
   const n = doc.scenes.length, depth = new Array(n).fill(-1), state = new Array(n).fill(0);
   const succ = doc.scenes.map((_, i) => exits(i).map(o => o.target != null ? sceneIndex(o.target) : -1).filter(t => t >= 0));
   const order = [];
@@ -450,6 +464,7 @@ function layoutMissing() {
   doc.scenes.forEach((s, i) => { if (s.fresh) { s.pos = pos[i]; delete s.fresh; } });
 }
 function tidyLayout() {
+  if (!doc.scenes.length) return;
   change(() => { const pos = computeLayout(); doc.scenes.forEach((s, i) => s.pos = pos[i]); });
   fit();
 }
@@ -462,6 +477,7 @@ function fit() {
   applyView();
 }
 function centerOn(si) {
+  if (!doc.scenes[si]) return;
   const s = doc.scenes[si], st = $("#stage"), n = nodeEl(si);
   if (view.k < 0.55) view.k = 0.85;
   view.x = st.clientWidth / 2 - (s.pos[0] + NODE_W / 2) * view.k; view.y = st.clientHeight / 2 - (s.pos[1] + (n ? n.offsetHeight / 2 : 80)) * view.k;
@@ -593,7 +609,7 @@ function bindText(node, obj, key, after) {
   node.addEventListener("focus", () => typingSnapshot = snapshot());
   node.addEventListener("input", () => {
     if (typingSnapshot) { undoStack.push(typingSnapshot); redoStack = []; typingSnapshot = null; }
-    obj[key] = node.type === "number" ? (parseInt(node.value, 10) || 0) : node.value;
+    obj[key] = node.type === "number" ? num(node.value) : node.value;
     if (node.tagName === "TEXTAREA") grow(node);
     markDirty(); scheduleGraph(); if (after) after();
   });
@@ -606,7 +622,7 @@ function condEditor(cond, onChange) {
   return [
     el("select", { onchange: ev => onChange(c => c.var = ev.target.value) }, opts(varOpts(), cond.var)),
     el("select", { style: "flex:none", onchange: ev => onChange(c => c.op = ev.target.value) }, meta.ops.map(o => el("option", { value: o, text: OP_SYM[o], selected: o === cond.op }))),
-    el("input", { type: "number", value: cond.val, onchange: ev => onChange(c => c.val = parseInt(ev.target.value, 10) || 0) }),
+    el("input", { type: "number", value: cond.val, onchange: ev => onChange(c => c.val = num(ev.target.value)) }),
   ];
 }
 function blockBody(s, it, i) {
@@ -633,7 +649,7 @@ function blockBody(s, it, i) {
     case "add": case "set": return el("div", { class: "brow" },
       el("select", { onchange: ev => set(() => it.var = ev.target.value) }, opts(varOpts(), it.var)),
       el("select", { style: "flex:none", onchange: ev => set(() => it.t = ev.target.value) }, el("option", { value: "add", text: "changes by", selected: it.t === "add" }), el("option", { value: "set", text: "becomes", selected: it.t === "set" })),
-      el("input", { type: "number", value: it.n, onchange: ev => set(() => it.n = parseInt(ev.target.value, 10) || 0) }),
+      el("input", { type: "number", value: it.n, onchange: ev => set(() => it.n = num(ev.target.value)) }),
       effectChip({ var: it.var, n: it.n, set: it.t === "set" }));
     case "if": return [el("div", { class: "brow" }, el("label", { text: "if" }), condEditor(it, fn => set(() => fn(it)))),
       el("div", { class: "brow", style: "margin-top:4px" }, el("label", { text: "go to" }), targetSelect(it.target, label => it.target = label))];
@@ -651,7 +667,10 @@ function blockBody(s, it, i) {
             el("button", { class: "ghost", title: "Go to that scene", text: "→", disabled: ti < 0, onclick: () => select(ti, -1, true) })),
           ti >= 0 && effects(ti).length > 0 && el("div", { class: "brow" }, el("label", { text: "consequences" }), effects(ti).map(e => effectChip(e, () => select(ti, -1, true)))),
           el("div", { class: "brow" },
-            el("label", {}, el("input", { type: "checkbox", checked: !!o.cond, onchange: ev => set(() => o.cond = ev.target.checked ? { var: (doc.vars[0] || { id: "" }).id, op: ">=", val: 1 } : null) }), " only if"),
+            el("label", {}, el("input", { type: "checkbox", checked: !!o.cond, onchange: ev => {
+              if (ev.target.checked && !doc.vars.length) { ev.target.checked = false; toast("Create a property first (Properties tab): a condition tests one.", true); return; }
+              set(() => o.cond = ev.target.checked ? { var: doc.vars[0].id, op: ">=", val: 1 } : null);
+            } }), " only if"),
             o.cond && condEditor(o.cond, fn => set(() => fn(o.cond))),
             el("span", { class: "spacer", style: "flex:1" }),
             el("button", { class: "ghost", title: "Move up", text: "↑", disabled: k === 0, onclick: () => set(() => it.options.splice(k - 1, 0, it.options.splice(k, 1)[0])) }),
@@ -699,22 +718,26 @@ function renderInspector() {
     blk.addEventListener("mousedown", () => { if (selItem !== i) { selItem = i; host.querySelectorAll(".blk.on").forEach(b => b.classList.remove("on")); blk.classList.add("on"); } });
     host.append(blk);
   });
-  const add = (label, make) => el("button", { text: "+ " + label, onclick: () => change(() => {
+  const add = (label, make, needs) => el("button", { text: "+ " + label, onclick: () => {
+    if (needs === "property" && !doc.vars.length) { toast("Create a property first (Properties tab): a consequence or condition needs one.", true); return; }
+    if (needs === "portrait" && !doc.characters.some(c => c.sprite)) { toast("Give a character a portrait first (Cast tab).", true); return; }
+    change(() => {
     // after the selected block; otherwise at the end, but ahead of whatever closes the scene
     const it = make(), closing = x => x && ["choice", "goto", "end"].includes(x.t);
     let at = selItem >= 0 ? selItem + 1 : s.items.length;
     if (selItem < 0 && closing(s.items[at - 1]) && !closing(it)) at--;
     s.items.splice(at, 0, it); selItem = at;
-  }) });
+    });
+  } });
   const firstVar = (doc.vars[0] || { id: "" }).id, firstShown = (doc.characters.find(c => c.sprite) || { id: "" }).id;
   host.append(el("div", { class: "addbar" },
     add("Line", () => ({ t: "say", who: (s.items.slice(0, selItem >= 0 ? selItem + 1 : undefined).reverse().find(x => x.t === "say") || { who: "n" }).who, text: "" })),
     add("Choice", () => ({ t: "choice", options: [{ text: "One way", target: s.label, cond: null }, { text: "Another way", target: s.label, cond: null }] })),
-    add("Consequence", () => ({ t: "add", var: firstVar, n: 1 })),
-    add("Condition", () => ({ t: "if", var: firstVar, op: ">=", val: 1, target: s.label })),
-    add("Jump", () => ({ t: "goto", target: s.label })),
+    add("Consequence", () => ({ t: "add", var: firstVar, n: 1 }), "property"),
+    add("Condition", () => ({ t: "if", var: firstVar, op: ">=", val: 1, target: s.label }), "property"),
+    add("Jump", () => ({ t: "goto", target: (doc.scenes[sel + 1] || doc.scenes[0]).label })),
     add("Background", () => ({ t: "bg", name: meta.bgs[0] })),
-    add("Show", () => ({ t: "show", who: firstShown, expr: "neutral", slot: "center" })),
+    add("Show", () => ({ t: "show", who: firstShown, expr: "neutral", slot: "center" }), "portrait"),
     add("Hide", () => ({ t: "hide", slot: "all" })),
     add("Card", () => ({ t: "card", title: "Chapter", sub: "" })),
     add("Ending", () => ({ t: "end", title: "An Ending", text: "" })),
@@ -750,7 +773,7 @@ function propRow(v) {
   return el("div", { class: "brow", style: "margin-top:4px" },
     el("span", { class: "chip link", text: v.label || v.id, title: "Open in Properties", onclick: () => { tab = "props"; renderLeft(); const c = $(`#leftBody .card[data-id="${v.id}"]`); if (c) c.scrollIntoView({ block: "center" }); } }),
     el("label", { text: "starts at" }),
-    el("input", { type: "number", value: v.initial, onchange: ev => change(() => v.initial = parseInt(ev.target.value, 10) || 0) }));
+    el("input", { type: "number", value: v.initial, onchange: ev => change(() => v.initial = num(ev.target.value)) }));
 }
 function renderCast(host) {
   doc.characters.forEach((ch, ci) => {
@@ -833,10 +856,10 @@ function renderProps(host) {
           if (varById(to)) { toast(`The id '${to}' is taken`, true); ev.target.value = v.id; return; }
           change(() => { renameEverywhere("var", v.id, to); v.id = to; });
         } }),
-        el("label", { text: "Starts at" }), el("div", { class: "row" }, el("input", { type: "number", value: v.initial, onchange: ev => change(() => v.initial = parseInt(ev.target.value, 10) || 0) })),
+        el("label", { text: "Starts at" }), el("div", { class: "row" }, el("input", { type: "number", value: v.initial, onchange: ev => change(() => v.initial = num(ev.target.value)) })),
         el("label", { text: "Belongs to" }), el("select", { onchange: ev => change(() => v.character = ev.target.value) }, opts([{ value: "", label: "The story (nobody)" }, ...doc.characters.map(c => ({ value: c.id, label: c.name || c.id }))], v.character)),
         el("label", { text: "A rise is" }), el("select", { onchange: ev => change(() => v.good = ev.target.value === "good") }, el("option", { value: "good", text: "good news", selected: v.good }), el("option", { value: "bad", text: "bad news", selected: !v.good })),
-        el("label", { text: "Meter" }), el("div", { class: "row" }, el("input", { type: "number", min: 0, max: 12, value: v.meter, title: "Size of the on-screen meter; 0 for none", onchange: ev => change(() => v.meter = Math.max(0, Math.min(12, parseInt(ev.target.value, 10) || 0))) }), el("span", { class: "sub", style: "color:var(--dim)", text: v.meter ? "pips on screen" : "not shown as a meter" })),
+        el("label", { text: "Meter" }), el("div", { class: "row" }, el("input", { type: "number", min: 0, max: 12, value: v.meter, title: "Size of the on-screen meter; 0 for none", onchange: ev => change(() => v.meter = Math.max(0, Math.min(12, num(ev.target.value)))) }), el("span", { class: "sub", style: "color:var(--dim)", text: v.meter ? "pips on screen" : "not shown as a meter" })),
         el("label", { text: "Hidden" }), el("div", { class: "row" }, el("input", { type: "checkbox", checked: v.hidden, onchange: ev => change(() => v.hidden = ev.target.checked) }), el("span", { class: "sub", style: "color:var(--dim)", text: "changes silently" }))),
       el("div", { class: "sect", text: uses.length ? "Where it matters" : "Not used yet" }),
       el("div", {}, uses.map(u => el("span", { class: "chip link " + (u.change && !u.set ? ((u.n > 0) === v.good ? "good" : "bad") : ""), text: u.text, onclick: () => select(u.si, u.i, true) }))),
@@ -894,10 +917,13 @@ async function boot() {
   try { data = await api("GET", "/api/story"); } catch (e) { document.body.innerHTML = `<div class="empty" style="grid-column:1/-1">Could not load the story: ${e.message}</div>`; return; }
   doc = data.doc; meta = data.meta; problems = data.problems; parseErrors = data.parse_errors;
   setupStage(); applyView();
+  wire();
   layoutMissing();
-  sel = Math.max(0, sceneIndex("start"));
+  sel = doc.scenes.length ? Math.max(0, sceneIndex("start")) : -1;
   renderAll(); renderProblems(); fit(); centerOn(sel);
   if (parseErrors.length) { toast(`${parseErrors.length} line(s) of the story file could not be understood; they are kept as notes.`, true); $("#probs").classList.add("show"); }
+}
+function wire() {
   document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { tab = b.dataset.tab; renderLeft(); });
   $("#saveBtn").onclick = save; $("#undoBtn").onclick = undo; $("#redoBtn").onclick = redo;
   $("#addSceneBtn").onclick = () => { addScene(null, null); centerOn(sel); };

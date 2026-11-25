@@ -94,6 +94,10 @@ fn main() {
     if flag("--format-story") {
         // rewrite the story file in the editor's canonical layout
         let path = arg("--story").unwrap_or_else(|| "assets/story.txt".into());
+        if !errors.is_empty() {
+            eprintln!("not rewriting {}: it has lines that cannot be understood\n  {}", path, errors.join("\n  "));
+            std::process::exit(1);
+        }
         if let Err(e) = std::fs::write(&path, doc.to_text()) {
             eprintln!("cannot write {}: {}", path, e);
             std::process::exit(1);

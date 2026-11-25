@@ -177,7 +177,19 @@ const assert = (c, m) => { if (!c) { console.log('FAIL: ' + m); process.exitCode
   // 16. the server refuses requests that are not from its own page
   const cross = await p.evaluate(() => fetch('/api/story', { method: 'PUT', headers: { 'Content-Type': 'text/plain' }, body: '{}' }).then(r => r.status));
   assert(cross === 403, 'non-JSON writes are refused');
-  const real = errs.filter(e => !e.includes('403'));   // step 16 provokes one on purpose
+  // 17. a document that could not be read back is refused, and the file is left alone
+  const onDisk = fs.readFileSync(story, 'utf8');
+  const refused = await p.evaluate(() => { const d = JSON.parse(JSON.stringify(doc)); d.scenes[0].items.push({ t: 'add', var: '', n: 1 }); return fetch('/api/story', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(d) }).then(r => r.status); });
+  assert(refused === 400 && fs.readFileSync(story, 'utf8') === onDisk, 'an incomplete block cannot be saved over the story');
+
+  // 18. committing a field by clicking elsewhere must not swallow that click
+  await p.click('.tabs button[data-tab="props"]');
+  const startAt = p.locator('#leftBody .card[data-id="peace"] input[type=number]').first();
+  await startAt.fill('3');
+  await p.click('.tabs button[data-tab="cast"]');
+  assert(await p.locator('.tabs button[data-tab="cast"].on').count() === 1 && (await p.evaluate(() => varById('peace').initial)) === 3, 'a click that commits a field still lands');
+
+  const real = errs.filter(e => !e.includes('403') && !e.includes('400'));   // step 16 provokes one on purpose
   console.log('page errors:', JSON.stringify(real));
   if (real.length) process.exitCode = 1;
   await b.close();
