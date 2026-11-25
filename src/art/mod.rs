@@ -9,7 +9,7 @@
 mod axis;
 mod ballroom;
 mod dock;
-mod legacy;
+mod paint;
 mod pantry;
 mod people;
 mod study;
