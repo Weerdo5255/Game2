@@ -22,6 +22,11 @@ use std::time::{Duration, Instant};
 
 const PAGE: &str = include_str!("editor.html");
 const MAX_BODY: usize = 8 << 20;
+/// An imported story may carry its pictures and recordings.
+const MAX_IMPORT: usize = 512 << 20;
+/// What an exported story file calls itself.
+const EXPORT_FORMAT: &str = "below-stairs-story";
+const EXPORT_VERSION: u64 = 1;
 
 /// The stories the editor can open: the main one (normally
 /// assets/story.txt) and any number in `<dir>/<id>/story.txt`. Each keeps
@@ -70,12 +75,8 @@ impl Library {
             .collect()
     }
 
-    /// Make a new story: a copy of an existing one, or a small starter.
-    fn create(&self, title: &str, copy: Option<&str>) -> Result<String, String> {
-        let title = title.trim();
-        if title.is_empty() {
-            return Err("a story needs a title".into());
-        }
+    /// A folder name for a new story with this title, not yet taken.
+    fn new_id(&self, title: &str) -> String {
         let mut slug: String = title.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
         slug = slug.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
         slug.truncate(40);
@@ -88,6 +89,25 @@ impl Library {
             n += 1;
             id = format!("{}-{}", slug, n);
         }
+        id
+    }
+
+    /// Add a story that came from somewhere else (an imported file).
+    fn adopt(&self, doc: &Doc) -> Result<(String, PathBuf), String> {
+        let id = self.new_id(&doc.title);
+        let folder = self.dir.join(&id);
+        std::fs::create_dir_all(&folder).map_err(|e| format!("{}: {}", folder.display(), e))?;
+        std::fs::write(folder.join("story.txt"), doc.to_text()).map_err(|e| e.to_string())?;
+        Ok((id, folder))
+    }
+
+    /// Make a new story: a copy of an existing one, or a small starter.
+    fn create(&self, title: &str, copy: Option<&str>) -> Result<String, String> {
+        let title = title.trim();
+        if title.is_empty() {
+            return Err("a story needs a title".into());
+        }
+        let id = self.new_id(title);
         let mut doc = match copy {
             Some(from) => Doc::parse(&std::fs::read_to_string(self.path(from)?).map_err(|e| e.to_string())?).0,
             None => {
@@ -168,6 +188,34 @@ fn set_aside(file: &Path) -> bool {
         target = bin.join(format!("{}-{}.{}", stem, n, ext));
     }
     std::fs::create_dir_all(&bin).and_then(|_| std::fs::rename(file, &target)).is_ok()
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = (chunk[0] as u32) << 16 | (*chunk.get(1).unwrap_or(&0) as u32) << 8 | *chunk.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            out.push(if i <= chunk.len() { ABC[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+        }
+    }
+    out
+}
+
+/// Where a file carried inside an exported story belongs, if it is one of
+/// the kinds a story keeps: enhanced pictures, recordings, voice samples.
+/// The name comes from the file being imported, so it is checked strictly.
+fn carried_file(name: &str) -> Option<(&'static str, &str)> {
+    let (folder, file, extensions): (&'static str, &str, &[&str]) = if let Some(f) = name.strip_prefix("enhanced/") {
+        ("enhanced", f, &["png"])
+    } else if let Some(f) = name.strip_prefix("audio/samples/") {
+        ("audio/samples", f, &comfy::SAMPLE_EXTENSIONS)
+    } else if let Some(f) = name.strip_prefix("audio/") {
+        ("audio", f, &audio::EXTENSIONS)
+    } else {
+        return None;
+    };
+    Some((folder, file)).filter(|_| file.len() <= 120 && comfy::plain_file(file, extensions))
 }
 
 fn base64_decode(text: &str) -> Option<Vec<u8>> {
@@ -259,7 +307,7 @@ fn read_request(stream: &mut TcpStream) -> Option<Request> {
     let headers: HashMap<String, String> =
         lines.filter_map(|l| l.split_once(':')).map(|(k, v)| (k.trim().to_lowercase(), v.trim().to_string())).collect();
     let len: usize = headers.get("content-length").and_then(|v| v.parse().ok()).unwrap_or(0);
-    if len > MAX_BODY {
+    if len > if target.starts_with("/api/import") { MAX_IMPORT } else { MAX_BODY } {
         return None;
     }
     let mut body = buf[head_end + 4..].to_vec();
@@ -451,6 +499,100 @@ impl State {
         self.jobs.version.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// The art and sound choices of a story, with anything that is not one
+    /// of ours dropped (they may come from an imported file).
+    fn clean_prefs(given: &Value) -> Value {
+        let strings = |v: &Value, file: bool| -> serde_json::Map<String, Value> {
+            v.as_object().into_iter().flatten().filter(|(k, v)| k.len() <= 200 && v.as_str().map_or(false, |t| !file || comfy::plain_file(t, &["json"]))).map(|(k, v)| (k.clone(), v.clone())).collect()
+        };
+        let voices: BTreeMap<String, comfy::Voice> = comfy::voices_from(&given["voices"]).into_iter().filter(|(id, _)| valid_id(id)).collect();
+        json!({ "prompts": strings(&given["prompts"], false), "workflows": strings(&given["workflows"], true), "voices": voices })
+    }
+
+    /// A story as one file: the story itself, its art and sound choices and,
+    /// if asked, its enhanced pictures, recordings and voice samples.
+    fn export(&self, story: &Path, with_files: bool) -> Result<Value, String> {
+        let (mut doc, _) = self.load(story)?;
+        doc.sanitize();
+        let mut out = json!({ "format": EXPORT_FORMAT, "version": EXPORT_VERSION, "story": doc, "prefs": Self::clean_prefs(&self.prefs(story)) });
+        if with_files {
+            let mut files = serde_json::Map::new();
+            let folder = story.parent().unwrap_or(Path::new("."));
+            for sub in ["enhanced", "audio", "audio/samples"] {
+                let mut names: Vec<String> = std::fs::read_dir(folder.join(sub)).into_iter().flatten().filter_map(|e| e.ok()).filter(|e| e.path().is_file()).map(|e| e.file_name().to_string_lossy().to_string()).collect();
+                names.sort();
+                for name in names {
+                    let key = format!("{}/{}", sub, name);
+                    if carried_file(&key).is_some() {
+                        files.insert(key, json!(base64_encode(&std::fs::read(folder.join(sub).join(&name)).map_err(|e| format!("{}: {}", name, e))?)));
+                    }
+                }
+            }
+            out["files"] = Value::Object(files);
+        }
+        Ok(out)
+    }
+
+    /// Add a story from a file: one of our exports, a bare story in JSON, or
+    /// the text of a story file (sent as `{"text": ...}`). It always becomes
+    /// a new story; nothing already in the library is touched.
+    fn import(&self, given: &Value) -> Result<Value, String> {
+        if given["format"].as_str().map_or(false, |f| f != EXPORT_FORMAT) {
+            return Err("this is not a story file from this editor".into());
+        }
+        if given["version"].as_u64().map_or(false, |v| v > EXPORT_VERSION) {
+            return Err("this story file was made by a newer version of the editor".into());
+        }
+        let (mut doc, unread): (Doc, Vec<String>) = if let Some(text) = given["text"].as_str() {
+            Doc::parse(text)
+        } else {
+            let story = if given["story"].is_object() { &given["story"] } else { given };
+            if !story["scenes"].is_array() {
+                return Err("this file holds no story: expected an exported story (.json) or a story text file".into());
+            }
+            (serde_json::from_value(story.clone()).map_err(|e| format!("the story in this file cannot be read: {}", e))?, Vec::new())
+        };
+        doc.sanitize();
+        if doc.scenes.is_empty() {
+            return Err("this file holds no scenes".into());
+        }
+        if doc.title.trim().is_empty() {
+            doc.title = given["name"].as_str().map(|n| n.rsplit('/').next().unwrap_or(n).split('.').next().unwrap_or("").replace(['_', '-'], " ").trim().to_string()).filter(|t| !t.is_empty()).unwrap_or_else(|| "Imported story".into());
+        }
+        doc.survives_text()?;
+        // decode and check every carried file before anything is written
+        let mut files = Vec::new();
+        let mut skipped = Vec::new();
+        for (name, data) in given["files"].as_object().into_iter().flatten() {
+            let bytes = carried_file(name).and_then(|place| Some((place, base64_decode(data.as_str()?)?)));
+            match bytes {
+                Some(((folder, file), bytes)) if !bytes.is_empty() && (folder != "enhanced" || bytes.starts_with(b"\x89PNG")) => files.push((folder, file, bytes)),
+                _ => skipped.push(name.clone()),
+            }
+        }
+        let (id, folder) = self.library.adopt(&doc)?;
+        let written = (|| -> std::io::Result<()> {
+            if given["prefs"].is_object() {
+                std::fs::write(folder.join("art.json"), serde_json::to_string_pretty(&Self::clean_prefs(&given["prefs"])).unwrap_or_default() + "\n")?;
+            }
+            for (sub, file, bytes) in &files {
+                std::fs::create_dir_all(folder.join(sub))?;
+                std::fs::write(folder.join(sub).join(file), bytes)?;
+            }
+            Ok(())
+        })();
+        if let Err(e) = written {
+            // no half-imported story is left in the library
+            let _ = std::fs::remove_dir_all(&folder);
+            return Err(format!("the story could not be written: {}", e));
+        }
+        let notes = problems(&doc);
+        Ok(json!({
+            "id": id, "title": doc.title, "scenes": doc.scenes.len(), "files": files.len(), "skipped": skipped, "unread": unread,
+            "errors": notes.iter().filter(|p| p.level == "error").count(), "stories": self.library.list(),
+        }))
+    }
+
     /// What the story has chosen for its art: its own prompts and workflows.
     fn overrides(&self, story: &Path) -> Overrides {
         let prefs = self.prefs(story);
@@ -568,6 +710,34 @@ impl State {
                 let made = self.library.create(body["title"].as_str().unwrap_or(""), body["copy"].as_str());
                 answer(stream, made.map(|id| json!({ "id": id, "stories": self.library.list() })))
             }
+            ("GET", "/api/export") => {
+                let format = q.get("format").map_or("json", |f| f.as_str());
+                let made: Result<(Vec<u8>, &str, &str), String> = match format {
+                    "txt" => self.load(&story).map(|(mut doc, _)| {
+                        doc.sanitize();
+                        (doc.to_text().into_bytes(), "text/plain; charset=utf-8", "story.txt")
+                    }),
+                    "json" | "bundle" => self.export(&story, format == "bundle").map(|v| ((serde_json::to_string_pretty(&v).unwrap_or_default() + "\n").into_bytes(), "application/json", if format == "bundle" { "bundle.json" } else { "story.json" })),
+                    _ => Err("export as json, bundle or txt".into()),
+                };
+                match made {
+                    Ok((bytes, kind, ending)) => {
+                        // a download, named after the story
+                        let name = if story_id.is_empty() || story_id == "main" { self.load(&story).map(|(d, _)| self.library.new_id(&d.title)).unwrap_or_else(|_| "story".into()) } else { story_id.clone() };
+                        let name: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+                        let head = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nContent-Disposition: attachment; filename=\"{}.{}\"\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n",
+                            kind,
+                            bytes.len(),
+                            if name.is_empty() { "story" } else { &name },
+                            ending
+                        );
+                        let _ = stream.write_all(head.as_bytes()).and_then(|_| stream.write_all(&bytes));
+                    }
+                    Err(e) => fail(stream, e),
+                }
+            }
+            ("POST", "/api/import") => answer(stream, self.import(&body)),
             ("POST", "/api/stories/remove") => {
                 let removed = self.library.remove(&story_id).map(|_| {
                     self.jobs.forget_story(&story_id);

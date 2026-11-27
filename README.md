@@ -170,7 +170,40 @@ Options: `--port N`, `--no-browser`, `--story FILE` (the main story),
 `--stories DIR`, `--comfy-dir DIR`. The editor listens on your own machine
 only and refuses requests from other web pages.
 
-## Voices and music
+## Exporting and importing stories
+
+The story menu's **Files** group moves stories in and out of the editor as
+single files:
+
+| Menu entry | File | Holds |
+|---|---|---|
+| Export this story | `<name>.story.json` | the story (cast, properties, tracks, chapters, scenes) and its art and sound choices |
+| Export with its art and sound | `<name>.bundle.json` | the same, plus the enhanced pictures, recordings and voice samples |
+| Export as a story text file | `<name>.story.txt` | the story in the plain text format the game reads |
+| Import a story from a file | any of the three, or a bare story in JSON | |
+
+An import always becomes a **new** story in the library; nothing already
+there is changed. Unsaved changes are saved before an export, so the file
+is what is on screen. The JSON looks like this:
+
+```json
+{
+  "format": "below-stairs-story",
+  "version": 1,
+  "story": { "title": "...", "characters": [], "vars": [], "tracks": [], "chapters": [], "scenes": [] },
+  "prefs": { "prompts": {}, "workflows": {}, "voices": {} },
+  "files": { "enhanced/bg_vista.png": "<base64>", "audio/music_estate.flac": "<base64>" }
+}
+```
+
+`story` is exactly what the editor edits, so the file can be written or
+changed by other tools; a block is `{"t": "say", "who": "p", "text": "..."}`
+and so on. `files` is optional. On import only pictures (`enhanced/*.png`),
+recordings (`audio/*`) and voice samples (`audio/samples/*`) with plain file
+names are accepted; anything else in `files` is left out and reported.
+A story file from elsewhere is as trustworthy as its sender: it cannot write
+outside its own new folder, but read it before you play it.
+
 
 The game plays whatever recordings it finds beside the story, in `audio/`:
 
@@ -284,6 +317,10 @@ cargo build && node tools/editor_e2e.js
 
 ```bash
 cargo build && node tools/editor_sound_e2e.js
+```
+
+```bash
+cargo build && node tools/editor_io_e2e.js
 ```
 
 ```bash

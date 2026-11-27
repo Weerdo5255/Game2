@@ -233,6 +233,7 @@ label { color: var(--dim); }
     <li>The story menu at the top switches between stories, and makes, copies or removes them. Each story has its own file, cast and art.</li>
     <li><b>Art</b> sends this story's backgrounds and characters through ComfyUI, with a choice of workflows, and shows the results beside the game's own paintings.</li>
     <li><b>Sound</b> gives each speaker a voice (a stock voice, or one cloned from a sample recording) and has their lines read out through ComfyUI; it also generates the music tracks that scenes start with a Music block.</li>
+    <li>The story menu's <b>Files</b> group exports the open story as one file (the story alone, or with its pictures and recordings) and imports such a file, or a story text file, as a new story.</li>
     <li><kbd>Ctrl</kbd>+<kbd>S</kbd> saves to the story file. <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> undo and redo. Play saves first, then starts the game.</li>
   </ul>
   <button id="helpClose" class="primary">Close</button>
@@ -1307,7 +1308,7 @@ async function loadStory(id) {
   if (art.open) openArt(); else if (sound.open) openSound();
   return true;
 }
-const NEW_STORY = "\u0000new", COPY_STORY = "\u0000copy", REMOVE_STORY = "\u0000remove";
+const NEW_STORY = "\u0000new", COPY_STORY = "\u0000copy", REMOVE_STORY = "\u0000remove", IMPORT_STORY = "\u0000import", EXPORT_STORY = "\u0000export:";
 function renderStoryMenu() {
   const selEl = $("#storySel"); selEl.textContent = "";
   selEl.append(
@@ -1315,10 +1316,47 @@ function renderStoryMenu() {
     el("optgroup", { label: "Library" },
       el("option", { value: NEW_STORY, text: "+ New story\u2026" }),
       el("option", { value: COPY_STORY, text: "\u29C9 Duplicate this story\u2026" }),
-      storyId !== "main" && el("option", { value: REMOVE_STORY, text: "\u2715 Remove this story\u2026" })));
+      storyId !== "main" && el("option", { value: REMOVE_STORY, text: "\u2715 Remove this story\u2026" })),
+    el("optgroup", { label: "Files" },
+      el("option", { value: IMPORT_STORY, text: "\u21E7 Import a story from a file\u2026" }),
+      el("option", { value: EXPORT_STORY + "json", text: "\u21E9 Export this story (.json)" }),
+      el("option", { value: EXPORT_STORY + "bundle", text: "\u21E9 Export with its art and sound (.json)" }),
+      el("option", { value: EXPORT_STORY + "txt", text: "\u21E9 Export as a story text file (.txt)" })));
+}
+/** Download the open story as a file. What is exported is the saved story. */
+async function exportStory(format) {
+  if (dirty && !(await save())) return;
+  const a = el("a", { href: forStory("/api/export?format=" + format), download: "" });
+  document.body.append(a); a.click(); a.remove();
+  toast(format === "bundle" ? "Exporting the story with its pictures and recordings\u2026" : "Exported");
+}
+/** Ask for a file and read it: resolves to null if the user backs out. */
+function pickFile(accept) {
+  return new Promise(done => {
+    const input = el("input", { type: "file", accept, style: "display:none", id: "importFile" });
+    input.onchange = () => { const f = input.files[0]; input.remove(); done(f || null); };
+    input.addEventListener("cancel", () => { input.remove(); done(null); });
+    document.body.append(input); input.click();
+  });
+}
+/** Add a story from an exported file (or a story text file) to the library. Returns its id. */
+async function importStory(file) {
+  const text = await file.text();
+  let body = null;
+  try { const parsed = JSON.parse(text); if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed; } catch (e) { /* not JSON: story text */ }
+  if (!body) body = { text };
+  delete body.name; body.name = file.name;
+  const r = await api("POST", "/api/import", body);
+  const notes = [`Imported '${r.title}': ${r.scenes} scene${r.scenes === 1 ? "" : "s"}`];
+  if (r.files) notes.push(`${r.files} picture and sound file${r.files === 1 ? "" : "s"}`);
+  if (r.skipped.length) notes.push(`${r.skipped.length} file${r.skipped.length === 1 ? "" : "s"} left out (not a picture or recording)`);
+  if (r.unread.length) notes.push(`${r.unread.length} line${r.unread.length === 1 ? "" : "s"} could not be read and ${r.unread.length === 1 ? "was" : "were"} kept as notes`);
+  if (r.errors) notes.push(`${r.errors} problem${r.errors === 1 ? "" : "s"} to fix`);
+  return { id: r.id, message: notes.join(", "), warn: !!(r.skipped.length || r.unread.length || r.errors) };
 }
 async function storyMenuChanged() {
   const v = $("#storySel").value, back = () => { $("#storySel").value = storyId; };
+  if (v.startsWith(EXPORT_STORY)) { back(); return exportStory(v.slice(EXPORT_STORY.length)); }
   if (dirty && !confirm("This story has unsaved changes. Leave it without saving?")) return back();
   // only forget the unsaved changes once the other story has really opened
   const open = async id => { const was = dirty; dirty = false; if (await loadStory(id)) return true; dirty = was; updateBar(); back(); return false; };
@@ -1329,6 +1367,11 @@ async function storyMenuChanged() {
       if (!title || !title.trim()) return back();
       const made = await api("POST", "/api/stories", { title, copy: v === COPY_STORY ? storyId : null });
       if (await open(made.id)) toast("Created '" + title.trim() + "'");
+    } else if (v === IMPORT_STORY) {
+      const file = await pickFile(".json,.txt,application/json,text/plain");
+      if (!file) return back();
+      const made = await importStory(file);
+      if (await open(made.id)) toast(made.message, made.warn);
     } else if (v === REMOVE_STORY) {
       const current = stories.find(x => x.id === storyId);
       if (!confirm(`Remove '${current ? current.title : storyId}' from the library? Its folder is moved to stories/.removed, not deleted.`)) return back();
