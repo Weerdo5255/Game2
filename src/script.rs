@@ -749,10 +749,8 @@ impl Doc {
             c.color = c.color.trim().to_lowercase();
             id(&mut c.sprite);
             c.look = c.look.iter().map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).filter(|(k, v)| valid_id(k) && !v.is_empty() && !v.contains([' ', '|'])).collect();
-            id(&mut c.model);
-            if c.model != "figure" && !crate::places::model_file(&c.model) {
-                c.model.clear();
-            }
+            // (a name that is not a model file is left for the checks to point out, not quietly dropped)
+            c.model = one_line(&c.model).replace('|', "/").trim().to_string();
             c.model_scale = if c.model.is_empty() || c.model == "figure" || !c.model_scale.is_finite() || c.model_scale == 1.0 { 0.0 } else { c.model_scale.clamp(0.0, 1000.0) };
             c.holds = std::mem::take(&mut c.holds).into_iter().map(|(k, v)| (k.trim().to_string(), v)).filter(|(k, _)| valid_id(k)).collect();
             // a day in order, one entry per time
@@ -2167,9 +2165,10 @@ mod tests {
         // a model that is not one is said, and cleaned away from a hand-made file
         let (bad, _) = Doc::parse("character p | P\nmodel p | ../../x.exe\n*start\nend Done\n");
         assert!(problems(&bad).iter().any(|p| p.msg.contains("3D model")));
+        // ... and stays to be pointed out when the editor tidies the story
         let mut loose = bad.clone();
         loose.sanitize();
-        assert!(loose.characters[0].model.is_empty());
+        assert!(problems(&loose).iter().any(|p| p.msg.contains("3D model")));
         assert!(Doc::parse("model ghost | figure\n*start\nend Done\n").0.to_text().contains("UNPARSED: model ghost | figure"));
     }
 

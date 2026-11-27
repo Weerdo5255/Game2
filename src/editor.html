@@ -1472,7 +1472,7 @@ function renderCast(host) {
           el("label", { text: "In a 3D place" }), el("div", { class: "row", style: "gap:4px" },
             el("select", { id: "modelSel", style: "flex:1;min-width:0", title: "How this character appears where the story is shown as a 3D world", onchange: ev => change(() => { ch.model = ev.target.value; if (!ch.model.includes(".")) ch.model_scale = 0; }) },
               opts([{ value: "", label: "A cut-out of the portrait" }, { value: "figure", label: "A 3D figure, from the look below" }, ...world.models.map(f => ({ value: f, label: "Model: " + f }))], ch.model || "")),
-            ch.model && ch.model.includes(".") && el("input", { type: "number", min: 0.01, step: 0.1, title: "Size: 1 is as the model was made", style: "width:56px", value: ch.model_scale || 1, onchange: ev => change(() => { const v = parseFloat(ev.target.value); ch.model_scale = v > 0 && v !== 1 ? v : 0; }) }),
+            ch.model && ch.model.includes(".") && el("input", { type: "number", min: 0.01, step: 0.1, title: "Size: 1 is as the model was made", style: "width:56px", value: Math.round((ch.model_scale || 1) * 1000) / 1000, onchange: ev => change(() => { const v = parseFloat(ev.target.value); ch.model_scale = v > 0 && v !== 1 ? v : 0; }) }),
             el("label", { class: "ghost", style: "cursor:pointer;border:1px solid var(--line);border-radius:6px;padding:4px 7px;font-size:12px", title: "Upload a .glb or .gltf model for this character" }, "\u21E7", el("input", { type: "file", accept: ".glb,.gltf", style: "display:none", onchange: ev => uploadModel(ev.target.files[0], f => { change(() => { ch.model = f; }); }) }))),
           el("label", { text: "Portrait" }), el("select", { onchange: ev => change(() => { ch.sprite = ev.target.value; ch.look = {}; }) },
             opts([{ value: "", label: "None (never shown)" }, ...meta.sprites.map(s => ({ value: s, label: SPRITE_NAMES[s] || s }))], ch.sprite))),
@@ -1779,6 +1779,7 @@ async function storyMenuChanged() {
     return;
   }
   if (dirty && !confirm("This story has unsaved changes. Leave it without saving?")) return back();
+  if (world.dirty && !confirm(`The place '${world.place}' has unsaved changes (World view). Leave without saving them?`)) return back();
   // only forget the unsaved changes once the other story has really opened
   const open = id => leaveFor(id).then(ok => { if (!ok) back(); return ok; });
   try {
@@ -1967,7 +1968,7 @@ function renderArt() {
 // A 3D editor for the story's places: what stands where, the lights, where
 // you start, where the cast stands and where you may walk. Drawn with WebGL.
 const world = { open: false, place: "", data: null, custom: false, dirty: false, sel: null, undo: [], models: [], places: [], blank: null, engine: true,
-  cam: { yaw: 0.6, pitch: 0.55, dist: 16, target: [0, 1, 0] }, gl: null, drag: null, listFilter: "" };
+  cam: { yaw: 0.6, pitch: 0.55, dist: 16, target: [0, 1, 0] }, gl: null, drag: null, listFilter: "", seeIn: true, hidden: new Set(), active: false };
 const M4 = {
   mul(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3]; return o; },
   persp(fov, aspect, near, far) { const f = 1 / Math.tan(fov / 2), o = new Float32Array(16); o[0] = f / aspect; o[5] = f; o[10] = (far + near) / (near - far); o[11] = -1; o[14] = 2 * far * near / (near - far); return o; },
@@ -2045,6 +2046,15 @@ function worldMarkers() {
   out.push({ kind: "spawn", i: 0, at: add3(d.spawn, [0, 0.81, 0]), size: [0.4, 1.62, 0.4], col: [0.4, 0.95, 0.55], shape: "cylinder" });
   return out;
 }
+/** The size a part is picked and hidden by: the box it fits in. */
+const partBox = p => p.shape === "model" ? p.size.map(v => v * 0.5) : p.shape === "capsule" ? [p.size[0], p.size[1], p.size[0]] : p.size;
+/** Parts standing between the eye and what it is looking at (a ceiling, the near wall): left out, so a room can be seen into. */
+function worldInTheWay() {
+  const out = new Set(); if (!world.seeIn) return out;
+  const eye = camEye(), to = sub3(world.cam.target, eye), dist = Math.hypot(...to), ray = { o: eye, d: norm3(to) };
+  world.data.parts.forEach((p, i) => { const t = hitBox(ray, p.at, partBox(p), p.rot); if (t != null && t < dist - 0.05 && Math.max(...p.size) > 2.5) out.add(i); });
+  return out;
+}
 function drawWorld() {
   const g = worldGl(), d = world.data; if (!g || !d || !world.open) return;
   const { gl, u, a, m } = g, canvas = gl.canvas;
@@ -2064,13 +2074,15 @@ function drawWorld() {
   };
   const isSel = (kind, i) => world.sel && world.sel.kind === kind && world.sel.i === i;
   put(m.grid, [0, d.spawn[1] - 0.002, 0], [1, 1, 1], null, [0.3, 0.33, 0.5], 0, true);
+  world.hidden = worldInTheWay();
   d.parts.forEach((p, i) => {
+    if (world.hidden.has(i) && !isSel("part", i)) return;
     let col = hexRgb(p.color); if (isSel("part", i)) col = col.map(c => c * 0.5 + 0.5);
     if (p.shape === "capsule") {
       // a round-ended post: a drum and two balls
       const r = p.size[0], body = Math.max(0, p.size[1] - r), R = turnOf(p.rot);
-      put(m.cylinder, p.at, [r, body, p.size[2]], p.rot, col, p.glow);
-      for (const s of [-1, 1]) put(m.sphere, add3(p.at, turn3(R, [0, s * body / 2, 0])), [r, r, p.size[2]], p.rot, col, p.glow);
+      put(m.cylinder, p.at, [r, body, r], p.rot, col, p.glow);
+      for (const s of [-1, 1]) put(m.sphere, add3(p.at, turn3(R, [0, s * body / 2, 0])), [r, r, r], p.rot, col, p.glow);
     } else if (p.shape === "model") {
       // a model file is shown as the box it is placed by (the game draws the model itself)
       put(m.box, p.at, [0.5, 0.5, 0.5].map((v, k) => v * p.size[k]), p.rot, [0.9, 0.5, 0.9], 0.6);
@@ -2106,7 +2118,7 @@ function worldPick(ev) {
   for (const k of worldMarkers()) tryHit(hitBox(ray, k.at, k.size, null), { kind: k.kind, i: k.i });
   // markers win over whatever they stand in front of or inside
   if (best) return best.sel;
-  world.data.parts.forEach((p, i) => tryHit(hitBox(ray, p.at, p.shape === "model" ? p.size.map(v => v * 0.5) : p.size, p.rot), { kind: "part", i }));
+  world.data.parts.forEach((p, i) => { if (!(world.hidden && world.hidden.has(i))) tryHit(hitBox(ray, p.at, partBox(p), p.rot), { kind: "part", i }); });
   return best ? best.sel : null;
 }
 /** The thing selected, and the three numbers that say where it is. */
@@ -2118,9 +2130,12 @@ function worldSelected() {
   if (s.kind === "spawn") return { obj: null, at: d.spawn };
   return null;
 }
-function worldChange(fn) {
+/** Change the place, with undo. `quiet`: a value typed into a field, which must keep its place and focus, so the panel it is in is left as it is. */
+function worldChange(fn, quiet) {
   world.undo.push(JSON.stringify(world.data)); if (world.undo.length > 60) world.undo.shift();
-  fn(); world.dirty = true; renderWorldPanels(); drawWorld();
+  fn(); world.dirty = true;
+  if (quiet) { const save = $("#worldSave"), undo = $("#worldUndo"); if (save) save.disabled = false; if (undo) undo.disabled = false; renderWorldList(); } else renderWorldPanels();
+  drawWorld();
 }
 function worldUndo() { if (!world.undo.length) return; world.data = JSON.parse(world.undo.pop()); world.sel = null; world.dirty = true; renderWorldPanels(); drawWorld(); }
 const r3 = v => Math.round(v * 1000) / 1000;
@@ -2128,6 +2143,9 @@ const r3 = v => Math.round(v * 1000) / 1000;
 async function openWorld(place) {
   closeArt(); closeSound(); closeAdmin();
   world.open = true; $("#world3d").classList.add("show"); $("#worldBtn").classList.add("primary");
+  if (!worldGl()) toast("This browser cannot draw the 3D view (WebGL is off or missing). The lists and fields still work.", true);
+  // coming back to a place with unsaved changes: it is still here as it was left
+  if (world.data && world.dirty && (!place || place === world.place)) { renderWorldPanels(); drawWorld(); return; }
   await loadWorld(place || world.place || (doc.scenes.flatMap(s => s.items).find(i => i.t === "bg") || { name: meta.bgs[0] }).name);
 }
 function closeWorld() { world.open = false; $("#world3d").classList.remove("show"); $("#worldBtn").classList.remove("primary"); }
@@ -2158,6 +2176,7 @@ function uploadModel(file, then) {
   reader.onload = async () => {
     try {
       const name = file.name.replace(/[^A-Za-z0-9_.-]/g, "_");
+      if (world.models.includes(name) && !confirm(`This story already has a model called '${name}'. Replace it everywhere it is used? (The old file is set aside in world/models/.removed.)`)) return;
       const r = await api("POST", "/api/world/model", { story: storyId, name, data: String(reader.result).split(",")[1] || "" });
       if (!world.models.includes(r.model)) world.models.push(r.model);
       toast("Model added: " + r.model); then(r.model);
@@ -2185,7 +2204,7 @@ function renderWorldPanels() {
     !world.engine && el("div", { class: "pmsg warning", style: "margin-top:6px", text: "This build of the game has no 3D engine to show places with: build it with --features world3d." }),
     el("div", { class: "brow", style: "margin-top:8px" },
       el("button", { id: "worldSave", class: "primary", text: "Save place", disabled: !world.dirty, onclick: saveWorld }),
-      el("button", { text: "Undo", disabled: !world.undo.length, onclick: worldUndo })),
+      el("button", { id: "worldUndo", text: "Undo", disabled: !world.undo.length, onclick: worldUndo })),
     el("div", { class: "sect", text: "Add" }),
     el("div", { class: "brow" }, ["box", "cylinder", "sphere", "capsule"].map(sh => el("button", { "data-add-part": sh, text: "+ " + sh[0].toUpperCase() + sh.slice(1), onclick: () => addPart(sh) }))),
     el("div", { class: "brow", style: "margin-top:4px" },
@@ -2224,8 +2243,10 @@ function renderWorldList() {
 }
 function renderWorldProps() {
   const host = $("#worldRight"), d = world.data, s = world.sel; host.textContent = "";
-  const set = fn => worldChange(fn), color = (obj, key) => el("input", { type: "color", value: safeColor(obj[key], "#ffffff"), onchange: ev => set(() => obj[key] = ev.target.value) });
-  const slider = (obj, key, max) => el("input", { type: "range", min: 0, max, step: max / 100, value: obj[key], onchange: ev => set(() => obj[key] = +ev.target.value) });
+  // `set` rebuilds the panels (the choice of fields may change); `put` is for a value typed or slid, and leaves them be
+  const set = fn => worldChange(fn), put = fn => worldChange(fn, true);
+  const color = (obj, key) => el("input", { type: "color", value: safeColor(obj[key], "#ffffff"), onchange: ev => put(() => obj[key] = ev.target.value) });
+  const slider = (obj, key, max) => el("input", { type: "range", min: 0, max, step: max / 100, value: obj[key], onchange: ev => put(() => obj[key] = +ev.target.value) });
   const sect = t => el("div", { class: "sect", text: t });
   if (s && s.kind === "part" && d.parts[s.i]) {
     const p = d.parts[s.i];
@@ -2233,16 +2254,16 @@ function renderWorldProps() {
       bindWorld(el("input", { type: "text", placeholder: "A name (for the list)", style: "width:100%" }), p, "name"),
       el("div", { class: "brow", style: "margin-top:6px" }, el("label", { text: "Shape" }), el("select", { id: "partShape", onchange: ev => set(() => { p.shape = ev.target.value; if (p.shape !== "model") p.file = ""; else p.file = world.models[0] || ""; }) }, opts(["box", "cylinder", "sphere", "capsule", ...(world.models.length ? ["model"] : [])], p.shape))),
       p.shape === "model" && el("div", { class: "brow" }, el("label", { text: "File" }), el("select", { onchange: ev => set(() => p.file = ev.target.value) }, opts(world.models, p.file))),
-      sect("Where"), vec3Fields(p.at, ["x", "y", "z"], 0.1, (k, v) => set(() => p.at[k] = v)),
-      sect(p.shape === "model" ? "Scale" : "Size (width, height, depth)"), vec3Fields(p.size, ["w", "h", "d"], 0.1, (k, v) => set(() => p.size[k] = Math.max(0.005, v))),
-      sect("Turned (degrees about x, y, z)"), vec3Fields(p.rot, ["rx", "ry", "rz"], 5, (k, v) => set(() => p.rot[k] = v)),
+      sect("Where"), vec3Fields(p.at, ["x", "y", "z"], 0.1, (k, v) => put(() => p.at[k] = v)),
+      sect(p.shape === "model" ? "Scale" : p.shape === "capsule" ? "Size (width, height; it is as deep as it is wide)" : "Size (width, height, depth)"), vec3Fields(p.size, ["w", "h", "d"], 0.1, (k, v) => put(() => { p.size[k] = Math.max(0.005, v); if (p.shape === "capsule") p.size[2] = p.size[0]; })),
+      sect("Turned (degrees about x, y, z)"), vec3Fields(p.rot, ["rx", "ry", "rz"], 5, (k, v) => put(() => p.rot[k] = v)),
       p.shape !== "model" && [sect("Surface"),
         el("div", { class: "brow" }, el("label", { text: "Colour" }), color(p, "color")),
         el("div", { class: "brow" }, el("label", { text: "Shines by itself" }), slider(p, "glow", 10)),
         el("div", { class: "brow" }, el("label", { text: "Rough" }), slider(p, "rough", 1)),
         el("div", { class: "brow" }, el("label", { text: "Metal" }), slider(p, "metal", 1))],
-      el("label", { style: "display:flex;gap:6px;margin-top:8px" }, el("input", { type: "checkbox", id: "partSolid", checked: p.solid, onchange: ev => set(() => p.solid = ev.target.checked) }), "Solid: you walk around it"),
-      el("label", { style: "display:flex;gap:6px;margin-top:4px" }, el("input", { type: "checkbox", checked: p.shadow, onchange: ev => set(() => p.shadow = ev.target.checked) }), "Casts a shadow"),
+      el("label", { style: "display:flex;gap:6px;margin-top:8px" }, el("input", { type: "checkbox", id: "partSolid", checked: p.solid, onchange: ev => put(() => p.solid = ev.target.checked) }), "Solid: you walk around it"),
+      el("label", { style: "display:flex;gap:6px;margin-top:4px" }, el("input", { type: "checkbox", checked: p.shadow, onchange: ev => put(() => p.shadow = ev.target.checked) }), "Casts a shadow"),
       el("div", { class: "brow", style: "margin-top:10px" },
         el("button", { id: "partDup", text: "Duplicate", onclick: () => set(() => { const c = JSON.parse(JSON.stringify(p)); c.at[0] = r3(c.at[0] + Math.max(0.3, p.size[0])); d.parts.push(c); world.sel = { kind: "part", i: d.parts.length - 1 }; }) }),
         el("button", { id: "partDel", class: "danger", text: "Delete", onclick: () => set(() => { d.parts.splice(s.i, 1); world.sel = null; }) })));
@@ -2250,37 +2271,38 @@ function renderWorldProps() {
     const l = d.lights[s.i];
     appendAll(host, el("div", { class: "sect", style: "margin-top:0", text: l.kind === "sun" ? "Sun (light from far away)" : "Lamp" }),
       el("div", { class: "brow" }, el("label", { text: "Kind" }), el("select", { onchange: ev => set(() => { l.kind = ev.target.value; l.power = l.kind === "sun" ? 9000 : 300000; }) }, opts([{ value: "point", label: "Lamp" }, { value: "sun", label: "Sun" }], l.kind))),
-      sect(l.kind === "sun" ? "Shines from (towards the middle)" : "Where"), vec3Fields(l.at, ["x", "y", "z"], 0.1, (k, v) => set(() => l.at[k] = v)),
+      sect(l.kind === "sun" ? "Shines from (towards the middle)" : "Where"), vec3Fields(l.at, ["x", "y", "z"], 0.1, (k, v) => put(() => l.at[k] = v)),
       el("div", { class: "brow", style: "margin-top:6px" }, el("label", { text: "Colour" }), color(l, "color")),
-      el("div", { class: "brow" }, el("label", { text: l.kind === "sun" ? "Brightness (lux)" : "Brightness (lumens)" }), el("input", { type: "number", min: 0, step: l.kind === "sun" ? 500 : 20000, value: l.power, onchange: ev => set(() => l.power = Math.max(0, num2(ev.target.value))) })),
-      el("label", { style: "display:flex;gap:6px;margin-top:8px" }, el("input", { type: "checkbox", checked: l.shadows, onchange: ev => set(() => l.shadows = ev.target.checked) }), "Casts shadows (costly: one or two per place)"),
+      el("div", { class: "brow" }, el("label", { text: l.kind === "sun" ? "Brightness (lux)" : "Brightness (lumens)" }), el("input", { type: "number", min: 0, step: l.kind === "sun" ? 500 : 20000, value: l.power, onchange: ev => put(() => l.power = Math.max(0, num2(ev.target.value))) })),
+      el("label", { style: "display:flex;gap:6px;margin-top:8px" }, el("input", { type: "checkbox", checked: l.shadows, onchange: ev => put(() => l.shadows = ev.target.checked) }), "Casts shadows (costly: one or two per place)"),
       el("button", { class: "danger", style: "margin-top:10px", text: "Delete", onclick: () => set(() => { d.lights.splice(s.i, 1); world.sel = null; }) }));
   } else if (s && (s.kind === "anchor" || s.kind === "spawn")) {
     const at = s.kind === "anchor" ? d.anchors[s.i] : d.spawn;
     appendAll(host, el("div", { class: "sect", style: "margin-top:0", text: s.kind === "spawn" ? "Where you start" : "Where the cast stands: " + ["left", "centre", "right"][s.i] }),
       el("div", { class: "sub", style: "color:var(--dim);margin-bottom:6px", text: s.kind === "spawn" ? "Your feet, as the place comes into view." : "Their feet. Whoever the story shows on this side stands here." }),
-      vec3Fields(at, ["x", "y", "z"], 0.1, (k, v) => set(() => at[k] = v)),
-      s.kind === "spawn" && el("div", { class: "brow", style: "margin-top:6px" }, el("label", { text: "Facing (degrees; 0 looks along -z)" }), el("input", { type: "number", step: 5, value: d.yaw, onchange: ev => set(() => d.yaw = num2(ev.target.value)) })));
+      vec3Fields(at, ["x", "y", "z"], 0.1, (k, v) => put(() => at[k] = v)),
+      s.kind === "spawn" && el("div", { class: "brow", style: "margin-top:6px" }, el("label", { text: "Facing (degrees; 0 looks along -z)" }), el("input", { type: "number", step: 5, value: d.yaw, onchange: ev => put(() => d.yaw = num2(ev.target.value)) })));
   } else if (s && s.kind === "solid" && d.solids[s.i]) {
     const so = d.solids[s.i];
     appendAll(host, el("div", { class: "sect", style: "margin-top:0", text: "No-go area" }),
-      el("div", { class: "brow" }, el("label", { text: "middle x" }), el("input", { type: "number", step: 0.1, value: so.at[0], onchange: ev => set(() => so.at[0] = num2(ev.target.value)) }), el("label", { text: "z" }), el("input", { type: "number", step: 0.1, value: so.at[1], onchange: ev => set(() => so.at[1] = num2(ev.target.value)) })),
-      el("div", { class: "brow" }, el("label", { text: "width" }), el("input", { type: "number", step: 0.1, min: 0.02, value: r3(so.half[0] * 2), onchange: ev => set(() => so.half[0] = Math.max(0.01, num2(ev.target.value) / 2)) }), el("label", { text: "depth" }), el("input", { type: "number", step: 0.1, min: 0.02, value: r3(so.half[1] * 2), onchange: ev => set(() => so.half[1] = Math.max(0.01, num2(ev.target.value) / 2)) })),
+      el("div", { class: "brow" }, el("label", { text: "middle x" }), el("input", { type: "number", step: 0.1, value: so.at[0], onchange: ev => put(() => so.at[0] = num2(ev.target.value)) }), el("label", { text: "z" }), el("input", { type: "number", step: 0.1, value: so.at[1], onchange: ev => put(() => so.at[1] = num2(ev.target.value)) })),
+      el("div", { class: "brow" }, el("label", { text: "width" }), el("input", { type: "number", step: 0.1, min: 0.02, value: r3(so.half[0] * 2), onchange: ev => put(() => so.half[0] = Math.max(0.01, num2(ev.target.value) / 2)) }), el("label", { text: "depth" }), el("input", { type: "number", step: 0.1, min: 0.02, value: r3(so.half[1] * 2), onchange: ev => put(() => so.half[1] = Math.max(0.01, num2(ev.target.value) / 2)) })),
       el("button", { class: "danger", style: "margin-top:10px", text: "Delete", onclick: () => set(() => { d.solids.splice(s.i, 1); world.sel = null; }) }));
   } else {
     // nothing selected: the place as a whole
     const f = d.floor;
     appendAll(host, el("div", { class: "sect", style: "margin-top:0", text: "The place" }),
       el("div", { class: "sub", style: "color:var(--dim)", text: "Click something to select it; drag it to move it across the floor (Shift: up and down). Drag empty space to look around, scroll to zoom, right-drag to slide the view." }),
+      el("label", { style: "display:flex;gap:6px;margin-top:8px" }, el("input", { type: "checkbox", id: "seeIn", checked: world.seeIn, onchange: ev => { world.seeIn = ev.target.checked; drawWorld(); } }), "See in: leave out a ceiling or wall that is in the way of the view"),
       sect("The floor you may walk on"),
-      el("div", { class: "brow" }, el("label", { text: "x from" }), el("input", { type: "number", step: 0.5, "data-floor": "x0", value: f[0][0], onchange: ev => set(() => f[0][0] = num2(ev.target.value)) }), el("label", { text: "to" }), el("input", { type: "number", step: 0.5, value: f[1][0], onchange: ev => set(() => f[1][0] = num2(ev.target.value)) })),
-      el("div", { class: "brow" }, el("label", { text: "z from" }), el("input", { type: "number", step: 0.5, value: f[0][1], onchange: ev => set(() => f[0][1] = num2(ev.target.value)) }), el("label", { text: "to" }), el("input", { type: "number", step: 0.5, value: f[1][1], onchange: ev => set(() => f[1][1] = num2(ev.target.value)) })),
-      el("label", { style: "display:flex;gap:6px;margin-top:8px" }, el("input", { type: "checkbox", checked: d.floating, onchange: ev => set(() => d.floating = ev.target.checked) }), "No gravity here: people drift"),
+      el("div", { class: "brow" }, el("label", { text: "x from" }), el("input", { type: "number", step: 0.5, "data-floor": "x0", value: f[0][0], onchange: ev => put(() => f[0][0] = num2(ev.target.value)) }), el("label", { text: "to" }), el("input", { type: "number", step: 0.5, value: f[1][0], onchange: ev => put(() => f[1][0] = num2(ev.target.value)) })),
+      el("div", { class: "brow" }, el("label", { text: "z from" }), el("input", { type: "number", step: 0.5, value: f[0][1], onchange: ev => put(() => f[0][1] = num2(ev.target.value)) }), el("label", { text: "to" }), el("input", { type: "number", step: 0.5, value: f[1][1], onchange: ev => put(() => f[1][1] = num2(ev.target.value)) })),
+      el("label", { style: "display:flex;gap:6px;margin-top:8px" }, el("input", { type: "checkbox", checked: d.floating, onchange: ev => put(() => d.floating = ev.target.checked) }), "No gravity here: people drift"),
       sect("Air and light"),
       el("div", { class: "brow" }, el("label", { text: "Sky and distance" }), color(d.air, "sky")),
       el("div", { class: "brow" }, el("label", { text: "Light from all round" }), color(d.air, "ambient")),
-      el("div", { class: "brow" }, el("label", { text: "How much of it" }), el("input", { type: "number", min: 0, step: 50, value: d.air.brightness, onchange: ev => set(() => d.air.brightness = Math.max(0, num2(ev.target.value))) })),
-      el("div", { class: "brow" }, el("label", { text: "Distance fades from" }), el("input", { type: "number", min: 0, step: 5, value: d.air.fog[0], onchange: ev => set(() => d.air.fog[0] = Math.max(0, num2(ev.target.value))) }), el("label", { text: "to" }), el("input", { type: "number", min: 1, step: 5, value: d.air.fog[1], onchange: ev => set(() => d.air.fog[1] = Math.max(d.air.fog[0] + 1, num2(ev.target.value))) })),
+      el("div", { class: "brow" }, el("label", { text: "How much of it" }), el("input", { type: "number", min: 0, step: 50, value: d.air.brightness, onchange: ev => put(() => d.air.brightness = Math.max(0, num2(ev.target.value))) })),
+      el("div", { class: "brow" }, el("label", { text: "Distance fades from" }), el("input", { type: "number", min: 0, step: 5, value: d.air.fog[0], onchange: ev => put(() => d.air.fog[0] = Math.max(0, num2(ev.target.value))) }), el("label", { text: "to" }), el("input", { type: "number", min: 1, step: 5, value: d.air.fog[1], onchange: ev => put(() => d.air.fog[1] = Math.max(d.air.fog[0] + 1, num2(ev.target.value))) })),
       el("div", { style: "margin-top:14px;color:var(--dim);font-size:12px", text: "Green outline: the floor. Red outlines: no-go areas. Green post: where you start. Red, yellow and blue posts: the cast's left, centre and right. The view here is a plain sketch; the game lights it properly." }));
   }
 }
@@ -2294,6 +2316,8 @@ function bindWorld(input, obj, key) {
 function wireWorld() {
   const c = $("#worldCanvas");
   c.addEventListener("contextmenu", ev => ev.preventDefault());
+  // (keys act on the selected part only after the view itself was last clicked, not while working in the panels)
+  window.addEventListener("mousedown", ev => { world.active = ev.target === c; }, true);
   c.addEventListener("mousedown", ev => {
     if (!world.data) return;
     const hit = ev.button === 0 && !ev.altKey ? worldPick(ev) : null;
@@ -2412,7 +2436,7 @@ function renderAdmin() {
         el("td", { class: "num", title: "Replaced pictures and recordings, and the backup copy from this session", text: x.bytes.aside ? fmtBytes(x.bytes.aside) : "—" }),
         el("td", { text: fmtTime(x.modified) }),
         el("td", {}, el("div", { class: "acts" },
-          x.id !== storyId && el("button", { text: "Open", onclick: async () => { if (dirty && !confirm("This story has unsaved changes. Leave it without saving?")) return; await leaveFor(x.id); } }),
+          x.id !== storyId && el("button", { text: "Open", onclick: async () => { if (dirty && !confirm("This story has unsaved changes. Leave it without saving?")) return; if (world.dirty && !confirm(`The place '${world.place}' has unsaved changes (World view). Leave without saving them?`)) return; await leaveFor(x.id); } }),
           el("button", { text: "Duplicate", onclick: () => { const title = prompt("Title of the copy:", x.title + " (copy)"); if (title && title.trim()) adminDo(async () => { const r = await api("POST", "/api/stories", { title, copy: x.id }); stories = r.stories; forgetDraftOf(r.id); renderStoryMenu(); }, "Copied"); } }),
           x.bytes.aside > 0 && el("button", { disabled: x.locked, text: "Free " + fmtBytes(x.bytes.aside), title: "Delete the set-aside files for good", onclick: () => { if (confirm(`Delete ${fmtBytes(x.bytes.aside)} of set-aside pictures, recordings and backups of '${x.title}'? This cannot be undone.`)) adminDo(() => api("POST", "/api/admin/clean", { story: x.id }), r => "Freed " + fmtBytes(r.freed)); } }),
           x.id !== "main" && el("button", { class: "ghost danger", text: "Remove", disabled: x.locked, title: x.locked ? "Unlock it first" : "Move it to Removed stories below", onclick: async () => {
@@ -2672,7 +2696,7 @@ function wire() {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
     if (world.open && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); if (world.dirty) saveWorld(); }
     else if (world.open && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z" && !typing) { ev.preventDefault(); worldUndo(); }
-    else if (world.open && (ev.key === "Delete" || ev.key === "Backspace") && !typing && world.sel && world.sel.kind === "part") { ev.preventDefault(); worldChange(() => { world.data.parts.splice(world.sel.i, 1); world.sel = null; }); }
+    else if (world.open && ev.key === "Delete" && !typing && world.active && world.sel && world.sel.kind === "part") { ev.preventDefault(); worldChange(() => { world.data.parts.splice(world.sel.i, 1); world.sel = null; }); }
     else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); if (dirty) save(); }
     else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z" && !typing) { ev.preventDefault(); ev.shiftKey ? redo() : undo(); }
     else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "f") { ev.preventDefault(); openFind(); }

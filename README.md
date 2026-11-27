@@ -382,7 +382,9 @@ they travel with an exported bundle.
 - The green post is where you start, the red, yellow and blue posts where
   the cast stand; the green outline is the walkable floor.
 - Drag empty space to look around, scroll to zoom, right-drag to slide.
-  Ctrl+Z undoes, Ctrl+S saves, Delete removes the selected part.
+  Ctrl+Z undoes, Ctrl+S saves, Delete removes the selected part. A ceiling
+  or wall standing between you and the middle of the room is left out of
+  the view so that you can see in ("See in", on by default).
 - "An empty room" starts from nothing; "The game's own" goes back to the
   built-in place (this story's version is set aside, not deleted).
 
@@ -405,8 +407,11 @@ and fog:
 
 ![3D figures standing in for the cast](docs/world_figures.png)
 
-Model support is limited to what the engine's glTF loader shows as a still
-scene: meshes and materials (with PNG or JPEG textures). Animations in a
+A model must be one file: a `.glb`, or a `.gltf` with everything embedded
+(one that keeps its mesh or textures in other files is refused, with the
+advice to save it as `.glb`). If a character's model file is missing they
+appear as their cut-out instead. Model support is limited to what the
+engine's glTF loader shows as a still scene: meshes and materials (with PNG or JPEG textures). Animations in a
 file are not played, and a model keeps one face whatever the character's
 expression. It has been tried with a small generated model
 (`node tools/make_glb.js out.glb`), not with a rigged character from a

@@ -47,6 +47,8 @@ let browser = null;
   await p.waitForFunction(() => world.place === 'study' && world.data.parts.length > 500);
   assert(true, 'another place can be chosen (' + await p.evaluate(() => world.data.parts.length) + ' parts in the study)');
 
+  // an enclosed room is seen into: the ceiling in the way is left out, and cannot be picked by mistake
+  assert(await p.evaluate(() => { drawWorld(); return world.hidden.size >= 1 && [...world.hidden].every(i => Math.max(...world.data.parts[i].size) > 2.5); }), 'a ceiling or wall between you and the middle of the room is left out of the view (' + await p.evaluate(() => world.hidden.size) + ' parts)');
   // ---- start from an empty room, add things
   await p.locator('#worldLeft button', { hasText: 'An empty room' }).click();
   await p.waitForFunction(() => world.data.parts.length === 1 && world.dirty);
@@ -95,6 +97,16 @@ let browser = null;
   assert(await p.evaluate(() => world.data.anchors[1][2] === -2 && world.data.spawn[2] === 4 && world.data.floor[0][0] === -8), 'where the cast stands, where you start and the walkable floor are set');
   if (out !== tmp) { fs.mkdirSync(out, { recursive: true }); await p.evaluate(() => { world.sel = { kind: 'part', i: 1 }; renderWorldPanels(); drawWorld(); }); await p.screenshot({ path: path.join(out, 'editor_world_new.png') }); }
 
+  // typing in one field and tabbing to the next keeps you in the fields
+  await p.evaluate(() => { world.sel = { kind: 'part', i: 1 }; renderWorldPanels(); });
+  await field('x').focus(); await p.keyboard.press('Control+a'); await p.keyboard.type('2.5'); await p.keyboard.press('Tab'); await p.keyboard.type('1.5'); await p.keyboard.press('Tab');
+  assert(await p.evaluate(() => world.data.parts[1].at[0] === 2.5 && world.data.parts[1].at[1] === 1.5 && document.activeElement.dataset.axis === 'z'), 'typing a number and tabbing on keeps the focus in the fields');
+  await p.keyboard.press('Backspace'); await p.keyboard.press('Delete');
+  assert(await p.evaluate(() => world.data.parts.length === 2), 'and Backspace or Delete there edits the number, not the part');
+  // leaving the view and coming back keeps unsaved work
+  await p.click('#worldBtn'); await p.click('#worldBtn');
+  await p.waitForFunction(() => world.open);
+  assert(await p.evaluate(() => world.dirty && world.data.parts.length === 2 && world.data.parts[1].at[0] === 2.5), 'closing the view and opening it again keeps the unsaved place');
   // ---- a model file
   const glb = path.join(tmp, 'urn.glb');
   fs.writeFileSync(glb, boxGlb('#3070c0'));
@@ -125,6 +137,10 @@ let browser = null;
   assert(code === 200 && r.place.parts[0].shape === 'box' && r.place.parts[0].color === '#ffffff' && r.place.parts[0].at[0] === 5000 && r.place.parts[1].shape === 'box' && r.place.parts[1].file === undefined, 'a description from elsewhere is brought within bounds');
   [code, r] = await st('POST', '/api/world/model', { story: 'main', name: '../evil.glb', data: boxGlb().toString('base64') });
   const [code2] = await st('POST', '/api/world/model', { story: 'main', name: 'fake.glb', data: Buffer.from('<html>').toString('base64') });
+  const [code4, r4] = await st('POST', '/api/world/model', { story: 'main', name: 'split.gltf', data: Buffer.from(JSON.stringify({ asset: { version: '2.0' }, buffers: [{ uri: 'body.bin' }] })).toString('base64') });
+  assert(code4 === 400 && /single \.glb/.test(r4.error), 'a model that keeps part of itself in other files is refused, with advice: ' + r4.error);
+  await st('POST', '/api/world/model', { story: 'main', name: 'urn.glb', data: boxGlb('#00ff00').toString('base64') });
+  assert(fs.readdirSync(path.join(worldDir, 'models', '.removed')).some(f => f.startsWith('urn')), 'a model replaced by another of the same name is set aside, not lost');
   assert(code === 400 && code2 === 400 && !fs.existsSync(path.join(tmp, 'assets', 'evil.glb')) && !fs.existsSync(path.join(worldDir, 'models', 'fake.glb')), 'a model must be a model, with a plain name');
   await st('PUT', '/api/world?story=main&place=study', saved);
 

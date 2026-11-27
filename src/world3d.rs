@@ -39,7 +39,13 @@ use std::path::PathBuf;
 
 /// Can this place be shown in 3D: has the story, or the game, a build of it?
 fn has_build(world: Option<&std::path::Path>, place: &str) -> bool {
-    world.map_or(false, |w| w.join(format!("{}.json", place)).is_file()) || places::builtin(place).is_some()
+    world.map_or(false, |w| w.join(format!("{}.json", place)).is_file()) || crate::art::BACKGROUNDS.contains(&place)
+}
+
+/// Can this character be shown as their 3D model: a figure always, a model
+/// file only if it is there (otherwise they are a cut-out, as ever).
+fn model_ready(world: Option<&std::path::Path>, def: &CharDef) -> bool {
+    def.model == "figure" || (places::model_file(&def.model) && world.map_or(false, |w| w.join("models").join(&def.model).is_file()))
 }
 
 pub struct Options {
@@ -319,7 +325,7 @@ fn frame(
         clear.0 = Color::BLACK;
         body.fog = None;
         if let Some(data) = Some(place_name).filter(|n| !n.is_empty()).and_then(|n| places::load(run.world_dir.as_deref(), n)) {
-            raise(&data, &mut commands, &mut meshes, &mut materials, &assets);
+            raise(&data, run.world_dir.as_deref(), &mut commands, &mut meshes, &mut materials, &assets);
             let sky = colour(&data.air.sky);
             ambient.color = colour(&data.air.ambient);
             ambient.brightness = data.air.brightness;
@@ -383,7 +389,7 @@ fn frame(
     for (slot, mut tf, mut vis, material) in &mut cast {
         let i = slot.0;
         // (someone with a 3D figure or model is not also a cut-out)
-        let modelled = wanted[i].as_ref().map_or(false, |(who, ..)| run.game.character(who).map_or(false, |c| !c.model.is_empty()));
+        let modelled = wanted[i].as_ref().map_or(false, |(who, ..)| run.game.character(who).map_or(false, |c| model_ready(run.world_dir.as_deref(), c)));
         let (Some((who, expr, appear, dim)), Some(place), false) = (&wanted[i], &run.place, modelled) else {
             *vis = Visibility::Hidden;
             run.shown[i] = None;
@@ -424,7 +430,7 @@ fn frame(
     // ---- and those who are there as 3D figures or models
     for (slot, entity, mut tf, mut vis, children) in &mut figures {
         let i = slot.0;
-        let def = wanted[i].as_ref().and_then(|(who, ..)| run.game.character(who)).filter(|c| !c.model.is_empty()).cloned();
+        let def = wanted[i].as_ref().and_then(|(who, ..)| run.game.character(who)).filter(|c| model_ready(run.world_dir.as_deref(), c)).cloned();
         let (Some((who, expr, appear, _)), Some(place), Some(def)) = (&wanted[i], &run.place, def) else {
             if run.figures[i].take().is_some() {
                 for child in children.iter().flat_map(|c| c.iter()) {
@@ -568,7 +574,7 @@ fn stuff(materials: &mut Assets<StandardMaterial>, hex: &str, rough: f32, metal:
 }
 
 /// Build a place from its description: every part and every light.
-fn raise(data: &PlaceData, commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, assets: &AssetServer) {
+fn raise(data: &PlaceData, world: Option<&std::path::Path>, commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, assets: &AssetServer) {
     // one mesh of each plain shape, stretched to each part's size
     let (cube, drum, ball) = (meshes.add(Cuboid::new(1.0, 1.0, 1.0)), meshes.add(Cylinder::new(0.5, 1.0)), meshes.add(Sphere::new(0.5)));
     // parts of one colour and finish share a material
@@ -577,6 +583,10 @@ fn raise(data: &PlaceData, commands: &mut Commands, meshes: &mut Assets<Mesh>, m
         let turn = Quat::from_euler(EulerRot::YXZ, p.rot[1].to_radians(), p.rot[0].to_radians(), p.rot[2].to_radians());
         let place = Transform::from_translation(v3(p.at)).with_rotation(turn);
         if p.shape == "model" {
+            if !world.map_or(false, |w| w.join("models").join(&p.file).is_file()) {
+                eprintln!("the model file '{}' is not in the story's world/models folder: left out", p.file);
+                continue;
+            }
             let scene = assets.load(GltfAssetLabel::Scene(0).from_asset(format!("models/{}", p.file)));
             commands.spawn((SceneRoot(scene), place.with_scale(v3(p.size)), PlacePart));
             continue;
@@ -588,6 +598,7 @@ fn raise(data: &PlaceData, commands: &mut Commands, meshes: &mut Assets<Mesh>, m
             "sphere" => (ball.clone(), place.with_scale(v3(p.size))),
             // (a capsule's round ends would be squashed by stretching: it is made to measure)
             "capsule" => (meshes.add(Capsule3d::new(p.size[0] / 2.0, (p.size[1] - p.size[0]).max(0.0))), place),
+            // (round: as deep as it is wide)
             _ => (cube.clone(), place.with_scale(v3(p.size))),
         };
         let mut part = commands.spawn((Mesh3d(mesh), MeshMaterial3d(material), place, PlacePart));

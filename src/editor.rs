@@ -382,9 +382,24 @@ fn model_bytes_ok(name: &str, bytes: &[u8]) -> bool {
     if name.to_ascii_lowercase().ends_with(".glb") {
         bytes.len() > 20 && bytes.starts_with(b"glTF")
     } else {
-        serde_json::from_slice::<Value>(bytes).map_or(false, |v| v["asset"].is_object())
+        serde_json::from_slice::<Value>(bytes).map_or(false, |v| v["asset"].is_object() && gltf_outside_files(&v).is_empty())
     }
 }
+
+/// Files a glTF (JSON) model expects to find beside it. Only one file can be
+/// kept per model here, so such a model would not load.
+fn gltf_outside_files(v: &Value) -> Vec<String> {
+    ["buffers", "images"]
+        .iter()
+        .flat_map(|key| v[*key].as_array().into_iter().flatten())
+        .filter_map(|e| e["uri"].as_str())
+        .filter(|uri| !uri.starts_with("data:"))
+        .map(str::to_string)
+        .collect()
+}
+
+/// One place is written at a time.
+static WORLD_WRITES: Mutex<()> = Mutex::new(());
 
 /// A place description from a file, cleaned; `None` if it is not one.
 fn place_from(bytes: &[u8]) -> Option<crate::places::PlaceData> {
@@ -755,8 +770,10 @@ impl State {
                         _ => {}
                     }
                 }
-                let aside = dir_bytes(&folder.join("enhanced").join(".removed")) + dir_bytes(&folder.join("audio").join(".removed")) + dir_bytes(&PathBuf::from(format!("{}.bak", path.display())));
-                let (art, sound) = (dir_bytes(&folder.join("enhanced")), dir_bytes(&folder.join("audio")));
+                let world_aside = dir_bytes(&folder.join("world").join(".removed")) + dir_bytes(&folder.join("world").join("models").join(".removed"));
+                let aside = dir_bytes(&folder.join("enhanced").join(".removed")) + dir_bytes(&folder.join("audio").join(".removed")) + dir_bytes(&PathBuf::from(format!("{}.bak", path.display()))) + world_aside;
+                // (3D places and models are counted with the art)
+                let (art, sound) = (dir_bytes(&folder.join("enhanced")) + dir_bytes(&folder.join("world")).saturating_sub(world_aside), dir_bytes(&folder.join("audio")));
                 entry["lines"] = json!(lines);
                 entry["words"] = json!(words);
                 entry["endings"] = json!(endings);
@@ -1100,7 +1117,13 @@ impl State {
             ("POST", "/api/admin/clean") => {
                 // delete what was only set aside: replaced pictures and recordings, and the session's backup copy
                 let folder = story.parent().unwrap_or(Path::new(".")).to_path_buf();
-                let targets = [folder.join("enhanced").join(".removed"), folder.join("audio").join(".removed"), PathBuf::from(format!("{}.bak", story.display()))];
+                let targets = [
+                    folder.join("enhanced").join(".removed"),
+                    folder.join("audio").join(".removed"),
+                    folder.join("world").join(".removed"),
+                    folder.join("world").join("models").join(".removed"),
+                    PathBuf::from(format!("{}.bak", story.display())),
+                ];
                 let freed: u64 = targets.iter().map(|t| dir_bytes(t)).sum();
                 for t in &targets {
                     let _ = if t.is_dir() { std::fs::remove_dir_all(t) } else { std::fs::remove_file(t) };
@@ -1343,7 +1366,8 @@ impl State {
                     "PUT" => {
                         let saved = place_from(&req.body).ok_or("this is not a description of a place".to_string()).and_then(|place| {
                             std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-                            // beside the file, then renamed: a crash cannot leave half a place
+                            // beside the file, then renamed: a crash cannot leave half a place (and one save at a time)
+                            let _one = WORLD_WRITES.lock().unwrap_or_else(|e| e.into_inner());
                             let tmp = dir.join(format!("{}.json.tmp", name));
                             std::fs::write(&tmp, serde_json::to_string(&place).unwrap_or_default() + "\n").and_then(|_| std::fs::rename(&tmp, &file)).map_err(|e| e.to_string())?;
                             Ok(json!({ "ok": true, "place": place }))
@@ -1379,11 +1403,18 @@ impl State {
                         return Err("a model is a .glb or .gltf file with a plain name (letters, digits, - and _)".to_string());
                     }
                     let bytes = base64_decode(body["data"].as_str().unwrap_or("")).ok_or("the model did not arrive intact")?;
+                    if let Some(outside) = serde_json::from_slice::<Value>(&bytes).ok().map(|v| gltf_outside_files(&v)).filter(|f| !f.is_empty()) {
+                        return Err(format!("this model keeps part of itself in other files ({}): save it as a single .glb instead", outside.join(", ")));
+                    }
                     if !model_bytes_ok(&name, &bytes) {
                         return Err("this does not look like a glTF model".to_string());
                     }
                     let dir = crate::places::world_dir(&story).join("models");
                     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                    // a model of that name already there is set aside, not written over
+                    if dir.join(&name).is_file() && std::fs::read(dir.join(&name)).map_or(true, |old| old != bytes) {
+                        set_aside(&dir.join(&name));
+                    }
                     std::fs::write(dir.join(&name), bytes).map_err(|e| e.to_string())?;
                     Ok(json!({ "model": name }))
                 })();

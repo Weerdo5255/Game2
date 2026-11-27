@@ -265,10 +265,18 @@ impl PlaceData {
     pub fn obstacles(&self) -> Vec<([f32; 2], [f32; 2])> {
         let mut out: Vec<([f32; 2], [f32; 2])> = self.solids.iter().map(|s| (s.at, s.half)).collect();
         for p in self.parts.iter().filter(|p| p.solid) {
-            // the footprint of the part's box, turned about the upright axis
-            let (sin, cos) = p.rot[1].to_radians().sin_cos();
-            let (hx, hz) = (p.size[0] / 2.0, p.size[2] / 2.0);
-            out.push(([p.at[0], p.at[2]], [cos.abs() * hx + sin.abs() * hz, sin.abs() * hx + cos.abs() * hz]));
+            // the box the part fits in once turned (about y, then x, then z, as it is drawn)
+            let [x, y, z] = p.rot.map(f32::to_radians);
+            let (sx, cx, sy, cy, sz, cz) = (x.sin(), x.cos(), y.sin(), y.cos(), z.sin(), z.cos());
+            let rows = [[cy * cz + sy * sx * sz, -cy * sz + sy * sx * cz, sy * cx], [cx * sz, cx * cz, -sx], [-sy * cz + cy * sx * sz, sy * sz + cy * sx * cz, cy * cx]];
+            // (a capsule is as deep as it is wide, whatever its third size says)
+            let size = if p.shape == "capsule" { [p.size[0], p.size[1], p.size[0]] } else { p.size };
+            let half = rows.map(|r| (0..3).map(|k| r[k].abs() * size[k] / 2.0).sum::<f32>());
+            // only what a walker would meet: something overhead, or under the floor, is not in the way
+            if p.at[1] + half[1] <= self.spawn[1] + 0.05 || p.at[1] - half[1] >= self.spawn[1] + EYE + 0.2 {
+                continue;
+            }
+            out.push(([p.at[0], p.at[2]], [half[0], half[2]]));
         }
         out
     }
@@ -391,6 +399,14 @@ mod tests {
         turned.parts.push(Part { shape: "box".into(), at: [0.0, 0.5, 0.0], rot: [0.0, 90.0, 0.0], size: [4.0, 1.0, 0.4], color: "#ffffff".into(), glow: 0.0, rough: 1.0, metal: 0.0, shadow: true, solid: true, file: String::new(), name: String::new() });
         let o = turned.obstacles();
         assert!((o[0].1[0] - 0.2).abs() < 1e-3 && (o[0].1[1] - 2.0).abs() < 1e-3, "{:?}", o);
+        // a post laid on its side is in the way along its whole length
+        turned.parts[1].rot = [0.0, 0.0, 90.0];
+        turned.parts[1].size = [0.4, 4.0, 0.4];
+        let o = turned.obstacles();
+        assert!((o[0].1[0] - 2.0).abs() < 1e-3 && (o[0].1[1] - 0.2).abs() < 1e-3, "{:?}", o);
+        // and something well overhead is not in the way at all
+        turned.parts[1].at[1] = 40.0;
+        assert!(turned.obstacles().is_empty());
     }
 
     #[test]

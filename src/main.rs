@@ -147,7 +147,7 @@ fn main() {
 
     // a story's own 3D places and models live in "world" beside it
     #[cfg_attr(not(feature = "world3d"), allow(unused_variables))]
-    let world_dir = Some(places::world_dir(&arg("--story").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("assets/story.txt")))).filter(|d| d.is_dir());
+    let world_dir = Some(places::world_dir(&arg("--story").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("assets/story.txt")))).filter(|d| d.is_dir()).map(|d| std::fs::canonicalize(&d).unwrap_or(d));
     if let Some(dir) = &art_dir {
         println!("enhanced art: {}", dir.display());
     }
