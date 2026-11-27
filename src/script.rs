@@ -3,7 +3,7 @@
 //! editor, the compiled `Script` the game runs, and the `Vm` that walks it.
 
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// Speaker id for narration; always available, never declared.
 pub const NARRATOR: &str = "n";
@@ -39,6 +39,76 @@ pub struct CharDef {
     /// Overrides for that portrait: colours and proportions.
     #[serde(default)]
     pub look: BTreeMap<String, String>,
+    /// Where they are through the day, by the story's clock.
+    #[serde(default)]
+    pub schedule: Vec<Stop>,
+    /// What takes them away from that, first match first.
+    #[serde(default)]
+    pub interrupts: Vec<Interrupt>,
+}
+
+/// A place a character is not at: off stage altogether.
+pub const AWAY: &str = "away";
+
+/// One entry of a character's day: from this time they are at this place.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Stop {
+    /// Minutes after midnight.
+    pub at: i32,
+    /// A place (background), or "away".
+    pub place: String,
+    /// What they are doing there (for the writer; not shown in the game).
+    #[serde(default)]
+    pub note: String,
+}
+
+/// Something that overrides a character's schedule for as long as it holds.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Interrupt {
+    pub when: Cond,
+    pub place: String,
+    #[serde(default)]
+    pub note: String,
+}
+
+/// The story's clock: when the day starts, and how long a line of dialogue takes.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ClockDef {
+    /// Minutes after midnight.
+    pub start: i32,
+    /// Minutes that pass with each line spoken (0: time moves only when the story says so).
+    #[serde(default)]
+    pub per_line: i32,
+}
+
+pub const DAY: i32 = 24 * 60;
+
+/// "07:30" or "7:30" as minutes after midnight.
+pub fn parse_time(text: &str) -> Option<i32> {
+    let (h, m) = text.trim().split_once(':')?;
+    let (h, m): (i32, i32) = (h.parse().ok()?, m.parse().ok()?);
+    ((0..24).contains(&h) && (0..60).contains(&m) && m.to_string().len() <= 2).then_some(h * 60 + m)
+}
+
+pub fn time_text(minutes: i32) -> String {
+    let m = minutes.rem_euclid(DAY);
+    format!("{:02}:{:02}", m / 60, m % 60)
+}
+
+/// Names that conditions can test besides the story's properties:
+/// `clock` (minutes after midnight), `day` (1, 2, ...), `event.<name>`
+/// (1 while that event is on), `@<who>` (1 while that character is in the
+/// place the story is in) and `@<who>.<place>`.
+pub fn special_var(name: &str) -> Option<(&str, &str)> {
+    if name == "clock" || name == "day" {
+        return Some((name, ""));
+    }
+    if let Some(event) = name.strip_prefix("event.") {
+        return valid_id(event).then_some(("event", event));
+    }
+    let who = name.strip_prefix('@')?;
+    let (who, place) = who.split_once('.').unwrap_or((who, ""));
+    (valid_id(who) && (place.is_empty() || valid_id(place))).then_some(("@", who))
 }
 
 /// A story property (variable): something choices change and conditions test.
@@ -75,6 +145,12 @@ pub enum Item {
     Bg { name: String },
     /// Start a music track (it loops until another starts); "" for silence.
     Music { track: String },
+    /// Set the clock to this time of day (the next day, if that time has passed).
+    Time { at: i32 },
+    /// Let this many minutes pass.
+    Pass { minutes: i32 },
+    /// Start an event (or end it): characters' interrupts and conditions can depend on it.
+    Event { name: String, on: bool },
     Show { who: String, expr: String, slot: String },
     /// `slot` is left, center, right or all.
     Hide { slot: String },
@@ -146,6 +222,9 @@ pub struct Doc {
     pub vars: Vec<VarDef>,
     #[serde(default)]
     pub tracks: Vec<TrackDef>,
+    /// The story's clock, if it keeps time (schedules need one).
+    #[serde(default)]
+    pub clock: Option<ClockDef>,
     /// How the story's places are shown unless a place says otherwise:
     /// "3d" (a world to walk through) or "" / "2d" (paintings).
     #[serde(default)]
@@ -195,7 +274,8 @@ fn parse_cond(toks: &[&str]) -> Result<Cond, String> {
     if toks.len() != 3 || !OPS.contains(&toks[1]) {
         return Err(format!("bad condition '{}'", toks.join(" ")));
     }
-    let val = toks[2].parse().map_err(|_| format!("bad number '{}'", toks[2]))?;
+    // a time of day may be written as one (clock >= 13:30)
+    let val = parse_time(toks[2]).filter(|_| toks[2].contains(':')).map_or_else(|| toks[2].parse().map_err(|_| format!("bad number '{}'", toks[2])), Ok)?;
     Ok(Cond { var: toks[0].into(), op: toks[1].into(), val })
 }
 
@@ -211,6 +291,9 @@ enum Line {
     Character(CharDef),
     Var(VarDef),
     Track(TrackDef),
+    Clock(ClockDef),
+    Schedule(String, Vec<Stop>),
+    Interrupt(String, Interrupt),
     /// `render 3d` for the whole story, `render <place> 3d` for one place.
     Render(Option<String>, String),
     Chapter(ChapterDef),
@@ -275,6 +358,7 @@ fn parse_line(line: &str) -> Result<Line, String> {
                 color: parts.get(2).unwrap_or(&"").to_string(),
                 sprite: parts.get(3).map(|s| if *s == "-" { "" } else { s }).unwrap_or("").to_string(),
                 look,
+                ..Default::default()
             }));
         }
         "var" => {
@@ -310,6 +394,41 @@ fn parse_line(line: &str) -> Result<Line, String> {
             };
             return Ok(Line::Chapter(ChapterDef { name: parts[0].to_string(), pos: if is_pos { Some((xy[0], xy[1])) } else { None }, note }));
         }
+        "clock" => {
+            // clock 07:00 | 2      the day starts at seven; each line spoken takes two minutes
+            let parts: Vec<&str> = rest.split('|').map(str::trim).collect();
+            let start = parse_time(parts[0]).ok_or(format!("clock needs a time such as 07:00, not '{}'", parts[0]))?;
+            let per_line = parts.get(1).filter(|s| !s.is_empty()).map(|s| number(s)).transpose()?.unwrap_or(0);
+            return Ok(Line::Clock(ClockDef { start, per_line }));
+        }
+        "schedule" => {
+            // schedule p | 07:00 axis breakfast | 12:30 vista | 22:00 away
+            let parts: Vec<&str> = rest.split('|').map(str::trim).collect();
+            let mut stops = Vec::new();
+            for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
+                let mut words = part.splitn(3, char::is_whitespace);
+                let (time, place) = (words.next().unwrap_or(""), words.next().unwrap_or(""));
+                let at = parse_time(time).ok_or(format!("a schedule entry starts with a time such as 07:00, not '{}'", time))?;
+                if place.is_empty() {
+                    return Err(format!("the schedule entry at {} needs a place", time));
+                }
+                stops.push(Stop { at, place: place.to_string(), note: words.next().unwrap_or("").trim().to_string() });
+            }
+            return Ok(Line::Schedule(parts[0].to_string(), stops));
+        }
+        "interrupt" => {
+            // interrupt p | event alarm | dock | runs to look        (or any condition: heat >= 3)
+            let parts: Vec<&str> = rest.splitn(4, '|').map(str::trim).collect();
+            if parts.len() < 3 {
+                return Err("interrupt needs: who | when | place | note".into());
+            }
+            let words: Vec<&str> = parts[1].split_whitespace().collect();
+            let when = match words.as_slice() {
+                ["event", name] => Cond { var: format!("event.{}", name), op: "==".into(), val: 1 },
+                _ => parse_cond(&words)?,
+            };
+            return Ok(Line::Interrupt(parts[0].to_string(), Interrupt { when, place: parts[2].to_string(), note: parts.get(3).unwrap_or(&"").to_string() }));
+        }
         "render" => {
             // render 2d|3d            - the whole story
             // render <place> 2d|3d    - one place
@@ -334,6 +453,9 @@ fn parse_line(line: &str) -> Result<Line, String> {
                 prompt: parts.get(3).unwrap_or(&"").to_string(),
             }));
         }
+        "time" if toks.len() == 2 => Item::Time { at: parse_time(toks[1]).ok_or(format!("time needs a time of day such as 09:30, not '{}'", toks[1]))? },
+        "pass" if toks.len() == 2 => Item::Pass { minutes: number(toks[1])? },
+        "event" if toks.len() == 2 || (toks.len() == 3 && (toks[2] == "on" || toks[2] == "off")) => Item::Event { name: toks[1].into(), on: toks.get(2) != Some(&"off") },
         "music" if toks.len() == 2 => Item::Music { track: if toks[1] == "off" { String::new() } else { toks[1].into() } },
         "bg" if toks.len() == 2 => Item::Bg { name: toks[1].into() },
         "show" if toks.len() == 4 => Item::Show { who: toks[1].into(), expr: toks[2].into(), slot: toks[3].into() },
@@ -387,6 +509,16 @@ impl Doc {
                 Line::Character(c) => doc.characters.push(c),
                 Line::Var(v) => doc.vars.push(v),
                 Line::Track(t) => doc.tracks.push(t),
+                Line::Clock(c) => doc.clock = Some(c),
+                // these belong to a character declared above them
+                Line::Schedule(who, stops) => match doc.characters.iter_mut().find(|c| c.id == who) {
+                    Some(c) => c.schedule.extend(stops),
+                    None => errors.push(format!("story line {}: schedule for '{}', who is not a character declared above it", n + 1, who)),
+                },
+                Line::Interrupt(who, interrupt) => match doc.characters.iter_mut().find(|c| c.id == who) {
+                    Some(c) => c.interrupts.push(interrupt),
+                    None => errors.push(format!("story line {}: interrupt for '{}', who is not a character declared above it", n + 1, who)),
+                },
                 Line::Render(None, mode) => doc.render = mode,
                 Line::Render(Some(place), mode) => {
                     doc.locales.insert(place, mode);
@@ -466,6 +598,26 @@ impl Doc {
             c.color = c.color.trim().to_lowercase();
             id(&mut c.sprite);
             c.look = c.look.iter().map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).filter(|(k, v)| valid_id(k) && !v.is_empty() && !v.contains([' ', '|'])).collect();
+            // a day in order, one entry per time
+            for stop in &mut c.schedule {
+                stop.at = stop.at.clamp(0, DAY - 1);
+                id(&mut stop.place);
+                stop.note = last_field(&stop.note).replace('|', "/");
+            }
+            c.schedule.retain(|stop| !stop.place.is_empty() && !stop.place.contains(char::is_whitespace));
+            c.schedule.sort_by_key(|stop| stop.at);
+            c.schedule.dedup_by_key(|stop| stop.at);
+            for i in &mut c.interrupts {
+                id(&mut i.when.var);
+                id(&mut i.when.op);
+                id(&mut i.place);
+                i.note = last_field(&i.note).replace('|', "/");
+            }
+            c.interrupts.retain(|i| !i.place.is_empty() && !i.place.contains(char::is_whitespace) && !i.when.var.is_empty() && !i.when.var.contains(char::is_whitespace));
+        }
+        if let Some(clock) = &mut self.clock {
+            clock.start = clock.start.clamp(0, DAY - 1);
+            clock.per_line = clock.per_line.clamp(0, 120);
         }
         for v in &mut self.vars {
             id(&mut v.id);
@@ -502,6 +654,9 @@ impl Doc {
                         *text = one_line(text);
                     }
                     Item::Bg { name } => id(name),
+                    Item::Time { at } => *at = (*at).clamp(0, DAY - 1),
+                    Item::Pass { minutes } => *minutes = (*minutes).clamp(0, 7 * DAY),
+                    Item::Event { name, .. } => id(name),
                     Item::Music { track } => {
                         id(track);
                         if track == "off" {
@@ -578,6 +733,26 @@ impl Doc {
             out.push_str(format!("character {} | {} | {} | {} | {}", c.id, c.name, c.color, sprite, look.join(" ")).trim_end_matches([' ', '|']));
             out.push('\n');
         }
+        if self.clock.is_some() || self.characters.iter().any(|c| !c.schedule.is_empty() || !c.interrupts.is_empty()) {
+            out.push('\n');
+        }
+        if let Some(clock) = &self.clock {
+            out.push_str(&format!("clock {} | {}\n", time_text(clock.start), clock.per_line));
+        }
+        for c in &self.characters {
+            if !c.schedule.is_empty() {
+                let stops: Vec<String> = c.schedule.iter().map(|s| format!("{} {} {}", time_text(s.at), s.place, s.note).trim_end().to_string()).collect();
+                out.push_str(&format!("schedule {} | {}\n", c.id, stops.join(" | ")));
+            }
+            for i in &c.interrupts {
+                let when = match i.when.var.strip_prefix("event.") {
+                    Some(name) if i.when.op == "==" && i.when.val == 1 => format!("event {}", name),
+                    _ => format!("{} {} {}", i.when.var, i.when.op, i.when.val),
+                };
+                out.push_str(format!("interrupt {} | {} | {} | {}", c.id, when, i.place, i.note).trim_end_matches([' ', '|']));
+                out.push('\n');
+            }
+        }
         if !self.vars.is_empty() {
             out.push('\n');
         }
@@ -635,6 +810,9 @@ impl Doc {
                     Item::Say { who, text } => out.push_str(&format!("{}: {}\n", who, text)),
                     Item::Bg { name } => out.push_str(&format!("bg {}\n", name)),
                     Item::Music { track } => out.push_str(&format!("music {}\n", if track.is_empty() { "off" } else { track })),
+                    Item::Time { at } => out.push_str(&format!("time {}\n", time_text(*at))),
+                    Item::Pass { minutes } => out.push_str(&format!("pass {}\n", minutes)),
+                    Item::Event { name, on } => out.push_str(&format!("event {}{}\n", name, if *on { "" } else { " off" })),
                     Item::Show { who, expr, slot } => out.push_str(&format!("show {} {} {}\n", who, expr, slot)),
                     Item::Hide { slot } => out.push_str(&format!("hide {}\n", slot)),
                     Item::Add { var, n } => out.push_str(&format!("add {} {}\n", var, n)),
@@ -772,6 +950,34 @@ impl Doc {
                 push("error", "", None, format!("two music tracks share the id '{}'", t.id));
             }
         }
+        // schedules and what interrupts them
+        let scheduled = self.characters.iter().any(|c| !c.schedule.is_empty() || !c.interrupts.is_empty());
+        if scheduled && self.clock.is_none() {
+            push("error", "", None, "characters have schedules but the story keeps no clock: give it one under Scenes > This story".into());
+        }
+        for c in &self.characters {
+            let place_ok = |p: &str| p == AWAY || bgs.contains(&p);
+            for stop in c.schedule.iter().filter(|s| !place_ok(&s.place)) {
+                push("error", "", None, format!("{}'s schedule at {} names a place that does not exist: '{}'", c.id, time_text(stop.at), stop.place));
+            }
+            for i in &c.interrupts {
+                if !place_ok(&i.place) {
+                    push("error", "", None, format!("an interrupt of {} names a place that does not exist: '{}'", c.id, i.place));
+                }
+                if !OPS.contains(&i.when.op.as_str()) {
+                    push("error", "", None, format!("an interrupt of {} has the unknown comparison '{}'", c.id, i.when.op));
+                }
+                if i.when.var.starts_with('@') {
+                    // where one character is cannot decide where another is: they could each wait on the other
+                    push("error", "", None, format!("an interrupt of {} depends on where someone is ('{}'); use an event, a property or the clock", c.id, i.when.var));
+                } else if let Some(msg) = self.cond_var_problem(&i.when.var, &vars, bgs) {
+                    push("error", "", None, format!("an interrupt of {}: {}", c.id, msg));
+                }
+            }
+            if (!c.schedule.is_empty() || !c.interrupts.is_empty()) && c.sprite.is_empty() {
+                push("warning", "", None, format!("{} has a schedule but no portrait, so is never seen arriving anywhere", c.id));
+            }
+        }
         for place in self.locales.keys().filter(|p| !bgs.contains(&p.as_str())) {
             push("warning", "", None, format!("'render {} ...' names a place that does not exist", place));
         }
@@ -795,8 +1001,8 @@ impl Doc {
             for (i, item) in scene.items.iter().enumerate() {
                 let mut err = |msg: String| push("error", s, Some(i), msg);
                 let var = |v: &String, err: &mut dyn FnMut(String)| {
-                    if !vars.contains(v.as_str()) {
-                        err(format!("unknown property '{}'", v));
+                    if let Some(msg) = self.cond_var_problem(v, &vars, bgs) {
+                        err(msg);
                     }
                 };
                 if ended && !matches!(item, Item::Comment { .. }) {
@@ -820,6 +1026,16 @@ impl Doc {
                     Item::Music { track } => {
                         if !track.is_empty() && !tracks.contains(track.as_str()) {
                             err(format!("unknown music track '{}'", track));
+                        }
+                    }
+                    Item::Time { .. } | Item::Pass { .. } => {
+                        if self.clock.is_none() {
+                            err("the story keeps no clock: give it one under Scenes > This story".into());
+                        }
+                    }
+                    Item::Event { name, .. } => {
+                        if !valid_id(name) {
+                            err(format!("the event name '{}' is not usable (letters, digits and _ only)", name));
                         }
                     }
                     Item::Show { who, expr, slot } => {
@@ -938,6 +1154,10 @@ pub enum Cmd {
     Bg(String),
     /// "" stops the music.
     Music(String),
+    /// Set the time of day (minutes after midnight); a time already past is tomorrow's.
+    Time(i32),
+    Pass(i32),
+    Event(String, bool),
     Show { who: String, expr: String, slot: usize },
     /// `None` hides everyone.
     Hide(Option<usize>),
@@ -960,9 +1180,32 @@ pub struct Script {
     pub vars: Vec<VarDef>,
     /// Places shown as a 3D world; the rest are paintings.
     pub world: HashSet<String>,
+    pub clock: Option<ClockDef>,
 }
 
 impl Doc {
+    /// What is wrong with a name used in a condition, if anything.
+    fn cond_var_problem(&self, name: &str, vars: &HashSet<&str>, bgs: &[&str]) -> Option<String> {
+        if vars.contains(name) {
+            return None;
+        }
+        match special_var(name) {
+            Some(("@", who)) => {
+                let place = name.split_once('.').map_or("", |(_, p)| p);
+                if !self.characters.iter().any(|c| c.id == who) {
+                    Some(format!("'{}' asks where '{}' is, who is not a character", name, who))
+                } else if !place.is_empty() && !bgs.contains(&place) {
+                    Some(format!("'{}' names a place that does not exist", name))
+                } else {
+                    None
+                }
+            }
+            Some(("clock" | "day", _)) if self.clock.is_none() => Some(format!("'{}' is tested but the story keeps no clock", name)),
+            Some(_) => None,
+            None => Some(format!("unknown property '{}'", name)),
+        }
+    }
+
     /// Is this place shown as a 3D world to walk through?
     pub fn is_3d(&self, place: &str) -> bool {
         self.locales.get(place).map_or(self.render == "3d", |mode| mode == "3d")
@@ -983,6 +1226,9 @@ impl Script {
                     Item::Say { who, text } => Cmd::Say { who, text },
                     Item::Bg { name } => Cmd::Bg(name),
                     Item::Music { track } => Cmd::Music(track),
+                    Item::Time { at } => Cmd::Time(at),
+                    Item::Pass { minutes } => Cmd::Pass(minutes),
+                    Item::Event { name, on } => Cmd::Event(name, on),
                     Item::Show { who, expr, slot: s } => match slot(&s) {
                         Some(slot) => Cmd::Show { who, expr, slot },
                         None => continue,
@@ -1000,7 +1246,7 @@ impl Script {
             }
         }
         let world = doc.scenes.iter().flat_map(|s| &s.items).filter_map(|i| if let Item::Bg { name } = i { Some(name.clone()) } else { None }).filter(|p| doc.is_3d(p)).collect();
-        Script { title: doc.title.clone(), subtitle: doc.subtitle.clone(), cmds, labels, characters: doc.characters.clone(), vars: doc.vars.clone(), world }
+        Script { title: doc.title.clone(), subtitle: doc.subtitle.clone(), cmds, labels, characters: doc.characters.clone(), vars: doc.vars.clone(), world, clock: doc.clock.clone() }
     }
 
     pub fn character(&self, id: &str) -> Option<&CharDef> {
@@ -1012,25 +1258,49 @@ impl Script {
     }
 }
 
-/// Program counter plus story variables.
+/// Program counter plus story variables, the clock, the events that are
+/// on, and the place the story is in.
 #[derive(Clone, Default)]
 pub struct Vm {
     pub pc: usize,
     pub vars: HashMap<String, i32>,
+    /// Minutes since midnight before the first day.
+    pub clock: i32,
+    pub events: BTreeSet<String>,
+    pub place: String,
+    /// A line has been spoken whose time has not yet been counted.
+    spoke: bool,
 }
 
 impl Vm {
     /// A fresh run: every property at its declared starting value.
     pub fn new(s: &Script) -> Vm {
-        Vm { pc: 0, vars: s.vars.iter().map(|v| (v.id.clone(), v.initial)).collect() }
+        Vm { pc: 0, vars: s.vars.iter().map(|v| (v.id.clone(), v.initial)).collect(), clock: s.clock.as_ref().map_or(0, |c| c.start), events: BTreeSet::new(), place: String::new(), spoke: false }
     }
 
     pub fn var(&self, name: &str) -> i32 {
         self.vars.get(name).copied().unwrap_or(0)
     }
 
-    pub fn test(&self, c: &Cond) -> bool {
-        let v = self.var(&c.var);
+    /// A property, or one of the special names (see `special_var`).
+    pub fn value(&self, s: &Script, name: &str) -> i32 {
+        if let Some(v) = self.vars.get(name) {
+            return *v;
+        }
+        match special_var(name) {
+            Some(("clock", _)) => self.clock.rem_euclid(DAY),
+            Some(("day", _)) => self.clock.div_euclid(DAY) + 1,
+            Some(("event", event)) => self.events.contains(event) as i32,
+            Some(("@", who)) => {
+                let place = name.split_once('.').map_or(self.place.as_str(), |(_, p)| p);
+                (!place.is_empty() && self.where_is(s, who) == Some(place)) as i32
+            }
+            _ => 0,
+        }
+    }
+
+    pub fn test(&self, s: &Script, c: &Cond) -> bool {
+        let v = self.value(s, &c.var);
         match c.op.as_str() {
             "==" => v == c.val,
             "!=" => v != c.val,
@@ -1039,6 +1309,28 @@ impl Vm {
             ">" => v > c.val,
             _ => v < c.val,
         }
+    }
+
+    /// The place a character is in now: wherever the first interrupt that
+    /// holds sends them, else wherever their schedule has them at this time
+    /// of day. `None`: away, or a character who keeps no schedule.
+    pub fn where_is<'a>(&self, s: &'a Script, who: &str) -> Option<&'a str> {
+        let c = s.character(who)?;
+        // (an interrupt never depends on where anyone is, so this cannot go round in circles)
+        let place = match c.interrupts.iter().find(|i| !i.when.var.starts_with('@') && self.test(s, &i.when)) {
+            Some(i) => i.place.as_str(),
+            None => {
+                let now = self.clock.rem_euclid(DAY);
+                // the latest entry at or before now; before the day's first, last night's
+                c.schedule.iter().rev().find(|stop| stop.at <= now).or(c.schedule.last())?.place.as_str()
+            }
+        };
+        Some(place).filter(|p| *p != AWAY)
+    }
+
+    /// Everyone whose schedule (or an interrupt) has them in this place now, in cast order.
+    pub fn present<'a>(&self, s: &'a Script, place: &str) -> Vec<&'a str> {
+        s.characters.iter().filter(|c| !place.is_empty() && self.where_is(s, &c.id) == Some(place)).map(|c| c.id.as_str()).collect()
     }
 
     pub fn jump(&mut self, s: &Script, label: &str) {
@@ -1050,6 +1342,10 @@ impl Vm {
     /// so the game can announce it.
     pub fn next(&mut self, s: &Script) -> Option<(usize, Cmd)> {
         // the validator rejects jump loops, but never trust a story file with the CPU
+        // talking takes time: the line just spoken is counted as the story moves on from it
+        if std::mem::take(&mut self.spoke) {
+            self.clock += s.clock.as_ref().map_or(0, |c| c.per_line);
+        }
         for _ in 0..100_000 {
             let i = self.pc;
             let cmd = s.cmds.get(i)?.clone();
@@ -1062,8 +1358,29 @@ impl Vm {
                     *self.vars.entry(v.clone()).or_insert(0) += n;
                     return Some((i, cmd));
                 }
+                Cmd::Time(at) => {
+                    // forward to that time of day: tomorrow's, if today's has gone
+                    let ahead = (at - self.clock).rem_euclid(DAY);
+                    self.clock += ahead;
+                }
+                Cmd::Pass(minutes) => self.clock += (*minutes).max(0),
+                Cmd::Event(name, on) => {
+                    if *on {
+                        self.events.insert(name.clone());
+                    } else {
+                        self.events.remove(name);
+                    }
+                }
+                Cmd::Bg(place) => {
+                    self.place = place.clone();
+                    return Some((i, cmd));
+                }
+                Cmd::Say { .. } => {
+                    self.spoke = true;
+                    return Some((i, cmd));
+                }
                 Cmd::If(c, l) => {
-                    if self.test(c) {
+                    if self.test(s, c) {
                         self.jump(s, l);
                     }
                 }
@@ -1108,7 +1425,7 @@ mod tests {
                     return;
                 }
                 Some((_, Cmd::Choice(opts))) => {
-                    for o in opts.iter().filter(|o| o.cond.as_ref().map_or(true, |c| vm.test(c))) {
+                    for o in opts.iter().filter(|o| o.cond.as_ref().map_or(true, |c| vm.test(s, c))) {
                         let mut branch = vm.clone();
                         branch.jump(s, &o.target);
                         explore(s, branch, endings, paths);
@@ -1277,6 +1594,71 @@ mod tests {
         loose.locales.insert("dock".into(), "maybe".into());
         loose.sanitize();
         assert!(loose.render.is_empty() && loose.locales.len() == 1);
+    }
+
+    #[test]
+    fn characters_keep_schedules_and_are_interrupted() {
+        let src = include_str!("../assets/example_schedule.txt");
+        let (doc, errors) = Doc::parse(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(problems(&doc).iter().all(|p| p.level != "error"), "{:?}", problems(&doc));
+        // the text format keeps all of it
+        let (again, _) = Doc::parse(&doc.to_text());
+        assert_eq!(again, doc);
+        doc.survives_text().unwrap();
+        let s = Script::compile(&doc);
+        let mut vm = Vm::new(&s);
+        let at = |vm: &mut Vm, text: &str| vm.clock = parse_time(text).unwrap();
+        // through the day
+        at(&mut vm, "08:00");
+        assert_eq!((vm.where_is(&s, "p"), vm.where_is(&s, "q"), vm.where_is(&s, "c")), (Some("axis"), Some("pantry"), Some("pantry")));
+        at(&mut vm, "08:20");
+        assert_eq!(vm.where_is(&s, "q"), Some("dock"));
+        at(&mut vm, "12:59");
+        assert_eq!(vm.where_is(&s, "p"), Some("vista"));
+        // before the day's first entry they are where last night left them; "away" is nowhere
+        at(&mut vm, "04:00");
+        assert_eq!((vm.where_is(&s, "p"), vm.where_is(&s, "c")), (Some("study"), None));
+        assert_eq!(vm.where_is(&s, "m"), None, "no schedule, no place");
+        // an event takes Cook out of the kitchen for as long as it lasts
+        at(&mut vm, "10:00");
+        vm.events.insert("fire".into());
+        assert_eq!(vm.where_is(&s, "c"), Some("vista"));
+        assert_eq!(vm.present(&s, "vista"), vec!["p", "c"]);
+        vm.events.clear();
+        assert_eq!(vm.where_is(&s, "c"), Some("pantry"));
+        // so does a property passing a mark
+        vm.vars.insert("alarm".into(), 2);
+        assert_eq!(vm.where_is(&s, "q"), Some("study"));
+        // conditions can ask the clock, the day, an event, and who is where
+        vm.place = "vista".into();
+        let holds = |vm: &Vm, text: &str| vm.test(&s, &parse_cond(&text.split_whitespace().collect::<Vec<_>>()).unwrap());
+        assert!(holds(&vm, "clock >= 09:30") && holds(&vm, "clock == 600") && holds(&vm, "day == 1") && holds(&vm, "event.fire == 0"));
+        assert!(holds(&vm, "@p == 1") && holds(&vm, "@q == 0") && holds(&vm, "@q.study == 1") && holds(&vm, "@m == 0"));
+        // 'time' moves forward to that time of day, tomorrow's if need be; lines take time
+        let (short, _) = Doc::parse("clock 23:00 | 10\n*start\nn: a\ntime 06:00\nn: b\npass 30\nn: c\nend Done\n");
+        let s2 = Script::compile(&short);
+        let mut vm = Vm::new(&s2);
+        let mut seen = Vec::new();
+        while let Some((_, cmd)) = vm.next(&s2) {
+            if matches!(cmd, Cmd::Say { .. }) {
+                seen.push((vm.value(&s2, "day"), time_text(vm.clock)));
+            }
+            if matches!(cmd, Cmd::End(..)) {
+                break;
+            }
+        }
+        assert_eq!(seen, vec![(1, "23:00".to_string()), (2, "06:00".to_string()), (2, "06:40".to_string())]);
+        // what can go wrong is said
+        let bad = "character p | P | #fff | p\nschedule p | 09:00 nowhere\ninterrupt p | @p == 1 | study\ninterrupt p | nope >= 1 | study\n*start\ntime 09:00\nif @x == 1 goto start\nend Done\n";
+        let (doc, errors) = Doc::parse(bad);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let found: Vec<String> = problems(&doc).into_iter().map(|p| p.msg).collect();
+        for want in ["keeps no clock", "'nowhere'", "depends on where someone is", "unknown property 'nope'", "who is not a character"] {
+            assert!(found.iter().any(|m| m.contains(want)), "missing '{}' in {:?}", want, found);
+        }
+        assert!(Doc::parse("schedule ghost | 09:00 study\n*start\nend Done\n").1.len() == 1);
+        assert!(Doc::parse("character p | P\nschedule p | 25:00 study\n*start\nend Done\n").1.len() == 1);
     }
 
     #[test]

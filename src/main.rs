@@ -319,6 +319,9 @@ fn headless(mut game: Game, picks: Vec<usize>, shots: Option<String>, start: &st
                 next_pick += 1;
             }
             "ending" => {
+                if !game.moves.is_empty() {
+                    println!("schedule: {}", game.moves.join("; "));
+                }
                 if !game.audio.log.is_empty() {
                     let voiced = game.audio.log.iter().filter(|l| l.starts_with("voice ")).count();
                     let music: Vec<&str> = game.audio.log.iter().filter(|l| l.starts_with("music ")).map(|l| &l[6..]).collect();

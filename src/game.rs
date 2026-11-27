@@ -33,6 +33,8 @@ struct Slot {
     who: String,
     expr: String,
     appear: f32,
+    /// Here because their schedule has them here, not because the scene showed them.
+    auto: bool,
 }
 
 enum Mode {
@@ -70,6 +72,12 @@ pub struct Game {
     pub overlay: Option<u32>,
     /// How many lines of dialogue have been begun since the game started.
     pub lines_begun: usize,
+    /// People the scene sent off although their schedule has them here.
+    dismissed: std::collections::HashSet<String>,
+    /// The place the cast was last brought into line with the schedules for.
+    presence_place: String,
+    /// A record of scheduled comings and goings ("09:30 q arrives in study").
+    pub moves: Vec<String>,
 }
 
 /// What a 3D presenter shows at this moment of the story.
@@ -140,6 +148,9 @@ impl Game {
             audio,
             overlay: None,
             lines_begun: 0,
+            dismissed: Default::default(),
+            presence_place: String::new(),
+            moves: Vec::new(),
             cur_pc: 0,
             quit: false,
         }
@@ -149,8 +160,50 @@ impl Game {
         std::path::Path::new(SAVE_FILE).exists()
     }
 
+    /// Bring the cast on stage into line with the characters' schedules:
+    /// whoever is due in this place walks in (to a free spot), whoever is
+    /// due elsewhere walks out. People the scene itself shows are left to it.
+    fn sync_presence(&mut self) {
+        if !self.script.characters.iter().any(|c| !c.schedule.is_empty() || !c.interrupts.is_empty()) {
+            return;
+        }
+        let place = self.bg.clone();
+        // on arriving somewhere, whoever is there is simply there: no announcements
+        let quiet = self.presence_place != place;
+        self.presence_place = place.clone();
+        let stamp = crate::script::time_text(self.vm.clock);
+        let here: Vec<String> = self.vm.present(&self.script, &place).into_iter().filter(|who| self.script.character(who).map_or(false, |c| !c.sprite.is_empty())).map(str::to_string).collect();
+        for i in 0..3 {
+            let leaving = self.slots[i].as_ref().map_or(false, |s| s.auto && !here.contains(&s.who));
+            if leaving {
+                let who = self.slots[i].take().unwrap().who;
+                let (name, col) = self.speaker(&who);
+                self.moves.push(format!("{} {} leaves {}", stamp, who, place));
+                if !quiet {
+                    self.toasts.push((format!("{} leaves", name), col, 3.0));
+                }
+            }
+        }
+        self.dismissed.retain(|who| here.contains(who));
+        for who in here {
+            if self.dismissed.contains(&who) || self.slots.iter().flatten().any(|s| s.who == who) {
+                continue;
+            }
+            // the sides first, the middle last
+            let Some(free) = [0, 2, 1].into_iter().find(|i| self.slots[*i].is_none()) else { break };
+            self.slots[free] = Some(Slot { who: who.clone(), expr: "neutral".into(), appear: if quiet { 1.0 } else { 0.0 }, auto: true });
+            let (name, col) = self.speaker(&who);
+            self.moves.push(format!("{} {} {} {}", stamp, who, if quiet { "is in" } else { "arrives in" }, place));
+            if !quiet {
+                self.toasts.push((format!("{} arrives", name), col, 3.0));
+            }
+        }
+    }
+
     fn reset_scene(&mut self) {
         self.bg.clear();
+        self.dismissed.clear();
+        self.presence_place.clear();
         self.slots = [None, None, None];
         self.fade = None;
         self.toasts.clear();
@@ -266,12 +319,26 @@ impl Game {
                 }
                 Cmd::Show { who, expr, slot } => {
                     let same = self.slots[slot].as_ref().map_or(false, |s| s.who == who);
-                    self.slots[slot] = Some(Slot { who, expr, appear: if same { 1.0 } else { 0.0 } });
+                    self.slots[slot] = Some(Slot { who: who.clone(), expr, appear: if same { 1.0 } else { 0.0 }, auto: false });
+                    // one of each person: if their schedule had already brought them in elsewhere, they step over
+                    for other in 0..3 {
+                        if other != slot && self.slots[other].as_ref().map_or(false, |s| s.who == who) {
+                            self.slots[other] = None;
+                        }
+                    }
+                    self.dismissed.remove(&who);
                 }
-                Cmd::Hide(None) => self.slots = [None, None, None],
-                Cmd::Hide(Some(s)) => self.slots[s] = None,
+                Cmd::Hide(which) => {
+                    // someone the scene sends off stays off, whatever their schedule says, until the place changes
+                    for i in (0..3).filter(|i| which.map_or(true, |w| w == *i)) {
+                        if let Some(gone) = self.slots[i].take() {
+                            self.dismissed.insert(gone.who);
+                        }
+                    }
+                }
                 Cmd::Music(track) => self.audio.play_music(&track),
                 Cmd::Say { who, text } => {
+                    self.sync_presence();
                     self.cur_pc = i;
                     self.lines_begun += 1;
                     self.audio.say(&who, &text);
@@ -281,10 +348,11 @@ impl Game {
                     return;
                 }
                 Cmd::Choice(opts) => {
+                    self.sync_presence();
                     self.cur_pc = i;
                     let opts = opts
                         .iter()
-                        .filter(|o| o.cond.as_ref().map_or(true, |c| self.vm.test(c)))
+                        .filter(|o| o.cond.as_ref().map_or(true, |c| self.vm.test(&self.script, c)))
                         .map(|o| (wrap(&o.text, 54), o.target.clone()))
                         .collect();
                     self.mode = Mode::Choice { opts, sel: 0 };
@@ -319,11 +387,15 @@ impl Game {
         let mut s = format!("pc={}\nbg={}\nmusic={}\n", self.cur_pc, self.bg, self.audio.current_music());
         for (i, slot) in self.slots.iter().enumerate() {
             if let Some(sl) = slot {
-                s += &format!("slot{}={},{}\n", i, sl.who, sl.expr);
+                s += &format!("slot{}={},{}{}\n", i, sl.who, sl.expr, if sl.auto { ",auto" } else { "" });
             }
         }
         for (k, v) in &self.vm.vars {
             s += &format!("var.{}={}\n", k, v);
+        }
+        s += &format!("clock={}\n", self.vm.clock);
+        for e in &self.vm.events {
+            s += &format!("event={}\n", e);
         }
         let msg = match std::fs::write(SAVE_FILE, s) {
             Ok(()) => "Game saved".to_string(),
@@ -350,19 +422,26 @@ impl Game {
                 bg = v.to_string();
             } else if k == "music" {
                 music = v.to_string();
+            } else if k == "clock" {
+                vm.clock = v.parse().unwrap_or(vm.clock);
+            } else if k == "event" {
+                vm.events.insert(v.to_string());
             } else if let Some(name) = k.strip_prefix("var.") {
                 vm.vars.insert(name.to_string(), v.parse().unwrap_or(0));
             } else if let Some(i) = k.strip_prefix("slot").and_then(|i| i.parse::<usize>().ok()) {
                 if let (Some((who, expr)), true) = (v.split_once(','), i < 3) {
-                    slots[i] = Some(Slot { who: who.into(), expr: expr.into(), appear: 1.0 });
+                    let (expr, auto) = expr.split_once(',').map_or((expr, false), |(e, a)| (e, a == "auto"));
+                    slots[i] = Some(Slot { who: who.into(), expr: expr.into(), appear: 1.0, auto });
                 }
             }
         }
         match pc {
             Some(pc) if pc < self.script.cmds.len() => {
                 vm.pc = pc;
+                vm.place = bg.clone();
                 self.reset_scene();
                 self.vm = vm;
+                self.presence_place = bg.clone();
                 self.bg = bg;
                 self.slots = slots;
                 self.audio.play_music(&music);
@@ -415,6 +494,7 @@ impl Game {
                 if let Some(b) = pending.take() {
                     self.bg = b;
                     self.slots = [None, None, None];
+                    self.dismissed.clear();
                 }
             }
             if t >= FADE_HALF * 2.0 {
@@ -708,6 +788,14 @@ impl Game {
                     c.rect(px + k * 20 + 2, y + 2, 13, 12, if k < self.vm.var(&v.id) { col } else { rgb(60, 64, 100) });
                 }
             }
+        }
+        // the time, for a story that keeps a clock
+        if self.script.clock.is_some() {
+            let day = self.vm.clock.div_euclid(crate::script::DAY) + 1;
+            let label = format!("DAY {}  {}", day, crate::script::time_text(self.vm.clock));
+            let w = label.len() as i32 * 16 + 24;
+            c.rect_blend(W / 2 - w / 2, 8, w, 32, rgba(8, 8, 28, 130));
+            c.text_c(W / 2, 16, &label, rgb(214, 222, 255), 2);
         }
         for (i, (msg, col, _)) in self.toasts.iter().rev().take(4).enumerate() {
             c.text_sh(20, 16 + i as i32 * 26, msg, *col, 2);

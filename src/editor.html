@@ -257,6 +257,7 @@ label { color: var(--dim); }
     <li><b>Find</b> (<kbd>Ctrl</kbd>+<kbd>F</kbd>) searches all dialogue, choices, cards and notes, and can replace across the story in one undoable step.</li>
     <li>Unsaved work is kept in this browser as you go: if the page is closed or crashes, the editor offers it back.</li>
     <li>Places can be shown as paintings or as <b>a 3D world to walk through</b>: choose for the whole story under Scenes &rarr; This story, or place by place there or on any Background block. (The game needs to be built with its 3D engine: <code>--features world3d</code>.)</li>
+    <li>Characters can keep a <b>schedule</b>: open one in Cast and give them times and places, and they are on stage wherever the story is when their day has them there. <b>Interruptions</b> send them elsewhere while an event is on, a property passes a mark, or after a time. The story's clock is under Scenes &rarr; This story; Time, Time passes and Event blocks move it and start events; conditions can ask the time, an event, or whether someone is here.</li>
     <li><kbd>Ctrl</kbd>+<kbd>S</kbd> saves to the story file. <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> undo and redo. Play saves first, then starts the game.</li>
   </ul>
   <button id="helpClose" class="primary">Close</button>
@@ -267,7 +268,7 @@ label { color: var(--dim); }
 const $ = (s, root = document) => root.querySelector(s);
 const SPRITE_NAMES = { p: "Young gentleman", v: "Elder lord", s: "Bewigged lord", q: "Steward", t: "Footman", c: "Cook", a: "Swan" };
 const KIND_NAMES = { say: "Line", bg: "Background", show: "Show character", hide: "Hide character", add: "Consequence: change", set: "Consequence: set",
-  if: "Condition", goto: "Jump", card: "Chapter card", end: "Ending", choice: "Choice", comment: "Note", music: "Music" };
+  if: "Condition", goto: "Jump", card: "Chapter card", end: "Ending", choice: "Choice", comment: "Note", music: "Music", time: "Time", pass: "Time passes", event: "Event" };
 const OP_SYM = { "==": "=", "!=": "≠", ">=": "≥", "<=": "≤", ">": ">", "<": "<" };
 
 let doc = null, meta = null, problems = [], parseErrors = [];
@@ -376,6 +377,17 @@ function renameEverywhere(kind, from, to) {
     }
   }
   if (kind === "char") for (const v of doc.vars) if (v.character === from) v.character = to;
+  // conditions that ask where a character is, and interrupts that wait on a property
+  const fix = c => {
+    if (!c) return;
+    if (kind === "char" && (c.var === "@" + from || c.var.startsWith("@" + from + "."))) c.var = "@" + to + c.var.slice(from.length + 1);
+    if (kind === "var" && c.var === from) c.var = to;
+  };
+  for (const s of doc.scenes) for (const it of s.items) {
+    if (it.t === "if") fix(it);
+    if (it.t === "choice") it.options.forEach(o => fix(o.cond));
+  }
+  for (const c of doc.characters) c.interrupts.forEach(i => fix(i.when));
 }
 function usesOfVar(id) {
   const uses = [];
@@ -402,6 +414,7 @@ function change(fn, opts) {
   undoStack.push(snapshot()); if (undoStack.length > 200) undoStack.shift();
   redoStack = [];
   fn();
+  normalizeDoc();
   markDirty();
   // A field commits when focus leaves it, which is in the middle of the
   // click that took the focus. Rebuilding the page then would destroy the
@@ -454,7 +467,7 @@ function offerDraft() {
 }
 function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); doc = JSON.parse(undoStack.pop()); afterHistory(); }
 function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); doc = JSON.parse(redoStack.pop()); afterHistory(); }
-function afterHistory() { doc.chapters = doc.chapters || []; doc.tracks = doc.tracks || []; doc.locales = doc.locales || {}; doc.render = doc.render || ""; if (sel >= doc.scenes.length) sel = doc.scenes.length - 1; if (sel >= 0 && chapterOf(sel) !== curChapter) sel = -1; selItem = -1; markDirty(); renderAll(); if (sound.open) renderSound(); }
+function afterHistory() { normalizeDoc(); if (sel >= doc.scenes.length) sel = doc.scenes.length - 1; if (sel >= 0 && chapterOf(sel) !== curChapter) sel = -1; selItem = -1; markDirty(); renderAll(); if (sound.open) renderSound(); }
 function updateBar() {
   $("#saveBtn").disabled = !dirty; $("#undoBtn").disabled = !undoStack.length; $("#redoBtn").disabled = !redoStack.length;
   const st = $("#status"); st.textContent = locked ? "\uD83D\uDD12 Locked" + (dirty ? " \u2014 changes cannot be saved" : "") : dirty ? "Unsaved changes" : "Saved to " + meta.path;
@@ -603,6 +616,8 @@ function sceneNode(s, si) {
       card && el("div", { class: "snip", style: "color:#c9a0ff", text: card.title + (card.sub ? " — " + card.sub : "") }),
       firstSay && el("div", { class: "snip", text: firstSay.text }),
       el("div", { style: "margin-top:4px" }, el("span", { class: "chip", text: `${lines} line${lines === 1 ? "" : "s"}` }),
+        s.items.filter(it => it.t === "time").map(it => el("span", { class: "chip", style: "background:#3a3f6e", text: "\u23F1 " + hhmm(it.at) })),
+        s.items.filter(it => it.t === "event").map(it => el("span", { class: "chip", style: "background:#6a4a1e", text: "\u26A1 " + it.name + (it.on ? "" : " over") })),
         s.items.some(it => it.t === "bg" && is3d(it.name)) && el("span", { class: "chip", style: "background:#245a6a", title: "A place here is shown as a 3D world", text: "3D" }),
         s.items.filter(it => it.t === "music").map(it => el("span", { class: "chip", style: "background:#4a2f66", text: "\u266A " + (it.track ? ((doc.tracks || []).find(t => t.id === it.track) || { title: it.track }).title || it.track : "silence") })),
         fx.map(e => effectChip(e)))),
@@ -976,6 +991,35 @@ function opts(list, value, extra) {
 const speakerOpts = () => [{ value: "n", label: "Narration" }, ...doc.characters.map(c => ({ value: c.id, label: c.name || c.id }))];
 const shownOpts = () => doc.characters.filter(c => c.sprite).map(c => ({ value: c.id, label: c.name || c.id }));
 const sceneOpts = () => doc.scenes.map(s => ({ value: s.label, label: s.chapter && s.chapter !== curChapter ? `${s.label}  (${s.chapter.split(":")[0]})` : s.label }));
+// ---- the clock, schedules and events
+const AWAY = "away";
+const hhmm = m => { m = ((m % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
+const minutesOf = text => { const m = /^(\d{1,2}):(\d{2})/.exec(text || ""); return m ? Math.min(1439, +m[1] * 60 + +m[2]) : 0; };
+const timeInput = (minutes, onChange) => el("input", { type: "time", style: "flex:none;width:104px", value: hhmm(minutes), onchange: ev => onChange(minutesOf(ev.target.value)) });
+const placeOpts = () => [...meta.bgs, { value: AWAY, label: "away (nowhere to be seen)" }];
+/** Every event the story names: started or ended in a scene, or waited for by someone. */
+function eventNames() {
+  const names = new Set();
+  for (const sc of doc.scenes) for (const it of sc.items) {
+    if (it.t === "event" && it.name) names.add(it.name);
+    if (it.t === "if" && it.var.startsWith("event.")) names.add(it.var.slice(6));
+    if (it.t === "choice") for (const o of it.options) if (o.cond && o.cond.var.startsWith("event.")) names.add(o.cond.var.slice(6));
+  }
+  for (const c of doc.characters) for (const i of c.interrupts) if (i.when.var.startsWith("event.")) names.add(i.when.var.slice(6));
+  return [...names].sort();
+}
+/** Where a character is at a time of day by their schedule alone (interrupts aside). */
+function scheduledPlace(ch, minutes) {
+  const stops = [...ch.schedule].sort((a, b) => a.at - b.at);
+  if (!stops.length) return null;
+  return ([...stops].reverse().find(st => st.at <= minutes) || stops[stops.length - 1]).place;
+}
+/** Make sure a story from an older file has the newer parts. */
+function normalizeDoc() {
+  doc.chapters = doc.chapters || []; doc.tracks = doc.tracks || []; doc.locales = doc.locales || {}; doc.render = doc.render || "";
+  if (doc.clock === undefined) doc.clock = null;
+  for (const c of doc.characters) { c.schedule = c.schedule || []; c.interrupts = c.interrupts || []; }
+}
 const varOpts = () => doc.vars.map(v => ({ value: v.id, label: v.label || v.id }));
 const NEW_SCENE = "\u0000new";
 function targetSelect(value, onPick) {
@@ -998,11 +1042,33 @@ function bindText(node, obj, key, after) {
 function grow(t) { t.style.height = "auto"; t.style.height = (t.scrollHeight + 2) + "px"; }
 let graphTimer = 0;
 function scheduleGraph() { clearTimeout(graphTimer); graphTimer = setTimeout(renderGraph, 250); }
-function condEditor(cond, onChange) {
+/** Edit a condition. Besides properties it can ask the clock, an event, or (not for interrupts) whether someone is here. */
+function condEditor(cond, onChange, forInterrupt) {
+  const NEW_EVENT = "\u0000event";
+  const special = [
+    ...(doc.clock ? [{ value: "clock", label: "\u23F1 the time of day" }, { value: "day", label: "\u23F1 the day (1, 2, \u2026)" }] : []),
+    ...eventNames().map(n => ({ value: "event." + n, label: "\u26A1 event: " + n })),
+    { value: NEW_EVENT, label: "\u26A1 a new event\u2026" },
+    ...(forInterrupt ? [] : doc.characters.filter(c => c.schedule.length || c.interrupts.length).map(c => ({ value: "@" + c.id, label: "\u{1F6B6} " + (c.name || c.id) + " is here" }))),
+  ];
+  const isEvent = cond.var.startsWith("event."), isHere = cond.var.startsWith("@");
   return [
-    el("select", { onchange: ev => onChange(c => c.var = ev.target.value) }, opts(varOpts(), cond.var)),
-    el("select", { style: "flex:none", onchange: ev => onChange(c => c.op = ev.target.value) }, meta.ops.map(o => el("option", { value: o, text: OP_SYM[o], selected: o === cond.op }))),
-    el("input", { type: "number", value: cond.val, onchange: ev => onChange(c => c.val = num(ev.target.value)) }),
+    el("select", { onchange: ev => {
+      let v = ev.target.value;
+      if (v === NEW_EVENT) {
+        const name = (prompt("A name for the event (letters, digits and _):", "alarm") || "").trim().replace(/[^A-Za-z0-9_]/g, "_");
+        if (!name) { ev.target.value = cond.var; return; }
+        v = "event." + name;
+      }
+      onChange(c => { c.var = v; if (v.startsWith("event.") || v.startsWith("@")) { c.op = "=="; c.val = 1; } else if (v === "clock") { c.op = ">="; } });
+    } }, opts([...varOpts(), ...special], cond.var)),
+    // an event or a presence is simply so or not so
+    isEvent || isHere
+      ? el("select", { style: "flex:none", onchange: ev => onChange(c => { c.op = "=="; c.val = +ev.target.value; }) }, opts([{ value: "1", label: isEvent ? "is on" : "yes" }, { value: "0", label: isEvent ? "is off" : "no" }], (cond.op === "==") === (cond.val === 1) ? "1" : "0"))
+      : el("select", { style: "flex:none", onchange: ev => onChange(c => c.op = ev.target.value) }, meta.ops.map(o => el("option", { value: o, text: OP_SYM[o], selected: o === cond.op }))),
+    isEvent || isHere ? null
+      : cond.var === "clock" ? timeInput(cond.val, m => onChange(c => c.val = m))
+      : el("input", { type: "number", value: cond.val, onchange: ev => onChange(c => c.val = num(ev.target.value)) }),
   ];
 }
 function blockBody(s, it, i) {
@@ -1018,6 +1084,15 @@ function blockBody(s, it, i) {
       el("select", { onchange: ev => set(() => it.name = ev.target.value) }, opts(meta.bgs, it.name)),
       meta.bgs.includes(it.name) && el("img", { class: "minibg", src: bgUrl(it.name) }),
       meta.bgs.includes(it.name) && el("label", { text: "shown as" }), meta.bgs.includes(it.name) && placeModeSelect(it.name));
+    case "time": return el("div", { class: "brow" }, el("label", { text: "it is now" }), timeInput(it.at, m => set(() => it.at = m)),
+      el("span", { class: "sub", style: "color:var(--dim)", text: "the clock moves forward to this time (tomorrow, if it has passed)" }));
+    case "pass": return el("div", { class: "brow" }, el("input", { type: "number", min: 0, style: "width:80px;flex:none", value: it.minutes, onchange: ev => set(() => it.minutes = Math.max(0, num(ev.target.value))) }),
+      el("label", { text: "minutes pass" }));
+    case "event": return el("div", { class: "brow" },
+      el("input", { type: "text", list: "eventNames", placeholder: "name (e.g. alarm)", style: "flex:1", value: it.name, onchange: ev => set(() => it.name = ev.target.value.trim().replace(/[^A-Za-z0-9_]/g, "_")) }),
+      el("datalist", { id: "eventNames" }, eventNames().map(n => el("option", { value: n }))),
+      el("select", { style: "flex:none", onchange: ev => set(() => it.on = ev.target.value === "1") }, opts([{ value: "1", label: "begins" }, { value: "0", label: "is over" }], it.on ? "1" : "0")),
+      el("span", { class: "sub", style: "color:var(--dim)", text: "characters can be sent somewhere by it; conditions can ask about it" }));
     case "music": return el("div", { class: "brow" },
       el("select", { onchange: ev => set(() => it.track = ev.target.value) }, opts([{ value: "", label: "Silence (stop the music)" }, ...(doc.tracks || []).map(t => ({ value: t.id, label: t.title || t.id }))], it.track)),
       el("span", { class: "sub", style: "color:var(--dim)", text: "plays on until another Music block" }));
@@ -1165,6 +1240,9 @@ function renderInspector() {
     add("Jump", () => ({ t: "goto", target: (doc.scenes[sel + 1] || doc.scenes[0]).label })),
     add("Background", () => ({ t: "bg", name: meta.bgs[0] })),
     add("Music", () => ({ t: "music", track: ((doc.tracks || [])[0] || { id: "" }).id })),
+    doc.clock && add("Time", () => ({ t: "time", at: 9 * 60 })),
+    doc.clock && add("Time passes", () => ({ t: "pass", minutes: 30 })),
+    add("Event", () => ({ t: "event", name: eventNames()[0] || "alarm", on: true })),
     add("Show", () => ({ t: "show", who: firstShown, expr: "neutral", slot: "center" }), "portrait"),
     add("Hide", () => ({ t: "hide", slot: "all" })),
     add("Card", () => ({ t: "card", title: "Chapter", sub: "" })),
@@ -1203,7 +1281,24 @@ function propRow(v) {
     el("label", { text: "starts at" }),
     el("input", { type: "number", value: v.initial, onchange: ev => change(() => v.initial = num(ev.target.value)) }));
 }
+/** The whole cast's day at a glance: who is where from when. */
+function dayTable() {
+  const kept = doc.characters.filter(c => c.schedule.length || c.interrupts.length);
+  if (!kept.length) return null;
+  const times = [...new Set(kept.flatMap(c => c.schedule.map(st => st.at)))].sort((a, b) => a - b);
+  return el("div", { class: "card", id: "dayTable", style: "overflow-x:auto" },
+    el("div", { class: "sect", style: "margin-top:0", text: "The day" }),
+    el("table", { style: "border-collapse:collapse;font-size:11.5px;width:100%" },
+      el("tr", {}, el("th", {}), times.map(t => el("th", { style: "text-align:left;padding:2px 6px;color:var(--dim);font-weight:500", text: hhmm(t) }))),
+      kept.map(c => el("tr", {},
+        el("td", { style: `padding:2px 6px 2px 0;white-space:nowrap;color:${safeColor(c.color, "inherit")}`, text: c.name || c.id }),
+        times.map(t => { const place = scheduledPlace(c, t), moved = c.schedule.some(st => st.at === t); return el("td", { style: "padding:2px 6px;white-space:nowrap;" + (moved ? "" : "color:var(--dim)") + (place === AWAY ? ";font-style:italic" : ""), text: place == null ? "\u2014" : moved ? place : "\u00B7" }); })))),
+    kept.some(c => c.interrupts.length) && el("div", { style: "margin-top:6px;display:flex;flex-wrap:wrap;gap:4px" }, kept.flatMap(c => c.interrupts.map(i =>
+      el("span", { class: "chip", style: "background:#6a4a1e", title: i.note || "", text: `${c.name || c.id} \u2192 ${i.place} when ${i.when.var.startsWith("event.") ? i.when.var.slice(6) + (i.when.val === 1 ? "" : " is off") : (i.when.var === "clock" ? "time " + (OP_SYM[i.when.op] || i.when.op) + " " + hhmm(i.when.val) : varLabel(i.when.var) + " " + (OP_SYM[i.when.op] || i.when.op) + " " + i.when.val)}` })))),
+    !doc.clock && el("div", { class: "pmsg warning", style: "margin-top:6px", text: "The story keeps no clock yet: turn it on under Scenes \u2192 This story." }));
+}
 function renderCast(host) {
+  const day = dayTable(); if (day) host.append(day);
   doc.characters.forEach((ch, ci) => {
     const st = charStats(ch.id), open = openChar === ch.id;
     const card = el("div", { class: "card" + (open ? " open" : "") },
@@ -1250,6 +1345,29 @@ function renderCast(host) {
             opts([{ value: "", label: "None (never shown)" }, ...meta.sprites.map(s => ({ value: s, label: SPRITE_NAMES[s] || s }))], ch.sprite))),
         Object.keys(defaults).length > 0 && el("div", { class: "sect", text: "Look" }),
         Object.keys(defaults).length > 0 && el("div", { class: "grid2" }, Object.keys(defaults).sort((a, b) => defaults[a].includes(":") - defaults[b].includes(":")).map(lookRow)),
+        el("div", { class: "sect", text: "Schedule" }),
+        !doc.clock && (ch.schedule.length > 0 || ch.interrupts.length > 0) && el("div", { class: "pmsg warning", text: "Schedules need a clock: turn it on under Scenes \u2192 This story." }),
+        ch.schedule.map((st, k) => el("div", { class: "brow", style: "margin-top:4px", "data-stop": k },
+          timeInput(st.at, m => change(() => { st.at = m; ch.schedule.sort((a, b) => a.at - b.at); })),
+          el("select", { style: "flex:1", onchange: ev => change(() => st.place = ev.target.value) }, opts(placeOpts(), st.place)),
+          el("button", { class: "ghost danger", title: "Remove this entry", text: "\u2715", onclick: () => change(() => ch.schedule.splice(k, 1)) }),
+          bindText(el("input", { type: "text", placeholder: "doing what (a note)", style: "flex-basis:100%" }), st, "note"))),
+        el("button", { style: "margin-top:6px", "data-add": "stop", text: "+ Time and place", onclick: () => change(() => {
+          // an hour after the last entry, in the same place
+          const last = ch.schedule[ch.schedule.length - 1];
+          ch.schedule.push({ at: last ? Math.min(1439, last.at + 60) : (doc.clock ? doc.clock.start : 420), place: last ? last.place : meta.bgs[0], note: "" });
+        }) }),
+        el("div", { class: "sect", text: "Interruptions (the first that holds wins)" }),
+        ch.interrupts.map((it, k) => el("div", { class: "card", style: "padding:6px;margin:4px 0", "data-interrupt": k },
+          el("div", { class: "brow" }, el("label", { text: "when" }), condEditor(it.when, fn => change(() => fn(it.when)), true)),
+          el("div", { class: "brow", style: "margin-top:4px" }, el("label", { text: "go to" }), el("select", { style: "flex:1", onchange: ev => change(() => it.place = ev.target.value) }, opts(placeOpts(), it.place)),
+            el("button", { class: "ghost", title: "Earlier ones win", text: "\u2191", disabled: k === 0, onclick: () => change(() => ch.interrupts.splice(k - 1, 0, ch.interrupts.splice(k, 1)[0])) }),
+            el("button", { class: "ghost danger", title: "Remove", text: "\u2715", onclick: () => change(() => ch.interrupts.splice(k, 1)) })),
+          bindText(el("input", { type: "text", placeholder: "why (a note)", style: "width:100%;margin-top:4px" }), it, "note"))),
+        el("button", { style: "margin-top:6px", "data-add": "interrupt", text: "+ Interruption", onclick: () => change(() => {
+          const ev = eventNames()[0];
+          ch.interrupts.push({ when: ev || !doc.vars.length ? { var: "event." + (ev || "alarm"), op: "==", val: 1 } : { var: doc.vars[0].id, op: ">=", val: 1 }, place: meta.bgs[0], note: "" });
+        }) }),
         el("div", { class: "sect", text: "Properties of this character" }),
         doc.vars.filter(v => v.character === ch.id).map(propRow),
         el("button", { style: "margin-top:6px", text: "+ Property", onclick: () => change(() => {
@@ -1307,6 +1425,10 @@ function renderScenes(host) {
     el("div", { class: "sect", style: "margin-top:0", text: "This story" }),
     bindText(el("input", { type: "text", placeholder: "Title (shown on the title screen)", style: "width:100%;font-weight:600" }), doc, "title", () => { const o = $("#storySel").selectedOptions[0]; if (o) o.textContent = doc.title || "Untitled story"; }),
     bindText(el("input", { type: "text", placeholder: "Subtitle", style: "width:100%;margin-top:6px" }), doc, "subtitle"),
+    el("div", { class: "sect", text: "Clock" }),
+    el("label", { style: "display:flex;gap:6px;align-items:center" }, el("input", { id: "clockOn", type: "checkbox", checked: !!doc.clock, onchange: ev => change(() => doc.clock = ev.target.checked ? { start: 7 * 60, per_line: 1 } : null) }), "The story keeps time (needed for schedules)"),
+    doc.clock && el("div", { class: "brow", style: "margin-top:6px" }, el("label", { text: "the day starts at" }), timeInput(doc.clock.start, m => change(() => doc.clock.start = m)),
+      el("label", { text: "each line takes" }), el("input", { id: "perLine", type: "number", min: 0, max: 120, style: "width:60px;flex:none", value: doc.clock.per_line, onchange: ev => change(() => doc.clock.per_line = Math.max(0, Math.min(120, num(ev.target.value)))) }), el("label", { text: "min" })),
     el("div", { class: "sect", text: "Places are shown as" }),
     el("select", { id: "renderSel", style: "width:100%", onchange: ev => change(() => doc.render = ev.target.value) },
       opts([{ value: "", label: "Paintings (2D)" }, { value: "3d", label: "A 3D world to walk through" }], doc.render === "3d" ? "3d" : "")),
@@ -1377,7 +1499,7 @@ async function loadStory(id) {
   doc = data.doc; meta = data.meta; problems = data.problems; parseErrors = data.parse_errors;
   undoStack = []; redoStack = []; dirty = false; selItem = -1; openChar = null; sceneFilter = ""; view = { x: 40, y: 40, k: 1 };
   renderStoryMenu(); applyView();
-  doc.chapters = doc.chapters || []; doc.tracks = doc.tracks || []; doc.locales = doc.locales || {}; doc.render = doc.render || ""; curChapter = ""; selChapter = null;
+  normalizeDoc(); curChapter = ""; selChapter = null;
   // open on the main graph; if the story has no chapters, on its first scene
   sel = doc.scenes.length && !doc.chapters.length ? Math.max(0, sceneIndex("start")) : -1;
   renderAll(); renderProblems(); fit(); if (sel >= 0) centerOn(sel);

@@ -170,6 +170,73 @@ Options: `--port N`, `--no-browser`, `--story FILE` (the main story),
 `--stories DIR`, `--comfy-dir DIR`. The editor listens on your own machine
 only and refuses requests from other web pages.
 
+## Schedules: who is where, and when
+
+A story can keep a clock, and its characters can keep a day. Wherever the
+story goes, whoever's schedule has them in that place at that time is
+simply there, on stage, without the scene having to show them; when their
+time comes they leave, and others arrive. Things that happen can pull them
+away from it.
+
+![Two characters in the pantry because their schedules say so, the clock above](docs/schedule_game.png)
+
+In the story file:
+
+```
+clock 08:00 | 5                                  the day starts at eight; a line takes five minutes
+
+schedule q | 06:00 pantry | 08:20 dock | 12:00 pantry
+schedule c | 05:00 pantry | 22:00 away           "away": nowhere to be seen
+interrupt c | event fire | vista | flees the kitchen
+interrupt q | alarm >= 2 | study | reports upstairs
+```
+
+- **The clock** moves as lines are spoken, and when a scene says so:
+  `time 09:30` (forward to that time of day; tomorrow's if it has passed)
+  and `pass 30` (minutes). It is shown at the top of the screen.
+- **A schedule** is a list of times and places for one character; they are
+  at the latest one that has come. Before the day's first entry they are
+  where the night before left them.
+- **An interrupt** overrides the schedule for as long as its condition
+  holds, the first listed winning: an event that a scene starts and ends
+  (`event fire` ... `event fire off`), a property passing a mark, or the
+  clock (`clock >= 22:00`). When it no longer holds they go back to their
+  day.
+- **Scenes can ask**: conditions on `if` lines and choices can test
+  `@q` (is Quince here, where the story is?), `@q.study` (is Quince in the
+  study?), `clock`, `day` and `event.fire`, so a choice can be offered only
+  while someone is in the room:
+
+  ```
+  choice
+  - [@c == 1] Ask Cook what happened => asked
+  - Say nothing => quiet
+  ```
+
+People the scene itself shows or hides are left to the scene: a `show` puts
+them where it says, and someone sent off with `hide` stays off until the
+story moves to another place. Arrivals and departures while you are in a
+place are announced; whoever is already there when you arrive is just
+there. In a 3D place, and in VR, they stand in the room like anyone else.
+
+In the editor, a character's card in **Cast** has their Schedule (times,
+places, a note on what they are doing) and their Interruptions, and the top
+of Cast shows the whole household's day as a table. The clock is under
+**Scenes > This story**; **Time**, **Time passes** and **Event** blocks go in
+scenes; conditions offer the time, events and "... is here" beside the
+properties.
+
+![A character's schedule and interruptions in the editor](docs/editor_schedule.png)
+
+`assets/example_schedule.txt` is a small story that uses all of it:
+
+```bash
+cargo run --release -- --story assets/example_schedule.txt
+```
+
+Played without a window (`--autoplay 0`) the game prints who came and went:
+`schedule: 08:00 q is in pantry; 08:20 q leaves pantry; ...`.
+
 ## Walking through the story in 3D
 
 A story's places can be shown as paintings, or as a 3D world you walk
@@ -478,6 +545,10 @@ cargo build && node tools/editor_manage_e2e.js
 
 ```bash
 cargo build && node tools/editor_world_e2e.js
+```
+
+```bash
+cargo build && node tools/editor_schedule_e2e.js
 ```
 
 The 3D world has its own unit tests (`cargo test --features world3d`) and

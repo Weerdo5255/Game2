@@ -1,0 +1,47 @@
+title A Day at Thistlemere | who is where, and when
+
+character m | Marlowe | #96e6a0 | -
+character p | Peregrine | #c8b4ff | p
+character q | Quince | #ffd27f | q
+character c | Cook | #ffb070 | c
+
+clock 08:00 | 5
+schedule p | 07:00 axis breakfast | 09:00 vista fencing | 13:00 study
+schedule q | 06:00 pantry | 08:20 dock | 12:00 pantry
+schedule c | 05:00 pantry | 22:00 away
+interrupt c | event fire | vista | flees the kitchen
+interrupt q | alarm >= 2 | study | reports upstairs
+
+var alarm | Alarm | 0 | bad
+
+*start
+bg pantry
+n: Eight o'clock. The pantry.
+m: Morning, Quince. Morning, Cook.
+m: Quince has the dock at twenty past.
+m: And there he goes.
+m: Where is the Young Master just now?
+if @p.axis == 1 goto at_axis
+n: Not at the axis.
+goto later
+*at_axis
+n: At the axis, having Views.
+*later
+time 09:30
+bg vista
+n: Half past nine on the terrace.
+event fire
+m: Something is burning below stairs.
+choice
+- [@c == 1] Ask Cook what happened => asked
+- Say nothing => quiet
+*asked
+set alarm 2
+m: Cook explains. At length.
+event fire off
+m: The fire is out; Cook goes back down.
+bg study
+m: Quince is already in the study, reporting.
+end Done | A day, more or less.
+*quiet
+end Quiet | Nothing was said.
