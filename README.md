@@ -201,6 +201,10 @@ changed by other tools; a block is `{"t": "say", "who": "p", "text": "..."}`
 and so on. `files` is optional. On import only pictures (`enhanced/*.png`),
 recordings (`audio/*`) and voice samples (`audio/samples/*`) with plain file
 names are accepted; anything else in `files` is left out and reported.
+Pictures larger than 8192 pixels a side are refused, and one file can carry
+up to 512 MB; a story with more art and sound than that is exported alone
+and its `enhanced` and `audio` folders copied by hand. A cut-off or damaged
+`.json` file is refused rather than guessed at.
 A story file from elsewhere is as trustworthy as its sender: it cannot write
 outside its own new folder, but read it before you play it.
 

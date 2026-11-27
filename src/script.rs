@@ -430,6 +430,10 @@ impl Doc {
                 i += 1;
             }
         }
+        // positions are whole numbers in the story file
+        let whole = |p: &mut Option<(f32, f32)>| *p = p.filter(|(x, y)| x.is_finite() && y.is_finite()).map(|(x, y)| (x.round().clamp(-1e6, 1e6), y.round().clamp(-1e6, 1e6)));
+        self.chapters.iter_mut().for_each(|c| whole(&mut c.pos));
+        self.scenes.iter_mut().for_each(|s| whole(&mut s.pos));
         for c in &mut self.characters {
             id(&mut c.id);
             pipe_free(&mut c.name);

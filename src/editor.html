@@ -260,6 +260,8 @@ function forStory(path, image) { return path + (path.includes("?") ? "&" : "?") 
 function bgUrl(name, extra) { return forStory(`/art/bg/${name}.png` + (extra ? "?" + extra : ""), true); }
 
 // ------------------------------------------------------------ utilities
+/** A character's colour, if it is one: story files come from anywhere, and this goes into style attributes. */
+function safeColor(c, fallback) { return /^#[0-9a-f]{3,8}$/i.test(c || "") ? c : fallback; }
 function el(tag, attrs, ...kids) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -278,7 +280,7 @@ function el(tag, attrs, ...kids) {
 function appendAll(host, ...kids) { for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) host.append(kid); }
 function toast(msg, isErr) {
   const t = $("#toast"); t.textContent = msg; t.className = isErr ? "err" : ""; t.style.display = "block";
-  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.style.display = "none", isErr ? 6000 : 2200);
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.style.display = "none", isErr ? 6000 : Math.max(2200, Math.min(7000, msg.length * 60)));
 }
 async function api(method, path, body) {
   const r = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
@@ -297,7 +299,7 @@ function spriteUrl(ch, expr) {
 }
 function avatar(ch, cls) {
   if (!ch || !ch.sprite) return el("div", { class: "avatar none " + (cls || ""), title: ch ? ch.name : "", text: ch ? (ch.name[0] || "?") : "?" });
-  return el("img", { class: "avatar " + (cls || ""), src: spriteUrl(ch, "neutral"), title: ch.name, style: `border-color:${ch.color || "#343a66"}`, draggable: false });
+  return el("img", { class: "avatar " + (cls || ""), src: spriteUrl(ch, "neutral"), title: ch.name, style: `border-color:${safeColor(ch.color, "#343a66")}`, draggable: false });
 }
 
 // ---------------------------------------------------------- story model
@@ -944,7 +946,7 @@ function blockBody(s, it, i) {
     case "say": {
       const ch = charById(it.who);
       return [el("div", { class: "brow" },
-        el("select", { style: ch ? `color:${ch.color}` : "", onchange: ev => set(() => it.who = ev.target.value) }, opts(speakerOpts(), it.who))),
+        el("select", { style: ch ? `color:${safeColor(ch.color, "inherit")}` : "", onchange: ev => set(() => it.who = ev.target.value) }, opts(speakerOpts(), it.who))),
         bindText(el("textarea", { rows: 1, placeholder: "What is said…", style: "margin-top:4px" }), it, "text")];
     }
     case "bg": return el("div", { class: "brow" },
@@ -1142,7 +1144,7 @@ function renderCast(host) {
       el("div", { class: "head", onclick: () => { openChar = open ? null : ch.id; previewExpr = "neutral"; renderLeft(); } },
         avatar(ch),
         el("div", { style: "flex:1;min-width:0" },
-          el("div", { class: "nm", style: `color:${ch.color || "inherit"}`, text: ch.name || "(no name)" }),
+          el("div", { class: "nm", style: `color:${safeColor(ch.color, "inherit")}`, text: ch.name || "(no name)" }),
           el("div", { class: "sub", text: `${ch.id} · ${st.lines} line${st.lines === 1 ? "" : "s"} · in ${st.scenes} scene${st.scenes === 1 ? "" : "s"}` })),
         el("div", {}, doc.vars.filter(v => v.character === ch.id && !v.hidden).map(v => el("span", { class: "chip", text: v.label })))));
     if (open) {
@@ -1177,7 +1179,7 @@ function renderCast(host) {
             if (to === "n" || charById(to)) { toast(`The id '${to}' is taken`, true); ev.target.value = ch.id; return; }
             change(() => { renameEverywhere("char", ch.id, to); ch.id = to; openChar = to; });
           } }),
-          el("label", { text: "Name colour" }), el("div", { class: "row" }, el("input", { type: "color", value: ch.color || "#ffffff", onchange: ev => change(() => ch.color = ev.target.value) })),
+          el("label", { text: "Name colour" }), el("div", { class: "row" }, el("input", { type: "color", value: safeColor(ch.color, "#ffffff"), onchange: ev => change(() => ch.color = ev.target.value) })),
           el("label", { text: "Portrait" }), el("select", { onchange: ev => change(() => { ch.sprite = ev.target.value; ch.look = {}; }) },
             opts([{ value: "", label: "None (never shown)" }, ...meta.sprites.map(s => ({ value: s, label: SPRITE_NAMES[s] || s }))], ch.sprite))),
         Object.keys(defaults).length > 0 && el("div", { class: "sect", text: "Look" }),
@@ -1326,37 +1328,66 @@ function renderStoryMenu() {
 /** Download the open story as a file. What is exported is the saved story. */
 async function exportStory(format) {
   if (dirty && !(await save())) return;
-  const a = el("a", { href: forStory("/api/export?format=" + format), download: "" });
-  document.body.append(a); a.click(); a.remove();
-  toast(format === "bundle" ? "Exporting the story with its pictures and recordings\u2026" : "Exported");
+  if (format === "bundle") toast("Gathering the story's pictures and recordings\u2026");
+  try {
+    const r = await fetch(forStory("/api/export?format=" + format));
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "the story could not be exported");
+    const name = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [])[1] || "story." + (format === "txt" ? "txt" : "json");
+    const url = URL.createObjectURL(await r.blob());
+    const a = el("a", { href: url, download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    toast("Exported " + name);
+  } catch (e) { toast(e.message, true); }
 }
-/** Ask for a file and read it: resolves to null if the user backs out. */
+/** Ask for a file: resolves to null if the user backs out. Only one request is open at a time. */
 function pickFile(accept) {
+  if (pickFile.settle) pickFile.settle(null);
   return new Promise(done => {
     const input = el("input", { type: "file", accept, style: "display:none", id: "importFile" });
-    input.onchange = () => { const f = input.files[0]; input.remove(); done(f || null); };
-    input.addEventListener("cancel", () => { input.remove(); done(null); });
+    const settle = pickFile.settle = f => { if (pickFile.settle === settle) pickFile.settle = null; input.remove(); done(f); };
+    input.onchange = () => settle(input.files[0] || null);
+    input.addEventListener("cancel", () => settle(null));
     document.body.append(input); input.click();
   });
 }
 /** Add a story from an exported file (or a story text file) to the library. Returns its id. */
 async function importStory(file) {
+  if (file.size > 500 * 1024 * 1024) throw new Error("This file is larger than the editor can import (500 MB).");
   const text = await file.text();
   let body = null;
-  try { const parsed = JSON.parse(text); if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed; } catch (e) { /* not JSON: story text */ }
+  try { const parsed = JSON.parse(text); if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed; } catch (e) { /* not JSON */ }
+  if (!body && (/\.json$/i.test(file.name) || /^\s*[{\[]/.test(text))) throw new Error(`'${file.name}' is damaged or incomplete: it is not readable JSON.`);
   if (!body) body = { text };
-  delete body.name; body.name = file.name;
+  // a story in JSON is read as one, whatever else the file holds
+  else if (body.story !== undefined || body.scenes !== undefined) delete body.text;
+  body.name = file.name;
   const r = await api("POST", "/api/import", body);
   const notes = [`Imported '${r.title}': ${r.scenes} scene${r.scenes === 1 ? "" : "s"}`];
   if (r.files) notes.push(`${r.files} picture and sound file${r.files === 1 ? "" : "s"}`);
   if (r.skipped.length) notes.push(`${r.skipped.length} file${r.skipped.length === 1 ? "" : "s"} left out (not a picture or recording)`);
   if (r.unread.length) notes.push(`${r.unread.length} line${r.unread.length === 1 ? "" : "s"} could not be read and ${r.unread.length === 1 ? "was" : "were"} kept as notes`);
   if (r.errors) notes.push(`${r.errors} problem${r.errors === 1 ? "" : "s"} to fix`);
+  stories = r.stories; renderStoryMenu();
   return { id: r.id, message: notes.join(", "), warn: !!(r.skipped.length || r.unread.length || r.errors) };
 }
 async function storyMenuChanged() {
   const v = $("#storySel").value, back = () => { $("#storySel").value = storyId; };
   if (v.startsWith(EXPORT_STORY)) { back(); return exportStory(v.slice(EXPORT_STORY.length)); }
+  if (v === IMPORT_STORY) {
+    // The file dialog must open straight from this click, so nothing is asked first;
+    // and the open story is only left once the new one is in, if it has nothing unsaved.
+    back();
+    const file = await pickFile(".json,.txt,application/json,text/plain");
+    if (!file) return;
+    try {
+      toast(`Importing '${file.name}'\u2026`);
+      const made = await importStory(file);
+      if (dirty) toast(made.message + ". It is in the story menu; this story has unsaved changes, so it stays open.", made.warn);
+      else if (await loadStory(made.id)) toast(made.message, made.warn);
+    } catch (e) { toast(e.message, true); }
+    return;
+  }
   if (dirty && !confirm("This story has unsaved changes. Leave it without saving?")) return back();
   // only forget the unsaved changes once the other story has really opened
   const open = async id => { const was = dirty; dirty = false; if (await loadStory(id)) return true; dirty = was; updateBar(); back(); return false; };
@@ -1367,11 +1398,6 @@ async function storyMenuChanged() {
       if (!title || !title.trim()) return back();
       const made = await api("POST", "/api/stories", { title, copy: v === COPY_STORY ? storyId : null });
       if (await open(made.id)) toast("Created '" + title.trim() + "'");
-    } else if (v === IMPORT_STORY) {
-      const file = await pickFile(".json,.txt,application/json,text/plain");
-      if (!file) return back();
-      const made = await importStory(file);
-      if (await open(made.id)) toast(made.message, made.warn);
     } else if (v === REMOVE_STORY) {
       const current = stories.find(x => x.id === storyId);
       if (!confirm(`Remove '${current ? current.title : storyId}' from the library? Its folder is moved to stories/.removed, not deleted.`)) return back();
@@ -1526,7 +1552,7 @@ function renderArt() {
     doc.characters.filter(c => sprites.some(a => a.character === c.id)).map(c => {
       const mine = sprites.filter(a => a.character === c.id), neutral = mine.find(a => a.kind === "sprite");
       return el("div", { class: "crow" },
-        el("div", { class: "brow" }, el("b", { style: `color:${c.color}`, text: c.name || c.id }),
+        el("div", { class: "brow" }, el("b", { style: `color:${safeColor(c.color, "inherit")}`, text: c.name || c.id }),
           el("span", { style: "flex:1" }),
           el("button", { text: "Send neutral", onclick: () => sendArt([neutral.id]) }),
           el("button", { text: "Send all six", onclick: () => sendArt(mine.map(a => a.id)) }),
@@ -1606,7 +1632,7 @@ function speakerCard(sp) {
   const missing = sp.lines - sp.voiced;
   return el("div", { class: "vcard", "data-speaker": sp.id },
     el("div", { class: "brow" },
-      el("b", { style: `color:${sp.color};font-size:14px`, text: sp.name }),
+      el("b", { style: `color:${safeColor(sp.color, "inherit")};font-size:14px`, text: sp.name }),
       el("span", { class: "chip" + (missing ? "" : " good"), text: `${sp.voiced} of ${sp.lines} lines recorded` }),
       el("span", { style: "flex:1" }),
       el("button", { class: "primary", text: `Record missing lines (${missing})`, disabled: !missing, onclick: async () => { const ls = await linesOf(sp.id); sendArt(ls.filter(l => !l.file).map(l => l.id)); } }),

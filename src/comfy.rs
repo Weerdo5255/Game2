@@ -371,7 +371,12 @@ pub const SAMPLE_EXTENSIONS: [&str; 5] = ["wav", "mp3", "flac", "ogg", "m4a"];
 /// A plain file name (no folders, not hidden) with one of these extensions.
 pub fn plain_file(name: &str, extensions: &[&str]) -> bool {
     let ok = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.';
-    !name.starts_with('.') && name.chars().all(ok) && name.rsplit_once('.').map_or(false, |(stem, ext)| !stem.is_empty() && extensions.contains(&ext))
+    // names that Windows takes for devices, whatever follows the first dot
+    let device = name.split('.').next().map_or(false, |first| {
+        let first = first.to_ascii_lowercase();
+        ["con", "prn", "aux", "nul"].contains(&first.as_str()) || (first.len() == 4 && (first.starts_with("com") || first.starts_with("lpt")) && first.ends_with(|c: char| c.is_ascii_digit()))
+    });
+    !device && !name.starts_with('.') && !name.ends_with('.') && name.chars().all(ok) && name.rsplit_once('.').map_or(false, |(stem, ext)| !stem.is_empty() && extensions.contains(&ext))
 }
 
 /// The voices saved with a story, read entry by entry so that one odd

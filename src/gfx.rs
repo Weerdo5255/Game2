@@ -120,6 +120,9 @@ pub struct Canvas {
     pub px: Vec<u32>,
 }
 
+/// Largest picture that will be opened, along either side.
+pub const MAX_PNG_SIDE: u32 = 8192;
+
 impl Canvas {
     /// A fully transparent canvas.
     pub fn new(w: i32, h: i32) -> Self {
@@ -575,6 +578,11 @@ impl Canvas {
         let mut dec = png::Decoder::new(std::io::BufReader::new(file));
         dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
         let mut reader = dec.read_info().map_err(|e| format!("{}: {}", path.display(), e))?;
+        // a picture's header can claim any size: refuse before allocating for it
+        let (w, h) = (reader.info().width, reader.info().height);
+        if w == 0 || h == 0 || w > MAX_PNG_SIDE || h > MAX_PNG_SIDE {
+            return Err(format!("{}: {}x{} is too large a picture (the limit is {} a side)", path.display(), w, h, MAX_PNG_SIDE));
+        }
         let mut buf = vec![0; reader.output_buffer_size()];
         let info = reader.next_frame(&mut buf).map_err(|e| format!("{}: {}", path.display(), e))?;
         let n = match info.color_type {
