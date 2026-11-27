@@ -109,8 +109,12 @@ handles images only). They share the template format: `kind` is `voice` or
 A voice workflow may declare `"voice_options": {"node": ..., "input": ...}`:
 the editor then reads the list of stock voices from that node on your server.
 A workflow that uses `$sample` gets the speaker's sample uploaded to
-`ComfyUI/input/` first. Model file names and music settings are under
-`kinds.music` and `kinds.voice` in `config.json`.
+`ComfyUI/input/` first. Each workflow file names its own models and sampler
+settings under `defaults` (edit them there, or override them for some assets
+with an `overrides` entry in `config.json` such as `"music_*"`);
+`kinds.music` and `kinds.voice` in `config.json` hold what is common to
+every workflow of the kind: which one is used by default, the default track
+length, the pace of speech and the style words added to music prompts.
 
 To add another engine (a different TTS custom node, say), copy one of these
 files, swap the middle node and keep the placeholders. If its class is not

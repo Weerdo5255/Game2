@@ -365,6 +365,38 @@ pub struct Overrides {
     pub voices: BTreeMap<String, Voice>,
 }
 
+/// Formats a voice sample may be in.
+pub const SAMPLE_EXTENSIONS: [&str; 5] = ["wav", "mp3", "flac", "ogg", "m4a"];
+
+/// A plain file name (no folders, not hidden) with one of these extensions.
+pub fn plain_file(name: &str, extensions: &[&str]) -> bool {
+    let ok = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.';
+    !name.starts_with('.') && name.chars().all(ok) && name.rsplit_once('.').map_or(false, |(stem, ext)| !stem.is_empty() && extensions.contains(&ext))
+}
+
+/// The voices saved with a story, read entry by entry so that one odd
+/// entry costs only itself. File names are checked here: a story folder
+/// from somewhere else must not be able to point a sample at another file.
+pub fn voices_from(saved: &Value) -> BTreeMap<String, Voice> {
+    let text = |v: &Value| v.as_str().unwrap_or("").trim().to_string();
+    saved
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(_, v)| v.is_object())
+        .map(|(id, v)| {
+            let voice = Voice {
+                workflow: Some(text(&v["workflow"])).filter(|w| plain_file(w, &["json"])).unwrap_or_default(),
+                voice: text(&v["voice"]),
+                sample: Some(text(&v["sample"])).filter(|f| plain_file(f, &SAMPLE_EXTENSIONS)).unwrap_or_default(),
+                sample_text: text(&v["sample_text"]),
+                speed: v["speed"].as_f64().or_else(|| v["speed"].as_str().and_then(|t| t.trim().parse().ok())).filter(|n| n.is_finite()).map_or(0.0, |n| if n > 0.0 { n.clamp(0.5, 2.0) } else { 0.0 }),
+            };
+            (id.clone(), voice)
+        })
+        .collect()
+}
+
 /// One speaker's voice: a stock voice for ordinary text to speech, or a
 /// sample recording to clone, depending on the workflow.
 #[derive(Clone, Default, Debug, serde::Deserialize, Serialize)]
@@ -454,7 +486,9 @@ pub fn build(suite: &Suite, asset: &Asset, tag: &str, ov: &Overrides) -> Result<
     }
     // one seed per character, so every expression shares its neutral's noise (and every line its voice)
     let seed_key = if asset.kind == "voice" { asset.who.as_str() } else { asset.character.as_ref().map_or(asset.id.as_str(), |c| c.id.as_str()) };
-    let seed = (s.get("seed").and_then(Value::as_u64).unwrap_or(0) + (crc32(seed_key.as_bytes()) % 100_000) as u64) % (1 << 63);
+    // "take" asks for a different attempt at the same thing (a line or a track being redone)
+    let take = if asset.is_audio() { s.get("take").and_then(Value::as_u64).unwrap_or(0) } else { 0 };
+    let seed = (s.get("seed").and_then(Value::as_u64).unwrap_or(0) + (crc32(seed_key.as_bytes()) % 100_000) as u64 + take) % (1 << 63);
     s.insert("positive".into(), json!(format!("{}{}{}", style_prefix, subject, style_suffix)));
     s.insert("seed".into(), json!(seed));
     s.insert("prefix".into(), json!(format!("below_stairs/{}/{}", tag, asset.id)));
@@ -474,7 +508,7 @@ pub fn build(suite: &Suite, asset: &Asset, tag: &str, ov: &Overrides) -> Result<
         }
         if *role == "sample" {
             // a recording of the speaker, uploaded once per speaker under its own name
-            if voice.sample.is_empty() {
+            if !plain_file(&voice.sample, &SAMPLE_EXTENSIONS) {
                 return Err(format!("'{}' speaks from a sample recording: add one for {} first", workflow, asset.name));
             }
             if raw.contains("\"$sample_text\"") && voice.sample_text.trim().is_empty() {
@@ -499,7 +533,7 @@ pub fn build(suite: &Suite, asset: &Asset, tag: &str, ov: &Overrides) -> Result<
     }
     let output_node = template["output_node"].as_str().ok_or("workflow has no output_node")?.to_string();
     let out_class = prompt[&output_node]["class_type"].as_str().unwrap_or("");
-    let savers: &[&str] = if asset.is_audio() { &["SaveAudio", "SaveAudioMP3", "SaveAudioOpus"] } else { &["SaveImage"] };
+    let savers: &[&str] = if asset.is_audio() { &["SaveAudio", "SaveAudioMP3"] } else { &["SaveImage"] };
     if !savers.contains(&out_class) {
         return Err(format!("{}: output_node '{}' must be the id of its {} node", workflow, output_node, savers[0]));
     }
@@ -948,7 +982,7 @@ impl Jobs {
             }
             let png = match role.as_str() {
                 "sample" => {
-                    let file = job.overrides.voices.get(&asset.who).map(|v| v.sample.clone()).unwrap_or_default();
+                    let file = job.overrides.voices.get(&asset.who).map(|v| v.sample.clone()).filter(|f| plain_file(f, &SAMPLE_EXTENSIONS)).unwrap_or_default();
                     std::fs::read(audio::audio_dir(&job.story_path).join("samples").join(&file)).map_err(|_| format!("the voice sample '{}' is missing", file))?
                 }
                 "base" => {

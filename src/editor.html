@@ -377,6 +377,7 @@ let pointerDown = false, pendingRender = null;
 window.addEventListener("mousedown", () => pointerDown = true, true);
 function pointerReleased() {
   pointerDown = false;
+  if (sound.pending) setTimeout(() => { if (sound.pending && !pointerDown && sound.open) drawSound(); }, 0);
   if (pendingRender) setTimeout(() => { if (pendingRender && !pointerDown) { const o = pendingRender; pendingRender = null; renderAll(o); } }, 0);
 }
 window.addEventListener("mouseup", pointerReleased, true);
@@ -388,7 +389,7 @@ function num(text) { return Math.max(-9999, Math.min(9999, parseInt(text, 10) ||
 function markDirty() { dirty = true; updateBar(); scheduleValidate(); }
 function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); doc = JSON.parse(undoStack.pop()); afterHistory(); }
 function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); doc = JSON.parse(redoStack.pop()); afterHistory(); }
-function afterHistory() { doc.chapters = doc.chapters || []; doc.tracks = doc.tracks || []; if (sel >= doc.scenes.length) sel = doc.scenes.length - 1; if (sel >= 0 && chapterOf(sel) !== curChapter) sel = -1; selItem = -1; markDirty(); renderAll(); }
+function afterHistory() { doc.chapters = doc.chapters || []; doc.tracks = doc.tracks || []; if (sel >= doc.scenes.length) sel = doc.scenes.length - 1; if (sel >= 0 && chapterOf(sel) !== curChapter) sel = -1; selItem = -1; markDirty(); renderAll(); if (sound.open) renderSound(); }
 function updateBar() {
   $("#saveBtn").disabled = !dirty; $("#undoBtn").disabled = !undoStack.length; $("#redoBtn").disabled = !redoStack.length;
   const st = $("#status"); st.textContent = dirty ? "Unsaved changes" : "Saved to " + meta.path; st.title = meta.path; st.className = dirty ? "dirty" : "";
@@ -1393,7 +1394,9 @@ async function sendArt(ids, workflow) {
   if (!ids.length) { toast("Nothing to send."); return; }
   if (dirty && !(await save())) return;   // jobs read the saved story
   const audio = ids.every(id => /^(voice|music)_/.test(id));
-  const settings = audio || art.denoise == null ? {} : { denoise: art.denoise, refine_denoise: Math.min(art.denoise, 0.5) };
+  // redoing a recording asks for a different take, not the same one again
+  const settings = audio ? (workflow === "retake" ? { take: 1 + Math.floor(Math.random() * 999999) } : {}) : art.denoise == null ? {} : { denoise: art.denoise, refine_denoise: Math.min(art.denoise, 0.5) };
+  if (workflow === "retake") workflow = "";
   try {
     const r = await api("POST", "/api/art/run", { story: storyId, assets: ids, workflow: workflow || "", settings });
     toast(`Queued ${r.queued} ${audio ? "recording" : "image"}${r.queued === 1 ? "" : "s"}`); pollJobs();
@@ -1523,7 +1526,7 @@ async function linesOf(who) {
   sound.lines[who] = r.lines;
   return r.lines;
 }
-function voiceOf(id) { if (!prefs.voices[id]) prefs.voices[id] = { workflow: "", voice: "", sample: "", sample_text: "", speed: 1 }; return prefs.voices[id]; }
+function voiceOf(id) { if (!prefs.voices[id]) prefs.voices[id] = { workflow: "", voice: "", sample: "", sample_text: "", speed: 0 }; return prefs.voices[id]; }
 function voiceWorkflow(id) {
   const file = (prefs.voices[id] && prefs.voices[id].workflow) || prefs.workflows.voice || sound.data.defaults.voice;
   return sound.data.workflows.find(w => w.file === file) || null;
@@ -1564,7 +1567,7 @@ function speakerCard(sp) {
       el("span", { class: "chip" + (missing ? "" : " good"), text: `${sp.voiced} of ${sp.lines} lines recorded` }),
       el("span", { style: "flex:1" }),
       el("button", { class: "primary", text: `Record missing lines (${missing})`, disabled: !missing, onclick: async () => { const ls = await linesOf(sp.id); sendArt(ls.filter(l => !l.file).map(l => l.id)); } }),
-      el("button", { text: "Redo all", onclick: async () => { const ls = await linesOf(sp.id); if (confirm(`Record all ${ls.length} of ${sp.name}'s lines again?`)) sendArt(ls.map(l => l.id)); } }),
+      el("button", { text: "Redo all", onclick: async () => { const ls = await linesOf(sp.id); if (confirm(`Record all ${ls.length} of ${sp.name}'s lines again?`)) sendArt(ls.map(l => l.id), "retake"); } }),
       el("button", { class: "ghost", text: open ? "Hide lines" : "Show lines", onclick: async () => { sound.openSpeaker = open ? null : sp.id; if (!open) await linesOf(sp.id); renderSound(); } })),
     el("div", { class: "brow" }, el("label", { text: "Voice from" }),
       el("select", { style: "flex:0 1 320px", onchange: ev => commit(() => { v.workflow = ev.target.value; }) },
@@ -1587,7 +1590,7 @@ function speakerCard(sp) {
       el("span", { class: "ltext", text: l.text }),
       l.scene && el("span", { class: "chip link", text: l.scene, onclick: () => { closeSound(); select(sceneIndex(l.scene), -1, true); } }),
       l.file && el("audio", { controls: true, preload: "none", src: audioUrl(l.file) }),
-      el("button", { class: "ghost", text: l.file ? "Redo" : "Record", onclick: () => sendArt([l.id]) }),
+      el("button", { class: "ghost", text: l.file ? "Redo" : "Record", onclick: () => sendArt([l.id], l.file ? "retake" : "") }),
       l.file && el("button", { class: "ghost danger", title: "Remove this recording", text: "✕", onclick: async () => { await api("POST", "/api/art/revert", { story: storyId, assets: [l.id] }); refreshSound(); } })))));
 }
 function trackCard(t, ti) {
@@ -1602,10 +1605,10 @@ function trackCard(t, ti) {
         if (to === "off" || doc.tracks.some(x => x.id === to)) { toast(`The id '${to}' is taken`, true); ev.target.value = t.id; return; }
         change(() => { doc.scenes.forEach(s => s.items.forEach(it => { if (it.t === "music" && it.track === t.id) it.track = to; })); t.id = to; }); renderSound();
       } }),
-      el("label", { text: "seconds" }), el("input", { type: "number", min: 5, max: 600, value: t.seconds || 30, onchange: ev => { change(() => t.seconds = Math.max(5, Math.min(600, num(ev.target.value)))); } }),
+      el("label", { text: "seconds" }), el("input", { type: "number", min: 5, max: 600, placeholder: "default", title: "Empty: the length set for music in ComfyUI's config.json", value: t.seconds || "", onchange: ev => { change(() => t.seconds = ev.target.value.trim() ? Math.max(5, Math.min(600, num(ev.target.value))) : 0); ev.target.value = t.seconds || ""; } }),
       soundBadge(asset, file), el("span", { class: "chip", text: used ? `used in ${used} place${used === 1 ? "" : "s"}` : "not used yet" }),
       el("span", { style: "flex:1" }),
-      el("button", { class: "primary", text: file ? "Generate again" : "Generate", onclick: () => sendArt([asset]) }),
+      el("button", { class: "primary", text: file ? "Generate again" : "Generate", onclick: () => sendArt([asset], file ? "retake" : "") }),
       el("button", { class: "ghost danger", title: "Delete this track", text: "✕", onclick: () => {
         if (used) { toast(`'${t.title || t.id}' is still started by ${used} Music block(s).`, true); return; }
         change(() => doc.tracks.splice(ti, 1)); renderSound();
@@ -1614,7 +1617,11 @@ function trackCard(t, ti) {
     file && el("div", { class: "brow" }, el("audio", { controls: true, loop: true, preload: "none", src: audioUrl(file) }),
       el("button", { class: "ghost", text: "Remove the recording", onclick: async () => { await api("POST", "/api/art/revert", { story: storyId, assets: [asset] }); refreshSound(); } })));
 }
-function renderSound() {
+// A field commits in the middle of the click that took the focus from it:
+// rebuilding then would destroy the button being clicked, so wait for the release.
+function renderSound() { if (pointerDown) sound.pending = true; else drawSound(); }
+function drawSound() {
+  sound.pending = false;
   const host = $("#sound"), d = sound.data; if (!d) return;
   const scroll = host.scrollTop; host.textContent = ""; sound.stale = false;
   const redraw = () => renderSound();

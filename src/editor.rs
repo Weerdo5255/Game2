@@ -118,8 +118,14 @@ impl Library {
         std::fs::create_dir_all(&folder).map_err(|e| format!("{}: {}", folder.display(), e))?;
         std::fs::write(folder.join("story.txt"), doc.to_text()).map_err(|e| e.to_string())?;
         if let Some(from) = copy {
-            // a copy brings its art along
+            // a copy brings its art and its sound along
             let source = self.path(from)?;
+            for sub in ["", "samples"] {
+                let (src, target) = (audio::audio_dir(&source).join(sub), folder.join("audio").join(sub));
+                for e in std::fs::read_dir(&src).into_iter().flatten().filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
+                    let _ = std::fs::create_dir_all(&target).and_then(|_| std::fs::copy(e.path(), target.join(e.file_name())).map(|_| ()));
+                }
+            }
             let _ = std::fs::copy(source.with_file_name("art.json"), folder.join("art.json"));
             if let Ok(entries) = std::fs::read_dir(comfy::enhanced_dir(&source)) {
                 let target = folder.join("enhanced");
@@ -385,11 +391,71 @@ impl State {
         std::fs::read_to_string(story.with_file_name("art.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| json!({}))
     }
 
+    /// Recordings are filed under the ids of tracks and speakers. When a save
+    /// changes such an id (the entry in the same place has a new id, and
+    /// neither id exists on the other side), the recordings, the voice
+    /// sample and the voice settings move with it.
+    fn follow_renames(&self, story: &Path, before: &Doc, after: &Doc) {
+        fn renamed<'a>(old: Vec<&'a str>, new: Vec<&'a str>) -> Vec<(&'a str, &'a str)> {
+            old.iter().zip(new.iter()).filter(|(o, n)| o != n && !new.contains(o) && !old.contains(n)).map(|(o, n)| (*o, *n)).collect()
+        }
+        let dir = audio::audio_dir(story);
+        let rename = |from: PathBuf, to_stem: String| {
+            let to = from.with_file_name(format!("{}.{}", to_stem, from.extension().unwrap_or_default().to_string_lossy()));
+            if !to.exists() {
+                let _ = std::fs::rename(from, to);
+            }
+        };
+        for (old, new) in renamed(before.tracks.iter().map(|t| t.id.as_str()).collect(), after.tracks.iter().map(|t| t.id.as_str()).collect()) {
+            if let Some(file) = audio::find(&dir, &audio::music_stem(old)) {
+                rename(file, audio::music_stem(new));
+            }
+        }
+        let people = renamed(before.characters.iter().map(|c| c.id.as_str()).collect(), after.characters.iter().map(|c| c.id.as_str()).collect());
+        if people.is_empty() {
+            return;
+        }
+        let mut prefs = self.prefs(story);
+        let mut prefs_changed = false;
+        for (old, new) in people {
+            for scene in &after.scenes {
+                for item in &scene.items {
+                    if let Item::Say { who, text } = item {
+                        if who == new {
+                            if let Some(file) = audio::find(&dir, &audio::voice_stem(old, text)) {
+                                rename(file, audio::voice_stem(new, text));
+                            }
+                        }
+                    }
+                }
+            }
+            let mut sample = None;
+            for ext in comfy::SAMPLE_EXTENSIONS {
+                let from = dir.join("samples").join(format!("{}.{}", old, ext));
+                if from.is_file() {
+                    sample = Some(format!("{}.{}", new, ext));
+                    rename(from, new.to_string());
+                }
+            }
+            if let Some(mut voice) = prefs["voices"].as_object_mut().and_then(|v| v.remove(old)) {
+                if let (Some(name), true) = (sample, voice.is_object()) {
+                    voice["sample"] = json!(name);
+                }
+                prefs["voices"][new] = voice;
+                prefs_changed = true;
+            }
+        }
+        if prefs_changed {
+            let _ = std::fs::write(story.with_file_name("art.json"), serde_json::to_string_pretty(&prefs).unwrap_or_default() + "\n");
+        }
+        self.jobs.version.fetch_add(1, Ordering::Relaxed);
+    }
+
     /// What the story has chosen for its art: its own prompts and workflows.
     fn overrides(&self, story: &Path) -> Overrides {
         let prefs = self.prefs(story);
         let strings = |v: &Value| -> BTreeMap<String, String> { v.as_object().into_iter().flatten().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))).collect() };
-        let voices = serde_json::from_value(prefs["voices"].clone()).unwrap_or_default();
+        let voices = comfy::voices_from(&prefs["voices"]);
         Overrides { prompts: strings(&prefs["prompts"]), workflows: strings(&prefs["workflows"]), voices, ..Default::default() }
     }
 
@@ -530,8 +596,14 @@ impl State {
                 if q.get("base").map_or(false, |base| *base != on_disk) && !q.contains_key("force") {
                     return respond_json(stream, "409 Conflict", &json!({ "error": "the story file has changed since you opened it", "conflict": true }));
                 }
+                let before = self.load(&story).ok().map(|(doc, _)| doc);
                 match self.doc_from(&req.body).and_then(|doc| doc.survives_text().and_then(|_| self.save(&story, &doc)).map(|_| doc)) {
-                    Ok(doc) => respond_json(stream, "200 OK", &json!({ "ok": true, "doc": doc, "problems": problems(&doc), "revision": revision(&story) })),
+                    Ok(doc) => {
+                        if let Some(before) = &before {
+                            self.follow_renames(&story, before, &doc);
+                        }
+                        respond_json(stream, "200 OK", &json!({ "ok": true, "doc": doc, "problems": problems(&doc), "revision": revision(&story) }))
+                    }
                     Err(e) => fail(stream, e),
                 }
             }
@@ -593,8 +665,7 @@ impl State {
             }
             ("PUT", "/api/art/prefs") => {
                 // the story's own prompts, preferred workflows and voices, kept beside it
-                let voices: BTreeMap<String, comfy::Voice> = serde_json::from_value(body["voices"].clone()).unwrap_or_default();
-                let voices: BTreeMap<String, comfy::Voice> = voices.into_iter().filter(|(id, _)| valid_id(id)).collect();
+                let voices: BTreeMap<String, comfy::Voice> = comfy::voices_from(&body["voices"]).into_iter().filter(|(id, _)| valid_id(id)).collect();
                 // a page that does not send a section leaves it as it was
                 let old = self.prefs(&story);
                 let section = |key: &str| body[key].as_object().cloned().or_else(|| old[key].as_object().cloned()).unwrap_or_default();
@@ -607,6 +678,9 @@ impl State {
                 let queued = self.load(&story).and_then(|(doc, _)| {
                     let mut ov = self.overrides(&story);
                     ov.workflow = body["workflow"].as_str().filter(|w| !w.is_empty()).map(str::to_string);
+                    if let Some(take) = body["settings"]["take"].as_u64() {
+                        ov.settings.insert("take".into(), json!(take % 1_000_000));
+                    }
                     for key in ["denoise", "control_strength", "refine_denoise"] {
                         if let Some(n) = body["settings"][key].as_f64() {
                             ov.settings.insert(key.to_string(), json!(n.clamp(0.0, if key == "control_strength" { 2.0 } else { 1.0 })));
@@ -695,17 +769,31 @@ impl State {
                     if !valid_id(&who) {
                         return Err("unknown speaker".to_string());
                     }
-                    if !["wav", "mp3", "flac", "ogg", "m4a"].contains(&ext.as_str()) {
+                    if !comfy::SAMPLE_EXTENSIONS.contains(&ext.as_str()) {
                         return Err("a voice sample must be a WAV, MP3, FLAC, OGG or M4A file".to_string());
                     }
                     let bytes = base64_decode(body["data"].as_str().unwrap_or("")).filter(|b| b.len() > 64).ok_or("the sample did not arrive intact")?;
                     let dir = audio::audio_dir(&story).join("samples");
                     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-                    for old in ["wav", "mp3", "flac", "ogg", "m4a"] {
-                        let _ = std::fs::remove_file(dir.join(format!("{}.{}", who, old)));
-                    }
+                    // the new one is safely written before any older one goes
                     let name = format!("{}.{}", who, ext);
                     std::fs::write(dir.join(&name), bytes).map_err(|e| e.to_string())?;
+                    for old in comfy::SAMPLE_EXTENSIONS.iter().filter(|old| **old != ext) {
+                        let _ = std::fs::remove_file(dir.join(format!("{}.{}", who, old)));
+                    }
+                    // and the story remembers it at once
+                    let mut prefs = self.prefs(&story);
+                    if !prefs.is_object() {
+                        prefs = json!({});
+                    }
+                    if !prefs["voices"].is_object() {
+                        prefs["voices"] = json!({});
+                    }
+                    if !prefs["voices"][&who].is_object() {
+                        prefs["voices"][&who] = json!({});
+                    }
+                    prefs["voices"][&who]["sample"] = json!(name);
+                    std::fs::write(story.with_file_name("art.json"), serde_json::to_string_pretty(&prefs).unwrap_or_default() + "\n").map_err(|e| e.to_string())?;
                     Ok(json!({ "sample": name }))
                 })();
                 answer(stream, saved)
@@ -745,9 +833,11 @@ impl State {
                     "m4a" => "audio/mp4",
                     _ => "",
                 };
-                match std::fs::read(audio::audio_dir(&story).join(&file)) {
-                    Ok(bytes) if ok && !kind.is_empty() => respond(stream, "200 OK", kind, false, &bytes),
-                    _ => respond(stream, "404 Not Found", "text/plain", false, b"no such recording"),
+                // checked before anything is opened: the name comes from the request
+                let path = audio::audio_dir(&story).join(&file);
+                match Some(path).filter(|p| ok && !kind.is_empty() && p.is_file()).and_then(|p| std::fs::read(p).ok()) {
+                    Some(bytes) => respond(stream, "200 OK", kind, false, &bytes),
+                    None => respond(stream, "404 Not Found", "text/plain", false, b"no such recording"),
                 }
             }
             _ => respond(stream, "404 Not Found", "text/plain", false, b"not found"),

@@ -156,7 +156,41 @@ end The End
   assert(await p.evaluate(() => doc.tracks.length === 1), 'and undone');
   await p.keyboard.press('Control+s'); await sleep(300);
 
-  // ---- the game
+  // ---- hardening
+  const st = u => p.evaluate(u => fetch(u).then(r => r.status), u);
+  assert(await st('/audio?file=/etc/hostname') === 404 && await st('/audio?file=../story.txt') === 404 && await st('/audio?file=samples/../../story.txt') === 404, 'only recordings can be fetched');
+  await p.evaluate(() => fetch('/api/art/prefs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voices: { bo: { workflow: 'voice_f5_clone.json', sample: '../../story.txt', sample_text: 'x', speed: 'fast' }, ada: { voice: 'Sarah (female, american)', speed: null }, odd: 7 } }) }));
+  let saved = JSON.parse(fs.readFileSync(path.join(tmp, 'assets', 'art.json'), 'utf8')).voices;
+  assert(saved.bo.sample === '' && saved.bo.workflow === 'voice_f5_clone.json' && saved.ada.voice.startsWith('Sarah') && !saved.odd, 'a sample outside the samples folder is refused, and one odd entry costs only itself');
+  await p.evaluate(() => fetch('/api/art/prefs', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voices: { bo: { workflow: 'voice_f5_clone.json', sample: 'bo.wav', sample_text: 'This is how I speak.' }, ada: { voice: 'Sarah (female, american)' } } }) }));
+
+  // ---- a second take, and renames
+  await p.click('#soundBtn'); await p.click('#soundBtn');
+  await p.waitForSelector('[data-track="calm"] button.primary');
+  const before = (await sent(4)).prompts.length;
+  await p.click('[data-track="calm"] button.primary');
+  d = await sent(before + 1); await jobsIdle();
+  const seedOf = w => Object.values(w).map(n => n.inputs.seed).find(x => x !== undefined);
+  assert(seedOf(d.prompts[before]) !== seedOf(m), 'generating again asks for a different take');
+  await p.locator('[data-track="calm"] input[type=text]').nth(1).fill('dawn');
+  await p.locator('[data-track="calm"] input[type=text]').nth(1).blur();
+  await p.waitForSelector('[data-track="dawn"]');
+  await p.click('#soundBtn');
+  await p.evaluate(() => { const c = doc.characters.find(c => c.id === 'bo'); change(() => renameEverywhere('char', 'bo', 'beau')); c.id = 'beau'; });
+  await p.keyboard.press('Control+s');
+  await p.waitForFunction(() => !dirty);
+  saved = JSON.parse(fs.readFileSync(path.join(tmp, 'assets', 'art.json'), 'utf8')).voices;
+  assert(files().some(f => f.startsWith('music_dawn.')) && !files().some(f => f.startsWith('music_calm.')), 'renaming a track keeps its recording');
+  assert(files().some(f => f.startsWith('voice_beau_')) && !files().some(f => f.startsWith('voice_bo_')) && fs.existsSync(path.join(audioDir, 'samples', 'beau.wav')) && saved.beau && saved.beau.sample === 'beau.wav' && !saved.bo, 'renaming a character keeps the voice, the sample and the recorded lines');
+  const over = await p.evaluate(() => fetch('/api/sound').then(r => r.json()));
+  assert(over.speakers.find(x => x.id === 'beau').voiced === 1 && over.tracks.find(x => x.id === 'dawn').file, 'and the Sound view still finds them');
+  await p.evaluate(() => { const c = doc.characters.find(c => c.id === 'beau'); change(() => { renameEverywhere('char', 'beau', 'bo'); c.id = 'bo'; doc.tracks[0].id = 'calm'; doc.scenes.forEach(s => s.items.forEach(i => { if (i.t === 'music' && i.track === 'dawn') i.track = 'calm'; })); }); });
+  await p.keyboard.press('Control+s');
+  await p.waitForFunction(() => !dirty);
+  assert(files().some(f => f.startsWith('music_calm.')) && files().some(f => f.startsWith('voice_bo_')), 'and back again');
+  await p.click('#soundBtn');
+  await p.waitForSelector('[data-track="calm"]');
+
   const text = fs.readFileSync(story, 'utf8');
   assert(text.includes('track calm | Calm Hall | 12 | soft strings, slow, warm') && text.includes('music calm') && text.includes('music off'), 'tracks and music survive saving');
   const run = spawnSync(exe, ['--story', story, '--autoplay', ''], { encoding: 'utf8' });
