@@ -21,8 +21,9 @@ fail=0
 # scene to start from, name of the picture, lines to show first
 for shot in "start pantry 2" "ch1 axis 4" "ch2 dock 6" "ch4 vista 4" "ch5 ballroom 4" "summit study 3"; do
   set -- $shot
-  rm -f "$out/world_$2.png"
-  (cd "$tmp" && run "$exe" --story "$tmp/story.txt" --start "$1" --world-shot "$out/world_$2.png" --world-shot-lines "$3" --silent > "$tmp/$2.log" 2>&1) || true
-  if [ -s "$out/world_$2.png" ]; then echo "ok: $2"; else echo "FAIL: $2"; tail -5 "$tmp/$2.log"; fail=1; fi
+  # (taken beside, and moved in only once it exists: a failed run leaves the old picture alone)
+  rm -f "$tmp/shot.png"
+  (cd "$tmp" && run "$exe" --story "$tmp/story.txt" --start "$1" --world-shot "$tmp/shot.png" --world-shot-lines "$3" --silent > "$tmp/$2.log" 2>&1) || true
+  if [ -s "$tmp/shot.png" ]; then mv "$tmp/shot.png" "$out/world_$2.png"; echo "ok: $2"; else echo "FAIL: $2"; tail -5 "$tmp/$2.log"; fail=1; fi
 done
 exit $fail
