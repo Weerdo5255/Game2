@@ -290,6 +290,12 @@ impl Game {
         }
     }
 
+    /// What the story says about a character.
+    #[cfg_attr(not(feature = "world3d"), allow(dead_code))]
+    pub fn character(&self, who: &str) -> Option<&crate::script::CharDef> {
+        self.script.character(who)
+    }
+
     /// A character's portrait, painted (or loaded) once.
     #[cfg_attr(not(feature = "world3d"), allow(dead_code))]
     pub fn portrait(&mut self, who: &str, expr: &str) -> Option<&Canvas> {

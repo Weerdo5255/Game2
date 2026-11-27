@@ -17,6 +17,7 @@
 //! through OpenXR: see the `vr` module at the end of this file.
 
 use std::collections::HashMap;
+#[cfg(feature = "vr")]
 use std::f32::consts::{PI, TAU};
 
 use bevy::input::mouse::AccumulatedMouseMotion;
@@ -32,10 +33,14 @@ use bevy::winit::WinitSettings;
 use crate::art;
 use crate::game::{Game, Input};
 use crate::gfx::{Canvas, H, W};
+use crate::places::{self, PlaceData, EYE};
+use crate::script::CharDef;
+use std::path::PathBuf;
 
-/// Places that have been built in 3D. A place marked 3D that is not here
-/// is shown as its painting.
-pub const PLACES: &[&str] = &["pantry", "axis", "dock", "vista", "vista_night", "ballroom", "study"];
+/// Can this place be shown in 3D: has the story, or the game, a build of it?
+fn has_build(world: Option<&std::path::Path>, place: &str) -> bool {
+    world.map_or(false, |w| w.join(format!("{}.json", place)).is_file()) || places::builtin(place).is_some()
+}
 
 pub struct Options {
     pub title: String,
@@ -45,6 +50,8 @@ pub struct Options {
     pub shot: Option<(String, usize)>,
     /// Show the world in a VR headset as well (needs the `vr` feature).
     pub vr: bool,
+    /// The story's `world` folder: its own places, and models.
+    pub world_dir: Option<PathBuf>,
 }
 
 /// What a headset and its controllers ask for this frame. Without one it
@@ -86,15 +93,17 @@ struct Body {
     floor: (Vec2, Vec2),
 }
 
-const EYE: f32 = 1.62;
-const BODY: f32 = 0.32;
 
 /// Everything that is not Bevy's: the story and the frames it draws.
 struct Runner {
     game: Game,
     black: Canvas,
     white: Canvas,
-    place: Option<Place>,
+    place: Option<Stage>,
+    /// The story's own places and models, if it has any.
+    world_dir: Option<PathBuf>,
+    /// The figure or model standing in each place of the cast: who, how, and with what expression.
+    figures: [Option<(String, String, String)>; 3],
     built: String,
     portraits: HashMap<(String, String), Handle<Image>>,
     shown: [Option<(String, String)>; 3],
@@ -110,19 +119,10 @@ struct Runner {
     auto: f32,
 }
 
-/// One built place: where you start, where you may walk, where the cast stands.
-struct Place {
-    spawn: Vec3,
-    yaw: f32,
-    /// The walkable rectangle, in x and z.
-    min: Vec2,
-    max: Vec2,
-    /// Things you walk around: centre and half size, in x and z.
-    solids: Vec<(Vec2, Vec2)>,
-    /// Where the left, centre and right of the cast stand (their feet).
-    anchors: [Vec3; 3],
-    /// People drift here rather than stand.
-    floating: bool,
+/// The place being shown: its description, and what stands in the way in it.
+struct Stage {
+    data: PlaceData,
+    obstacles: Vec<([f32; 2], [f32; 2])>,
 }
 
 /// The system that steps the story and the world, for others to run before or after.
@@ -131,6 +131,12 @@ struct Story;
 
 #[derive(Component)]
 struct PlacePart;
+/// Where a 3D figure or model of someone in the cast stands.
+#[derive(Component)]
+struct FigureSlot(usize);
+/// A piece of such a figure.
+#[derive(Component)]
+struct FigurePart;
 #[derive(Component)]
 struct Eye;
 #[derive(Component)]
@@ -144,6 +150,8 @@ pub fn run(game: Game, opts: Options) {
         black: Canvas::new(W, H),
         white: Canvas::new(W, H),
         place: None,
+        world_dir: opts.world_dir.clone(),
+        figures: [None, None, None],
         built: String::new(),
         portraits: HashMap::new(),
         shown: [None, None, None],
@@ -160,19 +168,22 @@ pub fn run(game: Game, opts: Options) {
         primary_window: Some(Window { title: opts.title, resolution: WindowResolution::new(opts.size.0 as f32, opts.size.1 as f32), ..default() }),
         ..default()
     };
+    // model files are read from the story's own world folder
+    let files = AssetPlugin { file_path: opts.world_dir.as_ref().map_or("assets".to_string(), |d| d.to_string_lossy().to_string()), ..default() };
     let mut app = App::new();
     #[cfg_attr(not(feature = "vr"), allow(unused_mut))]
-    let mut window = Some(window);
+    let mut window = Some((window, files));
     #[cfg(feature = "vr")]
     if opts.vr {
-        vr::plugins(&mut app, window.take().unwrap());
+        let (window, files) = window.take().unwrap();
+        vr::plugins(&mut app, window, files);
     }
     #[cfg(not(feature = "vr"))]
     if opts.vr {
         eprintln!("--vr needs a build with the VR feature (cargo build --features vr): showing the world on the desktop");
     }
-    if let Some(window) = window {
-        app.add_plugins(DefaultPlugins.set(window));
+    if let Some((window, files)) = window {
+        app.add_plugins(DefaultPlugins.set(window).set(files));
     }
     app
         .init_resource::<Headset>()
@@ -217,6 +228,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
             NotShadowCaster,
             CastSlot(i),
         ));
+        commands.spawn((Transform::default(), Visibility::Hidden, FigureSlot(i)));
     }
 }
 
@@ -235,11 +247,12 @@ fn frame(
     mut images: ResMut<Assets<Image>>,
     mut ambient: ResMut<AmbientLight>,
     mut clear: ResMut<ClearColor>,
-    (keys, buttons, motion, time, headset, mut body): (Res<ButtonInput<KeyCode>>, Res<ButtonInput<MouseButton>>, Res<AccumulatedMouseMotion>, Res<Time>, Res<Headset>, ResMut<Body>),
+    (keys, buttons, motion, time, headset, mut body, assets): (Res<ButtonInput<KeyCode>>, Res<ButtonInput<MouseButton>>, Res<AccumulatedMouseMotion>, Res<Time>, Res<Headset>, ResMut<Body>, Res<AssetServer>),
     window: Single<&Window, With<PrimaryWindow>>,
-    mut eye: Single<(&mut Transform, &mut DistanceFog, &mut Camera), (With<Eye>, Without<CastSlot>, Without<Overlay>)>,
-    mut cast: Query<(&CastSlot, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), (Without<Eye>, Without<Overlay>)>,
-    mut overlay: Single<(&mut Sprite, &mut Transform), (With<Overlay>, Without<Eye>, Without<CastSlot>)>,
+    mut eye: Single<(&mut Transform, &mut DistanceFog, &mut Camera), (With<Eye>, Without<CastSlot>, Without<Overlay>, Without<FigureSlot>)>,
+    mut cast: Query<(&CastSlot, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), (Without<Eye>, Without<Overlay>, Without<FigureSlot>)>,
+    mut figures: Query<(&FigureSlot, Entity, &mut Transform, &mut Visibility, Option<&Children>), (Without<Eye>, Without<Overlay>, Without<CastSlot>)>,
+    mut overlay: Single<(&mut Sprite, &mut Transform), (With<Overlay>, Without<Eye>, Without<CastSlot>, Without<FigureSlot>)>,
     parts: Query<Entity, With<PlacePart>>,
     mut exit: EventWriter<AppExit>,
 ) {
@@ -247,7 +260,7 @@ fn frame(
     let dt = time.delta_secs().min(0.1);
     let (ww, wh) = (window.width().max(1.0), window.height().max(1.0));
     let scale = (ww / W as f32).min(wh / H as f32).max(0.01);
-    let in_world = run.game.world_view().map_or(false, |v| PLACES.contains(&v.place.as_str()));
+    let in_world = run.game.world_view().map_or(false, |v| has_build(run.world_dir.as_deref(), &v.place));
 
     // ---- the story's own controls
     let pressed = |list: &[KeyCode]| list.iter().any(|k| keys.just_pressed(*k));
@@ -295,7 +308,7 @@ fn frame(
     }
 
     // ---- the place
-    let view = run.game.world_view().filter(|v| PLACES.contains(&v.place.as_str()));
+    let view = run.game.world_view().filter(|v| has_build(run.world_dir.as_deref(), &v.place));
     let place_name = view.as_ref().map_or("", |v| v.place.as_str());
     if place_name != run.built {
         for e in &parts {
@@ -304,21 +317,23 @@ fn frame(
         run.built = place_name.to_string();
         run.place = None;
         clear.0 = Color::BLACK;
-        if !place_name.is_empty() {
-            let mut kit = Kit { commands: &mut commands, meshes: &mut meshes, materials: &mut materials, solids: Vec::new(), seed: 7 };
-            let (place, air) = build(place_name, &mut kit);
-            ambient.color = air.ambient;
-            ambient.brightness = air.brightness;
-            clear.0 = air.sky;
-            eye.1.color = air.sky;
-            eye.1.falloff = FogFalloff::Linear { start: air.fog.0, end: air.fog.1 };
-            eye.0.translation = place.spawn;
-            run.yaw = place.yaw;
+        body.fog = None;
+        if let Some(data) = Some(place_name).filter(|n| !n.is_empty()).and_then(|n| places::load(run.world_dir.as_deref(), n)) {
+            raise(&data, &mut commands, &mut meshes, &mut materials, &assets);
+            let sky = colour(&data.air.sky);
+            ambient.color = colour(&data.air.ambient);
+            ambient.brightness = data.air.brightness;
+            clear.0 = sky;
+            eye.1.color = sky;
+            eye.1.falloff = FogFalloff::Linear { start: data.air.fog[0], end: data.air.fog[1] };
+            body.fog = Some((sky, data.air.fog[0], data.air.fog[1]));
+            // nobody starts inside the furniture
+            let obstacles = data.obstacles();
+            let start = data.walk(&obstacles, [data.spawn[0], data.spawn[2]], [0.0, 0.0]);
+            eye.0.translation = Vec3::new(start[0], data.spawn[1] + EYE, start[1]);
+            run.yaw = data.yaw.to_radians();
             run.pitch = 0.0;
-            run.place = Some(place);
-            body.fog = Some((air.sky, air.fog.0, air.fog.1));
-        } else {
-            body.fog = None;
+            run.place = Some(Stage { data, obstacles });
         }
     }
 
@@ -342,16 +357,19 @@ fn frame(
         // real steps taken in the room move you through the place too (and stop at its walls)
         let (sin, cos) = run.yaw.sin_cos();
         let real_step = Vec2::new(headset.stepped.x * cos + headset.stepped.y * sin, -headset.stepped.x * sin + headset.stepped.y * cos);
-        let to = walk(place, at, (keys_step.normalize_or_zero() * speed + stick_step) * dt + real_step);
+        let step = (keys_step.normalize_or_zero() * speed + stick_step) * dt + real_step;
+        let to = Vec2::from(place.data.walk(&place.obstacles, [at.x, at.y], [step.x, step.y]));
+        let (floor_min, floor_max) = (Vec2::from(place.data.floor[0]), Vec2::from(place.data.floor[1]));
+        let feet_y = place.data.spawn[1];
         // (no swaying in a headset: the world should move only when you do)
-        let bob = if place.floating && !headset.active { (time.elapsed_secs() * 0.9).sin() * 0.06 } else { 0.0 };
-        eye.0.translation = Vec3::new(to.x, place.spawn.y + bob, to.y);
+        let bob = if place.data.floating && !headset.active { (time.elapsed_secs() * 0.9).sin() * 0.06 } else { 0.0 };
+        eye.0.translation = Vec3::new(to.x, feet_y + EYE + bob, to.y);
         eye.0.rotation = Quat::from_euler(EulerRot::YXZ, run.yaw, run.pitch, 0.0);
-        body.feet = Vec3::new(to.x, place.spawn.y - EYE, to.y);
+        body.feet = Vec3::new(to.x, feet_y, to.y);
         body.yaw = run.yaw;
         // how far the floor runs on ahead, to keep the text panel out of the walls
-        let ahead = [(place.max.x - to.x, forward.x), (to.x - place.min.x, -forward.x), (place.max.y - to.y, forward.y), (to.y - place.min.y, -forward.y)];
-        body.floor = (place.min, place.max);
+        let ahead = [(floor_max.x - to.x, forward.x), (to.x - floor_min.x, -forward.x), (floor_max.y - to.y, forward.y), (to.y - floor_min.y, -forward.y)];
+        body.floor = (floor_min, floor_max);
         body.reach = ahead.iter().filter(|(_, along)| *along > 1e-3).map(|(gap, along)| gap / along).fold(f32::MAX, f32::min);
     }
     body.in_place = run.place.is_some();
@@ -364,7 +382,9 @@ fn frame(
     let eye_at = headset.eye.filter(|_| headset.active).unwrap_or(eye.0.translation);
     for (slot, mut tf, mut vis, material) in &mut cast {
         let i = slot.0;
-        let (Some((who, expr, appear, dim)), Some(place)) = (&wanted[i], &run.place) else {
+        // (someone with a 3D figure or model is not also a cut-out)
+        let modelled = wanted[i].as_ref().map_or(false, |(who, ..)| run.game.character(who).map_or(false, |c| !c.model.is_empty()));
+        let (Some((who, expr, appear, dim)), Some(place), false) = (&wanted[i], &run.place, modelled) else {
             *vis = Visibility::Hidden;
             run.shown[i] = None;
             continue;
@@ -394,10 +414,49 @@ fn frame(
                 m.base_color = colour;
             }
         }
-        let foot = place.anchors[i];
-        let drift = if place.floating { (time.elapsed_secs() * 1.3 + i as f32 * 1.7).sin() * 0.09 } else { 0.0 };
+        let foot = v3(place.data.anchors[i]);
+        let drift = if place.data.floating { (time.elapsed_secs() * 1.3 + i as f32 * 1.7).sin() * 0.09 } else { 0.0 };
         tf.translation = foot + Vec3::Y * (CAST_LIFT + CAST_HEIGHT / 2.0 + drift);
         tf.rotation = Quat::from_rotation_y((eye_at.x - foot.x).atan2(eye_at.z - foot.z));
+        *vis = Visibility::Visible;
+    }
+
+    // ---- and those who are there as 3D figures or models
+    for (slot, entity, mut tf, mut vis, children) in &mut figures {
+        let i = slot.0;
+        let def = wanted[i].as_ref().and_then(|(who, ..)| run.game.character(who)).filter(|c| !c.model.is_empty()).cloned();
+        let (Some((who, expr, appear, _)), Some(place), Some(def)) = (&wanted[i], &run.place, def) else {
+            if run.figures[i].take().is_some() {
+                for child in children.iter().flat_map(|c| c.iter()) {
+                    commands.entity(child).despawn();
+                }
+            }
+            *vis = Visibility::Hidden;
+            continue;
+        };
+        // a model file keeps its own face; a figure is made again for each expression
+        let key = (who.clone(), def.model.clone(), if def.model == "figure" { expr.clone() } else { String::new() });
+        if run.figures[i].as_ref() != Some(&key) {
+            for child in children.iter().flat_map(|c| c.iter()) {
+                commands.entity(child).despawn();
+            }
+            if def.model == "figure" {
+                figure(&def, expr, entity, &mut commands, &mut meshes, &mut materials);
+            } else {
+                let scale = if def.model_scale > 0.0 { def.model_scale } else { 1.0 };
+                let scene = assets.load(GltfAssetLabel::Scene(0).from_asset(format!("models/{}", def.model)));
+                let child = commands.spawn((SceneRoot(scene), Transform::from_scale(Vec3::splat(scale)), FigurePart)).id();
+                commands.entity(entity).add_child(child);
+            }
+            run.figures[i] = Some(key);
+        }
+        let foot = v3(place.data.anchors[i]);
+        let drift = if place.data.floating { (time.elapsed_secs() * 1.3 + i as f32 * 1.7).sin() * 0.09 } else { 0.0 };
+        // they rise into place as they arrive, and turn to you
+        let grown = 0.85 + 0.15 * appear.clamp(0.0, 1.0);
+        tf.translation = foot + Vec3::Y * (drift - (1.0 - appear.clamp(0.0, 1.0)) * 0.25);
+        tf.rotation = Quat::from_rotation_y((eye_at.x - foot.x).atan2(eye_at.z - foot.z));
+        tf.scale = Vec3::splat(grown);
         *vis = Visibility::Visible;
     }
 
@@ -484,541 +543,123 @@ fn picture(canvas: &Canvas) -> Image {
     )
 }
 
-/// Move within the place: stay inside its bounds and slide around solid things.
-fn walk(place: &Place, from: Vec2, step: Vec2) -> Vec2 {
-    let mut to = (from + step).clamp(place.min + BODY, place.max - BODY);
-    for _ in 0..2 {
-        for (centre, half) in &place.solids {
-            let d = to - *centre;
-            let reach = *half + BODY;
-            if d.x.abs() < reach.x && d.y.abs() < reach.y {
-                // leave by the nearer side
-                let (px, py) = (reach.x - d.x.abs(), reach.y - d.y.abs());
-                if px < py {
-                    to.x = centre.x + reach.x * d.x.signum();
-                } else {
-                    to.y = centre.y + reach.y * d.y.signum();
-                }
-            }
-        }
-    }
-    let to = to.clamp(place.min + BODY, place.max - BODY);
-    // pushed back into something by a wall (a thing standing close to one): stay put rather than pass through
-    let inside = |p: Vec2| place.solids.iter().any(|(centre, half)| (p.x - centre.x).abs() < half.x + BODY - 1e-3 && (p.y - centre.y).abs() < half.y + BODY - 1e-3);
-    if inside(to) && !inside(from) {
-        return from;
-    }
-    to
-}
-
 // ------------------------------------------------------------- building
 
-/// The light and air of a place.
-struct Air {
-    sky: Color,
-    ambient: Color,
-    brightness: f32,
-    fog: (f32, f32),
+fn v3(a: [f32; 3]) -> Vec3 {
+    Vec3::new(a[0], a[1], a[2])
 }
 
-/// A box of parts for building places out of simple shapes.
-struct Kit<'a, 'w, 's> {
-    commands: &'a mut Commands<'w, 's>,
-    meshes: &'a mut Assets<Mesh>,
-    materials: &'a mut Assets<StandardMaterial>,
-    solids: Vec<(Vec2, Vec2)>,
-    seed: u32,
+fn colour(hex: &str) -> Color {
+    let [r, g, b] = places::rgb(hex);
+    Color::srgb(r, g, b)
 }
 
-fn rgb(r: u8, g: u8, b: u8) -> Color {
-    Color::srgb_u8(r, g, b)
+/// A material for a colour, with how rough, how metallic and how much it shines by itself.
+fn stuff(materials: &mut Assets<StandardMaterial>, hex: &str, rough: f32, metal: f32, glow: f32) -> Handle<StandardMaterial> {
+    let base = colour(hex);
+    let lin = base.to_linear();
+    materials.add(StandardMaterial {
+        base_color: base,
+        perceptual_roughness: rough,
+        metallic: metal,
+        emissive: LinearRgba::new(lin.red * glow, lin.green * glow, lin.blue * glow, 1.0),
+        ..default()
+    })
 }
 
-impl Kit<'_, '_, '_> {
-    fn rand(&mut self) -> f32 {
-        self.seed = self.seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-        (self.seed >> 8) as f32 / (1u32 << 24) as f32
+/// Build a place from its description: every part and every light.
+fn raise(data: &PlaceData, commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>, assets: &AssetServer) {
+    // one mesh of each plain shape, stretched to each part's size
+    let (cube, drum, ball) = (meshes.add(Cuboid::new(1.0, 1.0, 1.0)), meshes.add(Cylinder::new(0.5, 1.0)), meshes.add(Sphere::new(0.5)));
+    // parts of one colour and finish share a material
+    let mut made: HashMap<String, Handle<StandardMaterial>> = HashMap::new();
+    for p in &data.parts {
+        let turn = Quat::from_euler(EulerRot::YXZ, p.rot[1].to_radians(), p.rot[0].to_radians(), p.rot[2].to_radians());
+        let place = Transform::from_translation(v3(p.at)).with_rotation(turn);
+        if p.shape == "model" {
+            let scene = assets.load(GltfAssetLabel::Scene(0).from_asset(format!("models/{}", p.file)));
+            commands.spawn((SceneRoot(scene), place.with_scale(v3(p.size)), PlacePart));
+            continue;
+        }
+        let key = format!("{} {} {} {}", p.color, p.rough, p.metal, p.glow);
+        let material = made.entry(key).or_insert_with(|| stuff(materials, &p.color, p.rough, p.metal, p.glow)).clone();
+        let (mesh, place) = match p.shape.as_str() {
+            "cylinder" => (drum.clone(), place.with_scale(v3(p.size))),
+            "sphere" => (ball.clone(), place.with_scale(v3(p.size))),
+            // (a capsule's round ends would be squashed by stretching: it is made to measure)
+            "capsule" => (meshes.add(Capsule3d::new(p.size[0] / 2.0, (p.size[1] - p.size[0]).max(0.0))), place),
+            _ => (cube.clone(), place.with_scale(v3(p.size))),
+        };
+        let mut part = commands.spawn((Mesh3d(mesh), MeshMaterial3d(material), place, PlacePart));
+        if !p.shadow {
+            part.insert(NotShadowCaster);
+        }
     }
-
-    fn matte(&mut self, colour: Color, rough: f32, metal: f32) -> Handle<StandardMaterial> {
-        self.materials.add(StandardMaterial { base_color: colour, perceptual_roughness: rough, metallic: metal, ..default() })
-    }
-
-    fn glowing(&mut self, colour: Color, strength: f32) -> Handle<StandardMaterial> {
-        let c = colour.to_linear();
-        self.materials.add(StandardMaterial { base_color: colour, emissive: LinearRgba::new(c.red * strength, c.green * strength, c.blue * strength, 1.0), ..default() })
-    }
-
-    /// A box, centred at `at`.
-    fn block(&mut self, at: Vec3, size: Vec3, colour: Color) -> Entity {
-        let material = self.matte(colour, 0.85, 0.0);
-        self.block_of(at, size, material)
-    }
-
-    fn block_of(&mut self, at: Vec3, size: Vec3, material: Handle<StandardMaterial>) -> Entity {
-        let mesh = self.meshes.add(Cuboid::new(size.x, size.y, size.z));
-        self.commands.spawn((Mesh3d(mesh), MeshMaterial3d(material), Transform::from_translation(at), PlacePart)).id()
-    }
-
-    /// A box you cannot walk through.
-    fn solid(&mut self, at: Vec3, size: Vec3, colour: Color) -> Entity {
-        self.solids.push((Vec2::new(at.x, at.z), Vec2::new(size.x / 2.0, size.z / 2.0)));
-        self.block(at, size, colour)
-    }
-
-    /// An upright cylinder, centred at `at`.
-    fn post(&mut self, at: Vec3, radius: f32, height: f32, material: Handle<StandardMaterial>) -> Entity {
-        let mesh = self.meshes.add(Cylinder::new(radius, height));
-        self.commands.spawn((Mesh3d(mesh), MeshMaterial3d(material), Transform::from_translation(at), PlacePart)).id()
-    }
-
-    fn ball(&mut self, at: Vec3, radius: f32, material: Handle<StandardMaterial>) -> Entity {
-        let mesh = self.meshes.add(Sphere::new(radius));
-        self.commands.spawn((Mesh3d(mesh), MeshMaterial3d(material), Transform::from_translation(at), PlacePart)).id()
-    }
-
-    /// A lamp: a glowing globe and the light it gives.
-    fn lamp(&mut self, at: Vec3, colour: Color, lumens: f32, shadows: bool) {
-        let glow = self.glowing(colour, 6.0);
-        let globe = self.ball(at, 0.11, glow);
-        self.commands.entity(globe).insert(NotShadowCaster);
-        self.commands.spawn((PointLight { color: colour, intensity: lumens, range: 30.0, shadows_enabled: shadows, ..default() }, Transform::from_translation(at), PlacePart));
-    }
-
-    /// Light from far away (a sun, a sunline, a floodlight).
-    fn sun(&mut self, from: Vec3, colour: Color, lux: f32, shadows: bool) {
-        self.commands.spawn((
-            DirectionalLight { color: colour, illuminance: lux, shadows_enabled: shadows, ..default() },
-            Transform::from_translation(from).looking_at(Vec3::ZERO, Vec3::Y),
-            PlacePart,
-        ));
-    }
-
-    /// Floor, ceiling and four walls of a room centred on the origin. Returns its walkable bounds.
-    fn room(&mut self, width: f32, depth: f32, height: f32, floor: Color, walls: Color, ceiling: Color) -> (Vec2, Vec2) {
-        let (hw, hd) = (width / 2.0, depth / 2.0);
-        self.block(Vec3::new(0.0, -0.1, 0.0), Vec3::new(width, 0.2, depth), floor);
-        self.block(Vec3::new(0.0, height + 0.1, 0.0), Vec3::new(width, 0.2, depth), ceiling);
-        self.block(Vec3::new(0.0, height / 2.0, -hd - 0.1), Vec3::new(width + 0.4, height, 0.2), walls);
-        self.block(Vec3::new(0.0, height / 2.0, hd + 0.1), Vec3::new(width + 0.4, height, 0.2), walls);
-        self.block(Vec3::new(-hw - 0.1, height / 2.0, 0.0), Vec3::new(0.2, height, depth), walls);
-        self.block(Vec3::new(hw + 0.1, height / 2.0, 0.0), Vec3::new(0.2, height, depth), walls);
-        (Vec2::new(-hw, -hd), Vec2::new(hw, hd))
-    }
-
-    /// A table with four legs; you walk around it.
-    fn table(&mut self, at: Vec3, size: Vec3, colour: Color) {
-        self.solids.push((Vec2::new(at.x, at.z), Vec2::new(size.x / 2.0, size.z / 2.0)));
-        self.block(at + Vec3::Y * (size.y - 0.04), Vec3::new(size.x, 0.08, size.z), colour);
-        for (sx, sz) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
-            self.block(at + Vec3::new(sx * (size.x / 2.0 - 0.08), (size.y - 0.08) / 2.0, sz * (size.z / 2.0 - 0.08)), Vec3::new(0.08, size.y - 0.08, 0.08), colour);
+    for l in &data.lights {
+        if l.kind == "sun" {
+            commands.spawn((
+                DirectionalLight { color: colour(&l.color), illuminance: l.power, shadows_enabled: l.shadows, ..default() },
+                Transform::from_translation(v3(l.at)).looking_at(Vec3::ZERO, Vec3::Y),
+                PlacePart,
+            ));
+        } else {
+            commands.spawn((
+                PointLight { color: colour(&l.color), intensity: l.power, range: if l.range > 0.0 { l.range } else { 30.0 }, shadows_enabled: l.shadows, ..default() },
+                Transform::from_translation(v3(l.at)),
+                PlacePart,
+            ));
         }
     }
 }
 
-/// Build a place out of the kit. The story's cast stands at the anchors;
-/// you start a few steps back from them, looking their way (towards -z).
-fn build(name: &str, k: &mut Kit) -> (Place, Air) {
-    let anchors = |z: f32| [Vec3::new(-1.25, 0.0, z), Vec3::new(0.0, 0.0, z - 0.25), Vec3::new(1.25, 0.0, z)];
-    let (place, air) = match name {
-        "pantry" => {
-            // the servants' hall: flagstones, a scrubbed table, dressers of china, a black range
-            let (min, max) = k.room(9.0, 11.0, 3.1, rgb(92, 88, 84), rgb(196, 184, 158), rgb(214, 206, 188));
-            for i in 0..9 {
-                for j in 0..11 {
-                    if (i + j) % 2 == 0 {
-                        k.block(Vec3::new(-4.0 + i as f32, 0.005, -5.0 + j as f32), Vec3::new(0.96, 0.01, 0.96), rgb(110, 105, 99));
-                    }
-                }
-            }
-            k.table(Vec3::new(0.0, 0.0, 1.4), Vec3::new(1.3, 0.78, 3.4), rgb(150, 112, 70));
-            for z in [0.2, 1.4, 2.6] {
-                for x in [-1.0, 1.0] {
-                    k.solid(Vec3::new(x, 0.24, z), Vec3::new(0.4, 0.48, 0.4), rgb(120, 86, 54));
-                }
-            }
-            // crockery on the table
-            for i in 0..5 {
-                let white = k.matte(rgb(236, 232, 222), 0.3, 0.0);
-                k.post(Vec3::new(-0.3 + (i % 2) as f32 * 0.6, 0.81, 0.3 + i as f32 * 0.55), 0.13, 0.02, white);
-            }
-            // dressers along the left wall
-            for z in [-3.4, -0.6, 2.2] {
-                k.solid(Vec3::new(-4.1, 0.5, z), Vec3::new(0.7, 1.0, 2.2), rgb(98, 70, 46));
-                k.block(Vec3::new(-4.3, 1.75, z), Vec3::new(0.3, 1.5, 2.2), rgb(86, 60, 40));
-                for (r, y) in [1.2f32, 1.7, 2.2].iter().enumerate() {
-                    k.block(Vec3::new(-4.12, *y, z), Vec3::new(0.34, 0.04, 2.1), rgb(120, 88, 58));
-                    for c in 0..6 {
-                        let glaze = if (c + r) % 3 == 0 { rgb(80, 110, 170) } else { rgb(232, 228, 216) };
-                        let m = k.matte(glaze, 0.25, 0.0);
-                        k.post(Vec3::new(-4.1, *y + 0.1, z - 0.85 + c as f32 * 0.34), 0.1, 0.14, m);
-                    }
-                }
-            }
-            // the range, in its chimney breast on the right
-            k.solid(Vec3::new(3.9, 1.55, -1.5), Vec3::new(1.2, 3.1, 3.0), rgb(150, 140, 122));
-            k.solid(Vec3::new(3.45, 0.5, -1.5), Vec3::new(0.9, 1.0, 2.0), rgb(28, 28, 32));
-            let ember = k.glowing(rgb(255, 120, 40), 5.0);
-            k.block_of(Vec3::new(2.99, 0.42, -1.5), Vec3::new(0.02, 0.3, 0.7), ember);
-            let copper = k.matte(rgb(190, 110, 70), 0.3, 0.9);
-            for i in 0..4 {
-                k.post(Vec3::new(3.3, 2.0, -2.3 + i as f32 * 0.5), 0.16 - i as f32 * 0.02, 0.16, copper.clone());
-            }
-            // bells on the end wall, and the green baize door
-            k.block(Vec3::new(0.0, 2.5, -5.44), Vec3::new(3.2, 0.5, 0.06), rgb(70, 50, 36));
-            let brass = k.matte(rgb(214, 176, 90), 0.3, 1.0);
-            for i in 0..8 {
-                k.ball(Vec3::new(-1.4 + i as f32 * 0.4, 2.42, -5.36), 0.07, brass.clone());
-            }
-            k.block(Vec3::new(2.6, 1.05, -5.44), Vec3::new(1.0, 2.1, 0.08), rgb(52, 96, 70));
-            // a high window, and lamps over the table
-            let day = k.glowing(rgb(190, 214, 255), 2.5);
-            k.block_of(Vec3::new(-2.4, 2.3, 5.44), Vec3::new(1.6, 0.9, 0.06), day);
-            k.lamp(Vec3::new(0.0, 2.2, 0.4), rgb(255, 214, 160), 260_000.0, true);
-            k.lamp(Vec3::new(0.0, 2.2, 2.6), rgb(255, 214, 160), 200_000.0, false);
-            k.commands.spawn((PointLight { color: rgb(255, 130, 60), intensity: 120_000.0, range: 12.0, ..default() }, Transform::from_xyz(2.4, 0.6, -1.5), PlacePart));
-            (
-                Place { spawn: Vec3::new(1.9, EYE, -0.2), yaw: 0.5, min, max, solids: Vec::new(), anchors: [Vec3::new(-1.6, 0.0, -2.2), Vec3::new(-0.2, 0.0, -2.6), Vec3::new(1.2, 0.0, -2.3)], floating: false },
-                Air { sky: rgb(20, 16, 14), ambient: rgb(255, 232, 205), brightness: 170.0, fog: (30.0, 90.0) },
-            )
-        }
-        "axis" => {
-            // the breakfast room at the hub: a drum of glass and white ribs, nothing has a down
-            let floor = k.matte(rgb(214, 220, 232), 0.5, 0.1);
-            k.post(Vec3::new(0.0, -0.1, 0.0), 6.2, 0.2, floor.clone());
-            k.post(Vec3::new(0.0, 5.3, 0.0), 6.2, 0.2, floor);
-            let rib = k.matte(rgb(236, 238, 244), 0.4, 0.2);
-            let glass = k.glowing(rgb(120, 170, 240), 1.3);
-            for i in 0..16 {
-                let a = i as f32 / 16.0 * TAU;
-                let (x, z) = (a.sin() * 6.0, a.cos() * 6.0);
-                k.post(Vec3::new(x, 2.6, z), 0.16, 5.2, rib.clone());
-                let b = a + TAU / 32.0;
-                let pane = k.block_of(Vec3::new(b.sin() * 6.1, 2.6, b.cos() * 6.1), Vec3::new(2.3, 5.0, 0.05), glass.clone());
-                k.commands.entity(pane).insert((Transform::from_xyz(b.sin() * 6.1, 2.6, b.cos() * 6.1).with_rotation(Quat::from_rotation_y(b)), NotShadowCaster));
-            }
-            // the table, bolted to nothing in particular, and breakfast adrift above it
-            let silver = k.matte(rgb(210, 214, 222), 0.2, 1.0);
-            k.solids.push((Vec2::new(0.0, -0.6), Vec2::new(1.1, 1.1)));
-            k.post(Vec3::new(0.0, 0.9, -0.6), 1.1, 0.06, silver.clone());
-            k.post(Vec3::new(0.0, 0.45, -0.6), 0.12, 0.9, silver.clone());
-            for i in 0..14 {
-                // (kept overhead, clear of the faces of whoever is at the table)
-                let (x, y, z) = (k.rand() * 3.4 - 1.7, 2.75 + k.rand() * 1.5, -0.6 + k.rand() * 3.0 - 1.5);
-                match i % 3 {
-                    0 => {
-                        let soup = k.matte(rgb(226, 150, 60), 0.2, 0.0);
-                        let size = 0.07 + k.rand() * 0.05;
-                        k.ball(Vec3::new(x, y, z), size, soup);
-                    }
-                    1 => {
-                        let toast = k.matte(rgb(200, 150, 90), 0.9, 0.0);
-                        let e = k.block_of(Vec3::new(x, y, z), Vec3::new(0.16, 0.02, 0.16), toast);
-                        let spin = Quat::from_euler(EulerRot::XYZ, k.rand() * 3.0, k.rand() * 3.0, k.rand() * 3.0);
-                        k.commands.entity(e).insert(Transform::from_xyz(x, y, z).with_rotation(spin));
-                    }
-                    _ => {
-                        k.post(Vec3::new(x, y, z), 0.05, 0.1, silver.clone());
-                    }
-                }
-            }
-            k.sun(Vec3::new(4.0, 9.0, 6.0), rgb(255, 250, 240), 9_000.0, true);
-            k.lamp(Vec3::new(0.0, 4.6, 0.0), rgb(235, 242, 255), 600_000.0, false);
-            let r = 5.5;
-            (
-                Place { spawn: Vec3::new(0.0, EYE, 1.9), yaw: 0.0, min: Vec2::splat(-r * 0.72), max: Vec2::splat(r * 0.72), solids: Vec::new(), anchors: [Vec3::new(-1.7, 0.25, -1.4), Vec3::new(0.0, 0.35, -2.3), Vec3::new(1.7, 0.2, -1.4)], floating: true },
-                Air { sky: rgb(150, 190, 240), ambient: rgb(226, 236, 255), brightness: 520.0, fog: (60.0, 400.0) },
-            )
-        }
-        "dock" => {
-            // the arrivals dock: a cold hangar, a visiting hull, forty trunks
-            let (min, max) = k.room(26.0, 30.0, 11.0, rgb(58, 62, 72), rgb(74, 80, 94), rgb(40, 44, 54));
-            let line = k.glowing(rgb(240, 200, 60), 0.6);
-            for i in 0..12 {
-                k.block_of(Vec3::new(-6.0, 0.006, -13.0 + i as f32 * 2.4), Vec3::new(0.25, 0.01, 1.4), line.clone());
-                k.block_of(Vec3::new(6.0, 0.006, -13.0 + i as f32 * 2.4), Vec3::new(0.25, 0.01, 1.4), line.clone());
-            }
-            // the Meridian lord's yacht, nose in
-            let hull = k.matte(rgb(170, 178, 196), 0.35, 0.8);
-            k.solids.push((Vec2::new(0.0, -9.5), Vec2::new(7.4, 3.0)));
-            let body = k.meshes.add(Capsule3d::new(2.4, 9.0));
-            k.commands.spawn((Mesh3d(body), MeshMaterial3d(hull.clone()), Transform::from_xyz(0.0, 3.6, -9.5).with_rotation(Quat::from_rotation_z(PI / 2.0)), PlacePart));
-            let fin = k.block_of(Vec3::new(5.0, 6.6, -9.5), Vec3::new(2.6, 2.4, 0.2), hull.clone());
-            k.commands.entity(fin).insert(Transform::from_xyz(5.0, 6.4, -9.5).with_rotation(Quat::from_rotation_z(0.5)));
-            let trim = k.matte(rgb(150, 40, 50), 0.4, 0.3);
-            k.block_of(Vec3::new(0.0, 3.6, -7.12), Vec3::new(8.6, 0.25, 0.05), trim);
-            for x in [-3.0, 3.0] {
-                k.block(Vec3::new(x, 0.6, -9.5), Vec3::new(0.3, 1.2, 0.3), rgb(50, 54, 62));
-                k.block(Vec3::new(x, 0.08, -9.5), Vec3::new(1.2, 0.16, 1.6), rgb(50, 54, 62));
-            }
-            let port = k.glowing(rgb(255, 226, 170), 3.0);
-            for i in 0..7 {
-                k.ball(Vec3::new(-3.6 + i as f32 * 1.0, 4.3, -7.3), 0.2, port.clone());
-            }
-            let cockpit = k.glowing(rgb(120, 200, 255), 2.0);
-            k.ball(Vec3::new(-5.6, 4.2, -9.5), 1.5, cockpit);
-            // the ramp, and the luggage
-            let ramp = k.block(Vec3::new(0.0, 0.6, -5.4), Vec3::new(2.2, 0.12, 4.0), rgb(96, 102, 116));
-            k.commands.entity(ramp).insert(Transform::from_xyz(0.0, 0.6, -5.4).with_rotation(Quat::from_rotation_x(0.3)));
-            for i in 0..40 {
-                let (col, row, tier) = (i % 5, (i / 5) % 4, i / 20);
-                let leather = [rgb(120, 70, 44), rgb(70, 44, 36), rgb(148, 104, 60), rgb(52, 60, 84)][(i * 7 + tier) % 4];
-                let at = Vec3::new(6.2 + col as f32 * 1.05, 0.32 + tier as f32 * 0.62, -1.5 + row as f32 * 0.8);
-                if tier == 0 {
-                    k.solid(at, Vec3::new(0.95, 0.6, 0.7), leather);
-                } else {
-                    k.block(at, Vec3::new(0.9, 0.58, 0.66), leather);
-                }
-            }
-            // cargo cans, a gantry, the great door with the dark beyond it
-            for (x, z, c) in [(-9.5, -6.0, rgb(150, 70, 50)), (-9.5, -1.0, rgb(60, 110, 120)), (-9.5, 4.0, rgb(150, 130, 60))] {
-                k.solid(Vec3::new(x, 1.3, z), Vec3::new(2.6, 2.6, 4.2), c);
-            }
-            k.block(Vec3::new(0.0, 9.6, -2.0), Vec3::new(26.0, 0.5, 0.8), rgb(210, 160, 50));
-            let space = k.glowing(rgb(10, 14, 40), 1.0);
-            k.block_of(Vec3::new(0.0, 5.5, -14.9), Vec3::new(16.0, 9.0, 0.05), space);
-            let star = k.glowing(rgb(255, 255, 255), 8.0);
-            for _ in 0..70 {
-                let at = Vec3::new(k.rand() * 15.0 - 7.5, 1.4 + k.rand() * 8.0, -14.84);
-                k.block_of(at, Vec3::splat(0.035), star.clone());
-            }
-            for (x, z) in [(-7.0, -8.0), (7.0, -8.0), (-7.0, 4.0), (7.0, 4.0)] {
-                k.lamp(Vec3::new(x, 9.0, z), rgb(200, 224, 255), 9_000_000.0, x < 0.0 && z > 0.0);
-            }
-            (
-                Place { spawn: Vec3::new(0.9, EYE, 3.9), yaw: 0.1, min, max, solids: Vec::new(), anchors: anchors(1.0), floating: false },
-                Air { sky: rgb(22, 26, 38), ambient: rgb(190, 210, 255), brightness: 260.0, fog: (35.0, 140.0) },
-            )
-        }
-        "vista" | "vista_night" => {
-            let night = name == "vista_night";
-            // a terrace of the house, and beyond its balustrade the inside of the world:
-            // three strips of land and three of window, rolled into a tube eight kilometres round
-            let stone = rgb(216, 208, 190);
-            k.block(Vec3::new(0.0, -0.25, 1.0), Vec3::new(22.0, 0.5, 14.0), stone);
-            for i in 0..11 {
-                for j in 0..7 {
-                    if (i + j) % 2 == 0 {
-                        k.block(Vec3::new(-10.0 + i as f32 * 2.0, 0.006, -5.0 + j as f32 * 2.0), Vec3::new(1.96, 0.012, 1.96), rgb(196, 186, 166));
-                    }
-                }
-            }
-            // balustrade
-            k.block(Vec3::new(0.0, 1.0, -6.0), Vec3::new(22.0, 0.14, 0.4), stone);
-            k.block(Vec3::new(0.0, 0.1, -6.0), Vec3::new(22.0, 0.2, 0.4), stone);
-            // and round both ends of the terrace
-            for x in [-10.9, 10.9] {
-                k.block(Vec3::new(x, 1.0, 1.0), Vec3::new(0.4, 0.14, 14.0), stone);
-                k.block(Vec3::new(x, 0.5, 1.0), Vec3::new(0.16, 0.9, 14.0), stone);
-            }
-            let baluster = k.matte(stone, 0.8, 0.0);
-            for i in 0..45 {
-                k.post(Vec3::new(-11.0 + i as f32 * 0.5, 0.55, -6.0), 0.08, 0.8, baluster.clone());
-            }
-            // the house wall behind, with tall lit windows; urns; a pair of clipped trees
-            k.block(Vec3::new(0.0, 4.0, 8.2), Vec3::new(22.0, 8.0, 0.5), rgb(226, 214, 190));
-            let pane = k.glowing(rgb(255, 214, 150), if night { 3.5 } else { 0.5 });
-            for i in 0..5 {
-                k.block_of(Vec3::new(-8.0 + i as f32 * 4.0, 2.6, 7.93), Vec3::new(1.6, 4.0, 0.05), pane.clone());
-            }
-            let leaf = k.matte(rgb(52, 110, 60), 0.9, 0.0);
-            for x in [-9.0, 9.0] {
-                k.solid(Vec3::new(x, 0.45, -4.3), Vec3::new(1.3, 0.9, 1.3), rgb(170, 160, 140));
-                k.ball(Vec3::new(x, 1.7, -4.3), 0.75, leaf.clone());
-            }
-            // the world
-            let radius = 620.0;
-            let length = 2600.0;
-            let (land_glow, window_glow) = if night { (0.03, 0.02) } else { (0.5, 1.6) };
-            for strip in 0..6 {
-                for part in 0..5 {
-                    let a = (strip as f32 * 5.0 + part as f32 + 0.5 - 2.5) / 30.0 * TAU;
-                    let centre = Vec3::new(a.sin() * radius, radius - a.cos() * radius - 40.0, -length / 2.0 + 300.0);
-                    let width = TAU * radius / 30.0 + 2.0;
-                    let turn = Quat::from_rotation_z(a);
-                    if strip % 2 == 0 {
-                        let ground = k.glowing(rgb(70, 132, 74), land_glow);
-                        let e = k.block_of(centre, Vec3::new(width, 3.0, length), ground);
-                        k.commands.entity(e).insert((Transform::from_translation(centre).with_rotation(turn), NotShadowCaster));
-                        // fields, woods, lakes and villages, as patches on the land
-                        for _ in 0..26 {
-                            let (u, v) = (k.rand() - 0.5, k.rand() - 0.5);
-                            let kind = (k.rand() * 5.0) as u32;
-                            let (colour, glow, size) = match kind {
-                                0 => (rgb(190, 180, 96), land_glow, Vec3::new(36.0, 0.6, 60.0)),
-                                1 => (rgb(40, 96, 56), land_glow, Vec3::new(44.0, 6.0, 50.0)),
-                                2 => (rgb(70, 130, 200), land_glow * 1.5, Vec3::new(40.0, 0.5, 90.0)),
-                                3 => (rgb(120, 170, 90), land_glow, Vec3::new(50.0, 0.5, 40.0)),
-                                _ => (if night { rgb(255, 210, 130) } else { rgb(214, 200, 180) }, if night { 6.0 } else { land_glow }, Vec3::new(14.0, 5.0, 18.0)),
-                            };
-                            let local = Vec3::new(u * (width - size.x), 1.8 + size.y / 2.0, v * (length - 100.0));
-                            let m = k.glowing(colour, glow);
-                            let e = k.block_of(centre + turn * local, size, m);
-                            k.commands.entity(e).insert((Transform::from_translation(centre + turn * local).with_rotation(turn), NotShadowCaster));
-                        }
-                    } else {
-                        let sky = k.glowing(if night { rgb(8, 10, 30) } else { rgb(150, 196, 255) }, window_glow);
-                        let e = k.block_of(centre, Vec3::new(width, 2.0, length), sky);
-                        k.commands.entity(e).insert((Transform::from_translation(centre).with_rotation(turn), NotShadowCaster));
-                    }
-                }
-            }
-            // the far end cap, and the sunline down the axis
-            let cap = k.glowing(if night { rgb(14, 18, 40) } else { rgb(150, 190, 240) }, if night { 0.3 } else { 1.1 });
-            let disc = k.post(Vec3::new(0.0, radius - 40.0, -length + 300.0), radius + 10.0, 4.0, cap);
-            k.commands.entity(disc).insert((Transform::from_xyz(0.0, radius - 40.0, -length + 300.0).with_rotation(Quat::from_rotation_x(PI / 2.0)), NotShadowCaster));
-            let line = k.glowing(if night { rgb(120, 140, 220) } else { rgb(255, 246, 220) }, if night { 2.0 } else { 30.0 });
-            let sunline = k.post(Vec3::new(0.0, radius - 40.0, -length / 2.0 + 300.0), if night { 2.5 } else { 7.0 }, length, line);
-            k.commands.entity(sunline).insert((Transform::from_xyz(0.0, radius - 40.0, -length / 2.0 + 300.0).with_rotation(Quat::from_rotation_x(PI / 2.0)), NotShadowCaster));
-            if night {
-                k.sun(Vec3::new(-2.0, 10.0, -4.0), rgb(150, 170, 255), 500.0, true);
-                for x in [-6.0, 0.0, 6.0] {
-                    k.lamp(Vec3::new(x, 2.6, 6.6), rgb(255, 200, 130), 700_000.0, x == 0.0);
-                }
-            } else {
-                k.sun(Vec3::new(1.5, 10.0, -3.0), rgb(255, 246, 226), 11_000.0, true);
-            }
-            (
-                Place { spawn: Vec3::new(0.8, EYE, -0.3), yaw: 0.08, min: Vec2::new(-10.6, -5.5), max: Vec2::new(10.6, 7.7), solids: Vec::new(), anchors: anchors(-3.2), floating: false },
-                if night {
-                    Air { sky: rgb(6, 8, 22), ambient: rgb(150, 170, 255), brightness: 120.0, fog: (700.0, 3600.0) }
-                } else {
-                    Air { sky: rgb(168, 206, 250), ambient: rgb(220, 234, 255), brightness: 700.0, fog: (300.0, 2700.0) }
-                },
-            )
-        }
-        "ballroom" => {
-            // the long gallery on a gala night: chequered marble, gilt columns, chandeliers
-            let (min, max) = k.room(20.0, 30.0, 9.0, rgb(232, 226, 214), rgb(226, 208, 176), rgb(240, 232, 214));
-            let dark = k.matte(rgb(60, 52, 60), 0.12, 0.1);
-            for i in 0..10 {
-                for j in 0..15 {
-                    if (i + j) % 2 == 0 {
-                        k.block_of(Vec3::new(-9.0 + i as f32 * 2.0, 0.006, -14.0 + j as f32 * 2.0), Vec3::new(2.0, 0.012, 2.0), dark.clone());
-                    }
-                }
-            }
-            let gilt = k.matte(rgb(226, 186, 96), 0.25, 1.0);
-            let marble = k.matte(rgb(240, 234, 224), 0.3, 0.0);
-            for j in 0..6 {
-                for x in [-8.6, 8.6] {
-                    let z = -12.5 + j as f32 * 5.0;
-                    k.solids.push((Vec2::new(x, z), Vec2::splat(0.45)));
-                    k.post(Vec3::new(x, 4.5, z), 0.38, 9.0, marble.clone());
-                    k.post(Vec3::new(x, 0.25, z), 0.55, 0.5, gilt.clone());
-                    k.post(Vec3::new(x, 8.7, z), 0.55, 0.5, gilt.clone());
-                }
-            }
-            // tall windows down one side, looking out on the dark and the fleet
-            let glass = k.glowing(rgb(16, 22, 60), 1.0);
-            let hullglow = k.glowing(rgb(200, 214, 255), 4.0);
-            for j in 0..5 {
-                let z = -10.0 + j as f32 * 5.0;
-                k.block_of(Vec3::new(-9.93, 4.6, z), Vec3::new(0.05, 7.0, 3.0), glass.clone());
-                k.block(Vec3::new(-9.9, 8.3, z), Vec3::new(0.12, 0.4, 3.4), rgb(140, 40, 50));
-                for _ in 0..5 {
-                    let at = Vec3::new(-9.88, 2.0 + k.rand() * 5.5, z - 1.3 + k.rand() * 2.6);
-                    k.block_of(at, Vec3::new(0.02, 0.05, 0.16), hullglow.clone());
-                }
-            }
-            // mirrors opposite, the dais and the orchestra's chairs at the far end
-            let mirror = k.matte(rgb(200, 210, 220), 0.03, 1.0);
-            for j in 0..5 {
-                k.block_of(Vec3::new(9.93, 4.0, -10.0 + j as f32 * 5.0), Vec3::new(0.05, 5.0, 2.6), mirror.clone());
-            }
-            k.solid(Vec3::new(0.0, 0.2, -13.0), Vec3::new(9.0, 0.4, 3.0), rgb(120, 34, 44));
-            for i in 0..7 {
-                k.block(Vec3::new(-3.0 + i as f32, 0.85, -13.4), Vec3::new(0.45, 0.9, 0.45), rgb(226, 186, 96));
-            }
-            // supper tables along the mirrors
-            for z in [-4.0, 2.0, 8.0] {
-                k.table(Vec3::new(6.6, 0.0, z), Vec3::new(1.4, 0.8, 3.2), rgb(244, 240, 232));
-                for i in 0..4 {
-                    k.post(Vec3::new(6.6, 0.95, z - 1.1 + i as f32 * 0.75), 0.05, 0.3, gilt.clone());
-                }
-            }
-            // chandeliers
-            let crystal = k.glowing(rgb(255, 236, 190), 9.0);
-            for z in [-9.0, -1.0, 7.0] {
-                k.post(Vec3::new(0.0, 8.0, z), 0.04, 2.0, gilt.clone());
-                for ring in 0..2 {
-                    let (r, y, n) = if ring == 0 { (1.3, 6.6, 12) } else { (0.7, 7.1, 8) };
-                    for i in 0..n {
-                        let a = i as f32 / n as f32 * TAU;
-                        let e = k.ball(Vec3::new(a.sin() * r, y, z + a.cos() * r), 0.09, crystal.clone());
-                        k.commands.entity(e).insert(NotShadowCaster);
-                    }
-                }
-                k.commands.spawn((PointLight { color: rgb(255, 226, 170), intensity: 2_600_000.0, range: 40.0, shadows_enabled: z == -1.0, ..default() }, Transform::from_xyz(0.0, 6.2, z), PlacePart));
-            }
-            (
-                Place { spawn: Vec3::new(0.9, EYE, 2.4), yaw: 0.1, min, max, solids: Vec::new(), anchors: anchors(-0.6), floating: false },
-                Air { sky: rgb(20, 14, 12), ambient: rgb(255, 232, 196), brightness: 240.0, fog: (40.0, 160.0) },
-            )
-        }
-        _ => {
-            // the study: panelling, books to the ceiling, a desk under a green lamp, a fire
-            let (min, max) = k.room(8.0, 9.0, 3.6, rgb(74, 48, 34), rgb(92, 60, 40), rgb(60, 42, 32));
-            k.block(Vec3::new(0.0, 0.01, 0.2), Vec3::new(4.6, 0.02, 5.6), rgb(120, 36, 44));
-            k.block(Vec3::new(0.0, 0.016, 0.2), Vec3::new(4.0, 0.02, 5.0), rgb(150, 52, 54));
-            // bookcases on the left and far walls
-            let spines = [rgb(120, 40, 40), rgb(40, 70, 110), rgb(50, 96, 64), rgb(150, 120, 60), rgb(90, 60, 100), rgb(170, 150, 120)];
-            for (wall, n) in [(0, 9), (1, 6)] {
-                for shelf in 0..6 {
-                    let y = 0.35 + shelf as f32 * 0.52;
-                    let mut u = 0.0;
-                    while u < n as f32 * 0.9 {
-                        let w = 0.05 + k.rand() * 0.07;
-                        let h = 0.3 + k.rand() * 0.14;
-                        let c = spines[(k.rand() * 6.0) as usize % 6];
-                        let at = if wall == 0 { Vec3::new(-3.78, y + h / 2.0, -4.0 + u) } else { Vec3::new(-2.6 + u, y + h / 2.0, -4.28) };
-                        let size = if wall == 0 { Vec3::new(0.24, h, w) } else { Vec3::new(w, h, 0.24) };
-                        k.block(at, size, c);
-                        u += w + 0.006;
-                    }
-                    let at = if wall == 0 { Vec3::new(-3.75, y - 0.02, 0.05) } else { Vec3::new(0.1, y - 0.02, -4.25) };
-                    let size = if wall == 0 { Vec3::new(0.34, 0.04, 8.2) } else { Vec3::new(5.6, 0.04, 0.34) };
-                    k.block(at, size, rgb(60, 38, 26));
-                }
-            }
-            k.solids.push((Vec2::new(-3.75, 0.0), Vec2::new(0.25, 4.5)));
-            k.solids.push((Vec2::new(0.0, -4.25), Vec2::new(4.0, 0.25)));
-            // the desk, its lamp, a globe, two chairs
-            k.table(Vec3::new(0.6, 0.0, -2.2), Vec3::new(2.4, 0.8, 1.1), rgb(70, 40, 26));
-            k.block(Vec3::new(0.6, 0.82, -2.2), Vec3::new(1.5, 0.01, 0.7), rgb(40, 84, 60));
-            let brass = k.matte(rgb(214, 176, 90), 0.3, 1.0);
-            k.post(Vec3::new(1.4, 1.0, -2.3), 0.025, 0.4, brass.clone());
-            let shade = k.glowing(rgb(70, 190, 120), 2.0);
-            k.post(Vec3::new(1.4, 1.22, -2.3), 0.16, 0.1, shade);
-            k.commands.spawn((PointLight { color: rgb(255, 232, 180), intensity: 160_000.0, range: 12.0, shadows_enabled: true, ..default() }, Transform::from_xyz(1.4, 1.1, -2.0), PlacePart));
-            let sea = k.matte(rgb(60, 110, 170), 0.4, 0.0);
-            k.ball(Vec3::new(-0.3, 1.03, -2.3), 0.2, sea);
-            for x in [-1.1, 1.9] {
-                k.solid(Vec3::new(x, 0.45, 0.6), Vec3::new(0.8, 0.9, 0.8), rgb(110, 40, 44));
-            }
-            // the fireplace on the right, a portrait above it, a window behind you
-            k.solid(Vec3::new(3.75, 0.9, -0.5), Vec3::new(0.5, 1.8, 2.4), rgb(150, 144, 136));
-            k.block(Vec3::new(3.5, 0.55, -0.5), Vec3::new(0.06, 0.9, 1.2), rgb(16, 12, 12));
-            let fire = k.glowing(rgb(255, 130, 40), 7.0);
-            k.block_of(Vec3::new(3.44, 0.3, -0.5), Vec3::new(0.05, 0.36, 0.8), fire);
-            k.commands.spawn((PointLight { color: rgb(255, 140, 60), intensity: 240_000.0, range: 14.0, shadows_enabled: false, ..default() }, Transform::from_xyz(3.0, 0.5, -0.5), PlacePart));
-            k.block(Vec3::new(3.94, 2.5, -0.5), Vec3::new(0.06, 1.2, 0.95), rgb(214, 176, 90));
-            k.block(Vec3::new(3.9, 2.5, -0.5), Vec3::new(0.06, 1.05, 0.8), rgb(50, 60, 80));
-            let dusk = k.glowing(rgb(90, 120, 200), 1.6);
-            k.block_of(Vec3::new(1.0, 2.0, 4.44), Vec3::new(2.2, 2.0, 0.05), dusk);
-            k.lamp(Vec3::new(-1.6, 3.0, 1.0), rgb(255, 214, 160), 220_000.0, false);
-            (
-                Place { spawn: Vec3::new(0.3, EYE, 2.0), yaw: 0.0, min, max, solids: Vec::new(), anchors: [Vec3::new(-1.3, 0.0, -0.8), Vec3::new(0.1, 0.0, -1.15), Vec3::new(1.5, 0.0, -0.8)], floating: false },
-                Air { sky: rgb(14, 10, 8), ambient: rgb(255, 220, 180), brightness: 110.0, fog: (25.0, 80.0) },
-            )
-        }
+/// A 3D figure of a character, made from their look: the colours of their
+/// skin, hair and coat, and a face that follows their expression. It stands
+/// at its parent's origin facing +z.
+fn figure(def: &CharDef, expr: &str, parent: Entity, commands: &mut Commands, meshes: &mut Assets<Mesh>, materials: &mut Assets<StandardMaterial>) {
+    let mut look = art::look_defaults(&def.sprite);
+    look.extend(def.look.clone());
+    let tone = |key: &str, or: &str| look.get(key).filter(|v| v.starts_with('#') && v.len() == 7).cloned().unwrap_or_else(|| or.to_string());
+    let (skin, hair, coat, iris, lips) = (tone("skin", "#d8a880"), tone("hair", "#4a3828"), tone("coat", "#3c4660"), tone("iris", "#3a2a20"), tone("lips", "#a85a50"));
+    // trousers a shade darker than the coat
+    let [r, g, b] = places::rgb(&coat);
+    let dark = format!("#{:02x}{:02x}{:02x}", (r * 140.0) as u8, (g * 140.0) as u8, (b * 140.0) as u8);
+    let (cube, drum, ball) = (meshes.add(Cuboid::new(1.0, 1.0, 1.0)), meshes.add(Cylinder::new(0.5, 1.0)), meshes.add(Sphere::new(0.5)));
+    let mut made: HashMap<String, Handle<StandardMaterial>> = HashMap::new();
+    let mut put = |mesh: &Handle<Mesh>, at: [f32; 3], size: [f32; 3], tilt: f32, hex: &str, rough: f32| {
+        let material = made.entry(format!("{} {}", hex, rough)).or_insert_with(|| stuff(materials, hex, rough, 0.0, 0.0)).clone();
+        let part = commands.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(material), Transform::from_translation(v3(at)).with_rotation(Quat::from_rotation_z(tilt)).with_scale(v3(size)), FigurePart)).id();
+        commands.entity(parent).add_child(part);
     };
-    let mut place = place;
-    place.solids = std::mem::take(&mut k.solids);
-    // nobody starts inside the furniture
-    let at = walk(&place, Vec2::new(place.spawn.x, place.spawn.z), Vec2::ZERO);
-    place.spawn = Vec3::new(at.x, place.spawn.y, at.y);
-    (place, air)
+    for side in [-1.0f32, 1.0] {
+        put(&drum, [side * 0.1, 0.44, 0.0], [0.17, 0.82, 0.17], 0.0, &dark, 0.9);
+        put(&cube, [side * 0.1, 0.04, 0.05], [0.14, 0.08, 0.28], 0.0, "#1c1a1c", 0.5);
+        put(&drum, [side * 0.29, 1.13, 0.0], [0.12, 0.6, 0.12], side * 0.09, &coat, 0.8);
+        put(&ball, [side * 0.32, 0.8, 0.0], [0.1, 0.12, 0.1], 0.0, &skin, 0.7);
+        put(&ball, [side * 0.2, 1.4, 0.0], [0.17, 0.14, 0.17], 0.0, &coat, 0.8);
+    }
+    put(&cube, [0.0, 1.13, 0.0], [0.42, 0.62, 0.24], 0.0, &coat, 0.8);
+    put(&cube, [0.0, 1.2, 0.123], [0.1, 0.4, 0.01], 0.0, "#f2efe8", 0.6);
+    put(&drum, [0.0, 1.47, 0.0], [0.11, 0.08, 0.11], 0.0, &skin, 0.7);
+    put(&ball, [0.0, 1.62, 0.0], [0.25, 0.29, 0.26], 0.0, &skin, 0.7);
+    // hair: over the top and down the back
+    put(&ball, [0.0, 1.665, -0.025], [0.275, 0.25, 0.27], 0.0, &hair, 0.9);
+    put(&ball, [0.0, 1.6, -0.06], [0.26, 0.26, 0.2], 0.0, &hair, 0.9);
+    put(&ball, [0.0, 1.6, 0.128], [0.03, 0.045, 0.03], 0.0, &skin, 0.7);
+    // the face: brows, eyes and mouth take the expression
+    let (brow_tilt, brow_lift, eye_open, mouth_w, mouth_h, mouth_y) = match expr {
+        "smile" => (0.0, 0.0, 0.8, 0.085, 0.014, 0.0),
+        "worried" => (-0.35, 0.006, 1.0, 0.05, 0.012, -0.004),
+        "angry" => (0.4, -0.008, 0.8, 0.06, 0.012, -0.004),
+        "smug" => (0.15, 0.002, 0.7, 0.07, 0.012, 0.002),
+        "shock" => (0.0, 0.014, 1.35, 0.04, 0.045, -0.008),
+        _ => (0.0, 0.0, 1.0, 0.06, 0.012, 0.0),
+    };
+    for side in [-1.0f32, 1.0] {
+        put(&ball, [side * 0.048, 1.635, 0.112], [0.036, 0.03 * eye_open, 0.02], 0.0, "#f4f1ec", 0.3);
+        put(&ball, [side * 0.048, 1.635, 0.121], [0.02, 0.022 * eye_open, 0.012], 0.0, &iris, 0.3);
+        put(&cube, [side * 0.048, 1.667 + brow_lift, 0.118], [0.045, 0.008, 0.01], -side * brow_tilt, &hair, 0.9);
+    }
+    put(&cube, [0.0, 1.548 + mouth_y, 0.118], [mouth_w, mouth_h, 0.012], 0.0, &lips, 0.6);
 }
 
 /// The world in a headset, through OpenXR.
@@ -1068,13 +709,13 @@ mod vr {
     const PANEL: (f32, f32, f32) = (2.0, 2.3, 1.72);
     const SNAP: f32 = PI / 6.0;
 
-    pub fn plugins(app: &mut App, mut window: WindowPlugin) {
+    pub fn plugins(app: &mut App, mut window: WindowPlugin, files: AssetPlugin) {
         // the headset sets the pace: the desktop window must not make it wait for the monitor
         if let Some(w) = &mut window.primary_window {
             w.present_mode = PresentMode::AutoNoVsync;
         }
         // without a runtime or a headset this falls back to ordinary rendering by itself
-        app.add_plugins(add_xr_plugins(DefaultPlugins.build().disable::<PipelinedRenderingPlugin>()).set(window))
+        app.add_plugins(add_xr_plugins(DefaultPlugins.build().disable::<PipelinedRenderingPlugin>()).set(window).set(files))
             .add_plugins(XRUtilsActionsPlugin)
             .add_systems(Startup, actions.before(XRUtilsActionSystemSet::CreateEvents))
             .add_systems(Update, (read.before(Story), carry.after(Story)));
@@ -1301,38 +942,6 @@ mod vr {
             assert!((clear_ahead(floor, Vec2::new(0.0, -3.4), PI / 2.0) - 4.0).abs() < 1e-3);
             // outside the floor (leaning through a wall): never negative
             assert!(clear_ahead(floor, Vec2::new(0.0, -4.5), 0.0) >= 0.0);
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn walking_stays_inside_and_goes_round_things() {
-        let place = Place { spawn: Vec3::ZERO, yaw: 0.0, min: Vec2::splat(-4.0), max: Vec2::splat(4.0), solids: vec![(Vec2::ZERO, Vec2::new(1.0, 0.5))], anchors: [Vec3::ZERO; 3], floating: false };
-        // walls
-        let at = walk(&place, Vec2::new(3.5, 0.0), Vec2::new(5.0, 0.0));
-        assert!((at.x - (4.0 - BODY)).abs() < 1e-4);
-        // straight at the table from the front: stopped at its edge, not inside it
-        let mut at = Vec2::new(0.0, 3.0);
-        for _ in 0..200 {
-            at = walk(&place, at, Vec2::new(0.0, -0.05));
-        }
-        assert!((at.y - (0.5 + BODY)).abs() < 1e-3, "{:?}", at);
-        // at an angle: slides along it and gets past
-        let mut at = Vec2::new(0.9, 3.0);
-        for _ in 0..400 {
-            at = walk(&place, at, Vec2::new(0.03, -0.05));
-        }
-        assert!(at.y < -0.5, "{:?}", at);
-    }
-
-    #[test]
-    fn every_place_the_game_paints_is_built() {
-        for place in art::BACKGROUNDS {
-            assert!(PLACES.contains(place), "{} has no 3D build", place);
         }
     }
 }

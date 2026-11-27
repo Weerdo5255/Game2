@@ -138,8 +138,14 @@ impl Library {
         std::fs::create_dir_all(&folder).map_err(|e| format!("{}: {}", folder.display(), e))?;
         std::fs::write(folder.join("story.txt"), doc.to_text()).map_err(|e| e.to_string())?;
         if let Some(from) = copy {
-            // a copy brings its art and its sound along
+            // a copy brings its art, its sound and its 3D places along
             let source = self.path(from)?;
+            for sub in ["", "models"] {
+                let (src, target) = (crate::places::world_dir(&source).join(sub), folder.join("world").join(sub));
+                for e in std::fs::read_dir(&src).into_iter().flatten().filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
+                    let _ = std::fs::create_dir_all(&target).and_then(|_| std::fs::copy(e.path(), target.join(e.file_name())).map(|_| ()));
+                }
+            }
             for sub in ["", "samples"] {
                 let (src, target) = (audio::audio_dir(&source).join(sub), folder.join("audio").join(sub));
                 for e in std::fs::read_dir(&src).into_iter().flatten().filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
@@ -360,10 +366,31 @@ fn carried_file(name: &str) -> Option<(&'static str, &str)> {
         ("audio/samples", f, &comfy::SAMPLE_EXTENSIONS)
     } else if let Some(f) = name.strip_prefix("audio/") {
         ("audio", f, &audio::EXTENSIONS)
+    } else if let Some(f) = name.strip_prefix("world/models/") {
+        // 3D models: checked by their own rule (and their content, on import)
+        return Some(("world/models", f)).filter(|_| crate::places::model_file(f));
+    } else if let Some(f) = name.strip_prefix("world/") {
+        ("world", f, &["json"])
     } else {
         return None;
     };
     Some((folder, file)).filter(|_| file.len() <= 120 && comfy::plain_file(file, extensions))
+}
+
+/// Does this look like a model file of the kind its name says: binary glTF, or glTF as JSON?
+fn model_bytes_ok(name: &str, bytes: &[u8]) -> bool {
+    if name.to_ascii_lowercase().ends_with(".glb") {
+        bytes.len() > 20 && bytes.starts_with(b"glTF")
+    } else {
+        serde_json::from_slice::<Value>(bytes).map_or(false, |v| v["asset"].is_object())
+    }
+}
+
+/// A place description from a file, cleaned; `None` if it is not one.
+fn place_from(bytes: &[u8]) -> Option<crate::places::PlaceData> {
+    let mut place: crate::places::PlaceData = serde_json::from_slice(bytes).ok()?;
+    place.clean();
+    Some(place)
 }
 
 /// Is this a PNG of a size the game will open? Read from its header alone.
@@ -777,7 +804,7 @@ impl State {
         if with_files {
             let mut files = serde_json::Map::new();
             let folder = story.parent().unwrap_or(Path::new("."));
-            for sub in ["enhanced", "audio", "audio/samples"] {
+            for sub in ["enhanced", "audio", "audio/samples", "world", "world/models"] {
                 let mut names: Vec<String> = std::fs::read_dir(folder.join(sub)).into_iter().flatten().filter_map(|e| e.ok()).filter(|e| e.path().is_file()).map(|e| e.file_name().to_string_lossy().to_string()).collect();
                 names.sort();
                 for name in names {
@@ -858,7 +885,16 @@ impl State {
         for (name, data) in &given.files {
             let bytes = carried_file(name).and_then(|place| Some((place, base64_decode(data)?)));
             match bytes {
-                Some(((folder, file), bytes)) if !bytes.is_empty() && (folder != "enhanced" || png_size_ok(&bytes)) => files.push((folder, file, bytes)),
+                Some(((folder, file), bytes))
+                    if !bytes.is_empty()
+                        && (folder != "enhanced" || png_size_ok(&bytes))
+                        && (folder != "world/models" || model_bytes_ok(file, &bytes))
+                        && (folder != "world" || (art::BACKGROUNDS.contains(&file.trim_end_matches(".json")) && place_from(&bytes).is_some())) =>
+                {
+                    // a place is written as this build understands it, not as it came
+                    let bytes = if folder == "world" { serde_json::to_vec(&place_from(&bytes).unwrap()).unwrap_or(bytes) } else { bytes };
+                    files.push((folder, file, bytes))
+                }
                 _ => skipped.push(name.clone()),
             }
         }
@@ -1004,7 +1040,7 @@ impl State {
             Err(e) => return respond_json(stream, "404 Not Found", &json!({ "error": e })),
         };
         // a locked story is not changed by any route: not its text, its art, its sound or its history
-        const CHANGES: [&str; 9] = ["/api/story", "/api/stories/remove", "/api/admin/clean", "/api/history/remove", "/api/art/prefs", "/api/art/run", "/api/art/revert", "/api/sound/sample", "/api/sound/prune"];
+        const CHANGES: [&str; 12] = ["/api/world", "/api/world/reset", "/api/world/model", "/api/story", "/api/stories/remove", "/api/admin/clean", "/api/history/remove", "/api/art/prefs", "/api/art/run", "/api/art/revert", "/api/sound/sample", "/api/sound/prune"];
         if req.method != "GET" && CHANGES.contains(&req.path.as_str()) && lock_file(&story).exists() {
             return respond_json(stream, "423 Locked", &json!({ "error": "this story is locked: unlock it under Manage to change it", "locked": true }));
         }
@@ -1293,6 +1329,65 @@ impl State {
                     }
                 };
                 respond_json(stream, "200 OK", &reply)
+            }
+            // ---- 3D places and models
+            ("GET", "/api/world") | ("PUT", "/api/world") | ("POST", "/api/world/reset") => {
+                use crate::places;
+                let name = q.get("place").cloned().or_else(|| body["place"].as_str().map(str::to_string)).unwrap_or_default();
+                if !art::BACKGROUNDS.contains(&name.as_str()) {
+                    return respond_json(stream, "404 Not Found", &json!({ "error": format!("there is no place called '{}'", name) }));
+                }
+                let dir = places::world_dir(&story);
+                let file = dir.join(format!("{}.json", name));
+                match req.method.as_str() {
+                    "PUT" => {
+                        let saved = place_from(&req.body).ok_or("this is not a description of a place".to_string()).and_then(|place| {
+                            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                            // beside the file, then renamed: a crash cannot leave half a place
+                            let tmp = dir.join(format!("{}.json.tmp", name));
+                            std::fs::write(&tmp, serde_json::to_string(&place).unwrap_or_default() + "\n").and_then(|_| std::fs::rename(&tmp, &file)).map_err(|e| e.to_string())?;
+                            Ok(json!({ "ok": true, "place": place }))
+                        });
+                        answer(stream, saved)
+                    }
+                    "POST" => {
+                        // back to the game's own build; the story's is set aside, not deleted
+                        let moved = file.is_file() && set_aside(&file);
+                        respond_json(stream, "200 OK", &json!({ "reset": moved, "place": places::builtin(&name) }))
+                    }
+                    _ => {
+                        let own = places::custom(&dir, &name);
+                        let error = own.as_ref().and_then(|r| r.as_ref().err().cloned());
+                        let place = own.and_then(|r| r.ok());
+                        let custom = place.is_some();
+                        let mut models: Vec<String> = std::fs::read_dir(dir.join("models")).into_iter().flatten().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).filter(|f| places::model_file(f)).collect();
+                        models.sort();
+                        let listed: Vec<Value> = art::BACKGROUNDS.iter().map(|b| json!({ "name": b, "custom": dir.join(format!("{}.json", b)).is_file() })).collect();
+                        respond_json(stream, "200 OK", &json!({
+                            "place": place.or_else(|| places::builtin(&name)).unwrap_or_else(places::PlaceData::blank),
+                            "custom": custom, "error": error, "models": models, "places": listed, "blank": places::PlaceData::blank(),
+                            "folder": dir.display().to_string(), "engine": cfg!(feature = "world3d"),
+                        }))
+                    }
+                }
+            }
+            ("POST", "/api/world/model") => {
+                // a glTF model for a place or a character, sent as base64
+                let name = body["name"].as_str().unwrap_or("").to_string();
+                let saved = (|| {
+                    if !crate::places::model_file(&name) {
+                        return Err("a model is a .glb or .gltf file with a plain name (letters, digits, - and _)".to_string());
+                    }
+                    let bytes = base64_decode(body["data"].as_str().unwrap_or("")).ok_or("the model did not arrive intact")?;
+                    if !model_bytes_ok(&name, &bytes) {
+                        return Err("this does not look like a glTF model".to_string());
+                    }
+                    let dir = crate::places::world_dir(&story).join("models");
+                    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                    std::fs::write(dir.join(&name), bytes).map_err(|e| e.to_string())?;
+                    Ok(json!({ "model": name }))
+                })();
+                answer(stream, saved)
             }
             ("POST", "/api/sound/sample") => {
                 // a recording of a speaker to clone the voice from, sent as base64

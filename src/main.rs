@@ -25,6 +25,7 @@ mod comfy;
 mod editor;
 mod game;
 mod gfx;
+mod places;
 mod script;
 #[cfg(feature = "world3d")]
 mod world3d;
@@ -144,6 +145,9 @@ fn main() {
         }
     }
 
+    // a story's own 3D places and models live in "world" beside it
+    #[cfg_attr(not(feature = "world3d"), allow(unused_variables))]
+    let world_dir = Some(places::world_dir(&arg("--story").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("assets/story.txt")))).filter(|d| d.is_dir());
     if let Some(dir) = &art_dir {
         println!("enhanced art: {}", dir.display());
     }
@@ -183,7 +187,7 @@ fn main() {
             if shot.is_some() && start.is_none() {
                 game.new_game();
             }
-            world3d::run(game, world3d::Options { title: "Below Stairs, Above Stars".into(), size, shot, vr: flag("--vr") });
+            world3d::run(game, world3d::Options { title: "Below Stairs, Above Stars".into(), size, shot, vr: flag("--vr"), world_dir: world_dir.clone() });
             return;
         }
         #[cfg(not(feature = "world3d"))]

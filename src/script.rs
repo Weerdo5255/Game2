@@ -45,6 +45,14 @@ pub struct CharDef {
     /// What takes them away from that, first match first.
     #[serde(default)]
     pub interrupts: Vec<Interrupt>,
+    /// How they appear in a 3D place: "" (a cut-out of their portrait),
+    /// "figure" (a 3D figure made from their look) or the file name of a
+    /// glTF model in the story's `world/models` folder.
+    #[serde(default)]
+    pub model: String,
+    /// How much larger or smaller than made a model file is shown (0 or 1: as made).
+    #[serde(default)]
+    pub model_scale: f32,
     /// What they start the story with, where that differs from a thing's
     /// own starting amount: attributes, items carried, things known.
     #[serde(default)]
@@ -350,6 +358,7 @@ enum Line {
     Clock(ClockDef),
     Thing(ThingDef),
     Holds(String, Vec<(String, i32)>),
+    Model(String, String, f32),
     Schedule(String, Vec<Stop>),
     Interrupt(String, Interrupt),
     /// `render 3d` for the whole story, `render <place> 3d` for one place.
@@ -475,6 +484,16 @@ fn parse_line(line: &str) -> Result<Line, String> {
                 hidden: flags == "hidden",
                 note: parts.get(4).unwrap_or(&"").to_string(),
             }));
+        }
+        "model" => {
+            // model p | figure            a 3D figure made from the character's look
+            // model p | peregrine.glb | 1.2      a model file, shown at 1.2 times its size
+            let parts: Vec<&str> = rest.split('|').map(str::trim).collect();
+            if parts.len() < 2 || parts[1].is_empty() {
+                return Err("model needs: who | figure, or who | file.glb | scale".into());
+            }
+            let scale = parts.get(2).filter(|s| !s.is_empty()).map(|s| s.parse::<f32>().map_err(|_| format!("bad scale '{}'", s))).transpose()?.unwrap_or(0.0);
+            return Ok(Line::Model(parts[0].to_string(), parts[1].to_string(), scale));
         }
         "holds" => {
             // holds q | gold 5 | key | canvas        what a character starts with (an amount of 1 if none is given)
@@ -609,7 +628,7 @@ impl Doc {
             // a day for someone the file has not introduced yet cannot be filed: kept as a note, like any line not understood
             let orphan = match &parsed {
                 Line::Schedule(who, _) | Line::Interrupt(who, _) if !doc.characters.iter().any(|c| c.id == *who) => Some(who.clone()),
-                Line::Holds(who, _) if !doc.characters.iter().any(|c| c.id == *who) => Some(who.clone()),
+                Line::Holds(who, _) | Line::Model(who, _, _) if !doc.characters.iter().any(|c| c.id == *who) => Some(who.clone()),
                 _ => None,
             };
             let parsed = match orphan {
@@ -629,6 +648,12 @@ impl Doc {
                 Line::Track(t) => doc.tracks.push(t),
                 Line::Clock(c) => doc.clock = Some(c),
                 Line::Thing(t) => doc.things.push(t),
+                Line::Model(who, model, scale) => {
+                    if let Some(c) = doc.characters.iter_mut().find(|c| c.id == who) {
+                        c.model = model;
+                        c.model_scale = scale;
+                    }
+                }
                 Line::Holds(who, held) => {
                     if let Some(c) = doc.characters.iter_mut().find(|c| c.id == who) {
                         c.holds.extend(held);
@@ -724,6 +749,11 @@ impl Doc {
             c.color = c.color.trim().to_lowercase();
             id(&mut c.sprite);
             c.look = c.look.iter().map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).filter(|(k, v)| valid_id(k) && !v.is_empty() && !v.contains([' ', '|'])).collect();
+            id(&mut c.model);
+            if c.model != "figure" && !crate::places::model_file(&c.model) {
+                c.model.clear();
+            }
+            c.model_scale = if c.model.is_empty() || c.model == "figure" || !c.model_scale.is_finite() || c.model_scale == 1.0 { 0.0 } else { c.model_scale.clamp(0.0, 1000.0) };
             c.holds = std::mem::take(&mut c.holds).into_iter().map(|(k, v)| (k.trim().to_string(), v)).filter(|(k, _)| valid_id(k)).collect();
             // a day in order, one entry per time
             for stop in &mut c.schedule {
@@ -884,6 +914,9 @@ impl Doc {
             let sprite = if c.sprite.is_empty() { "-" } else { &c.sprite };
             out.push_str(format!("character {} | {} | {} | {} | {}", c.id, c.name, c.color, sprite, look.join(" ")).trim_end_matches([' ', '|']));
             out.push('\n');
+        }
+        for c in self.characters.iter().filter(|c| !c.model.is_empty()) {
+            out.push_str(&if c.model_scale > 0.0 { format!("model {} | {} | {}\n", c.id, c.model, c.model_scale) } else { format!("model {} | {}\n", c.id, c.model) });
         }
         if !self.things.is_empty() || self.characters.iter().any(|c| !c.holds.is_empty()) {
             out.push('\n');
@@ -1166,6 +1199,9 @@ impl Doc {
         }
         if self.characters.iter().any(|c| c.id == "event") && !self.things.is_empty() {
             push("error", "", None, "a character cannot have the id 'event' in a story with attributes or items: 'event.x' means an event".into());
+        }
+        for c in self.characters.iter().filter(|c| !c.model.is_empty() && c.model != "figure" && !crate::places::model_file(&c.model)) {
+            push("error", "", None, format!("{}'s 3D model '{}' should be 'figure' or a .glb/.gltf file name", c.id, c.model));
         }
         for v in self.vars.iter().filter(|v| v.id == "clock" || v.id == "day") {
             push("error", "", None, format!("a property cannot be called '{}': that name is the story's clock", v.id));
@@ -2117,6 +2153,24 @@ mod tests {
             assert!(found.iter().any(|m| m.contains(want)), "missing '{}' in {:?}", want, found);
         }
         assert!(Doc::parse("holds ghost | key\n*start\nend Done\n").0.to_text().contains("UNPARSED: holds ghost | key"));
+    }
+
+    #[test]
+    fn characters_can_have_3d_models() {
+        let src = "character p | P | #fff | p\ncharacter q | Q | #fff | q\ncharacter c | C\nmodel p | figure\nmodel q | quince.glb | 1.5\n*start\nend Done\n";
+        let (doc, errors) = Doc::parse(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert_eq!((doc.characters[0].model.as_str(), doc.characters[1].model.as_str(), doc.characters[1].model_scale, doc.characters[2].model.as_str()), ("figure", "quince.glb", 1.5, ""));
+        let (again, _) = Doc::parse(&doc.to_text());
+        assert_eq!(again, doc);
+        doc.survives_text().unwrap();
+        // a model that is not one is said, and cleaned away from a hand-made file
+        let (bad, _) = Doc::parse("character p | P\nmodel p | ../../x.exe\n*start\nend Done\n");
+        assert!(problems(&bad).iter().any(|p| p.msg.contains("3D model")));
+        let mut loose = bad.clone();
+        loose.sanitize();
+        assert!(loose.characters[0].model.is_empty());
+        assert!(Doc::parse("model ghost | figure\n*start\nend Done\n").0.to_text().contains("UNPARSED: model ghost | figure"));
     }
 
     #[test]

@@ -142,7 +142,7 @@ label { color: var(--dim); }
 .empty { color: var(--dim); padding: 30px 10px; text-align: center; }
 
 #storySel { max-width: 230px; font-weight: 600; }
-#art, #sound, #admin { grid-area: 2 / 2 / 3 / 4; background: var(--bg); z-index: 10; overflow: auto; padding: 14px 18px 40px; display: none; }
+#art, #sound, #admin, #world3d { grid-area: 2 / 2 / 3 / 4; background: var(--bg); z-index: 10; overflow: auto; padding: 14px 18px 40px; display: none; }
 #art.show, #sound.show, #admin.show { display: block; }
 #art h2, #sound h2, #admin h2 { font-size: 15px; margin: 22px 0 8px; color: var(--gold); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 #art h2 label, #sound h2 label { font-size: 12px; font-weight: 400; }
@@ -178,6 +178,12 @@ label { color: var(--dim); }
 #find .hit { padding: 6px 8px; border-radius: 6px; background: #1c2044; cursor: pointer; font-size: 12.5px; }
 #find .hit:hover { background: #262b5c; } #find .hit b { color: var(--gold); } #find .hit mark { background: #e0c060; color: #111; border-radius: 2px; }
 #status.locked { color: #ffb070; }
+#world3d { padding: 0; overflow: hidden; }
+#world3d.show { display: grid; grid-template-columns: 290px 1fr 300px; height: 100%; }
+#worldLeft, #worldRight { overflow: auto; padding: 12px; background: var(--panel); }
+#worldLeft { border-right: 1px solid var(--line); } #worldRight { border-left: 1px solid var(--line); }
+#worldCanvas { width: 100%; height: 100%; display: block; cursor: grab; background: #0c0e1c; }
+#world3d label.ghost { border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; font-size: 12.5px; }
 .vcard { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
 .vcard .brow { margin-top: 6px; } .vcard .brow:first-child { margin-top: 0; }
 .vcard audio { height: 30px; max-width: 260px; }
@@ -212,6 +218,7 @@ label { color: var(--dim); }
   <span class="spacer"></span>
   <button id="artBtn" title="Send backgrounds and characters through ComfyUI">Art</button>
   <button id="soundBtn" title="Voices for the dialogue and music for the scenes, through ComfyUI">Sound</button>
+  <button id="worldBtn" title="The story's 3D places: what stands where, the lights, where you and the cast stand">World</button>
   <button id="adminBtn" title="The library: every story, its size, earlier versions, locking, removed stories">Manage</button>
   <button id="findBtn" title="Find and replace text across the story (Ctrl+F)">Find</button>
   <button id="addSceneBtn">+ Scene</button>
@@ -236,6 +243,7 @@ label { color: var(--dim); }
 <section id="art"></section>
 <section id="sound"></section>
 <section id="admin"></section>
+<section id="world3d"><div id="worldLeft"></div><canvas id="worldCanvas"></canvas><div id="worldRight"></div></section>
 <div id="find"></div>
 <div id="compare"></div>
 <div id="probs"></div>
@@ -259,6 +267,7 @@ label { color: var(--dim); }
     <li>Places can be shown as paintings or as <b>a 3D world to walk through</b>: choose for the whole story under Scenes &rarr; This story, or place by place there or on any Background block. (The game needs to be built with its 3D engine: <code>--features world3d</code>.)</li>
     <li>Characters can keep a <b>schedule</b>: open one in Cast and give them times and places, and they are on stage wherever the story is when their day has them there. <b>Interruptions</b> send them elsewhere while an event is on, a property passes a mark, or after a time. The story's clock is under Scenes &rarr; This story; Time, Time passes and Event blocks move it and start events; conditions can ask the time, an event, or whether someone is here.</li>
     <li>Characters can <b>have things</b>: attributes, items and information, set up under Properties &rarr; What characters have, with a table of who starts with what. Give, Copy / tell, Gain or lose and Trade blocks move them between characters in a scene; conditions can ask what someone has. In the game the I key shows who has what.</li>
+    <li><b>World</b> is a 3D editor for the story's places: add and move boxes, cylinders, spheres, lamps and model files, set where you start, where the cast stands and where you may walk. A character can appear in 3D places as a cut-out, a 3D figure made from their look, or a model file (Cast).</li>
     <li><kbd>Ctrl</kbd>+<kbd>S</kbd> saves to the story file. <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> undo and redo. Play saves first, then starts the game.</li>
   </ul>
   <button id="helpClose" class="primary">Close</button>
@@ -1072,7 +1081,7 @@ function normalizeDoc() {
   doc.chapters = doc.chapters || []; doc.tracks = doc.tracks || []; doc.locales = doc.locales || {}; doc.render = doc.render || "";
   if (doc.clock === undefined) doc.clock = null;
   doc.things = doc.things || [];
-  for (const c of doc.characters) { c.schedule = c.schedule || []; c.interrupts = c.interrupts || []; c.holds = c.holds || {}; }
+  for (const c of doc.characters) { c.schedule = c.schedule || []; c.interrupts = c.interrupts || []; c.holds = c.holds || {}; c.model = c.model || ""; c.model_scale = c.model_scale || 0; }
 }
 const varOpts = () => doc.vars.map(v => ({ value: v.id, label: v.label || v.id }));
 const NEW_SCENE = "\u0000new";
@@ -1460,6 +1469,11 @@ function renderCast(host) {
             change(() => { renameEverywhere("char", ch.id, to); ch.id = to; openChar = to; });
           } }),
           el("label", { text: "Name colour" }), el("div", { class: "row" }, el("input", { type: "color", value: safeColor(ch.color, "#ffffff"), onchange: ev => change(() => ch.color = ev.target.value) })),
+          el("label", { text: "In a 3D place" }), el("div", { class: "row", style: "gap:4px" },
+            el("select", { id: "modelSel", style: "flex:1;min-width:0", title: "How this character appears where the story is shown as a 3D world", onchange: ev => change(() => { ch.model = ev.target.value; if (!ch.model.includes(".")) ch.model_scale = 0; }) },
+              opts([{ value: "", label: "A cut-out of the portrait" }, { value: "figure", label: "A 3D figure, from the look below" }, ...world.models.map(f => ({ value: f, label: "Model: " + f }))], ch.model || "")),
+            ch.model && ch.model.includes(".") && el("input", { type: "number", min: 0.01, step: 0.1, title: "Size: 1 is as the model was made", style: "width:56px", value: ch.model_scale || 1, onchange: ev => change(() => { const v = parseFloat(ev.target.value); ch.model_scale = v > 0 && v !== 1 ? v : 0; }) }),
+            el("label", { class: "ghost", style: "cursor:pointer;border:1px solid var(--line);border-radius:6px;padding:4px 7px;font-size:12px", title: "Upload a .glb or .gltf model for this character" }, "\u21E7", el("input", { type: "file", accept: ".glb,.gltf", style: "display:none", onchange: ev => uploadModel(ev.target.files[0], f => { change(() => { ch.model = f; }); }) }))),
           el("label", { text: "Portrait" }), el("select", { onchange: ev => change(() => { ch.sprite = ev.target.value; ch.look = {}; }) },
             opts([{ value: "", label: "None (never shown)" }, ...meta.sprites.map(s => ({ value: s, label: SPRITE_NAMES[s] || s }))], ch.sprite))),
         Object.keys(defaults).length > 0 && el("div", { class: "sect", text: "Look" }),
@@ -1671,6 +1685,10 @@ async function loadStory(id) {
   if (parseErrors.length) { toast(`${parseErrors.length} line(s) of the story file could not be understood; they are kept as notes.`, true); $("#probs").classList.add("show"); }
   adoptPrefs(null);
   if (art.open) openArt(); else if (sound.open) openSound(); else if (admin.open) openAdmin();
+  // the place being edited belonged to the story just left
+  Object.assign(world, { place: "", data: null, dirty: false, undo: [], sel: null });
+  if (world.open) openWorld();
+  api("GET", forStory("/api/world?place=" + encodeURIComponent(meta.bgs[0]))).then(r => { world.models = r.models; world.engine = r.engine; if (tab === "cast") renderLeft(); }).catch(() => {});
   offerDraft();
   return true;
 }
@@ -1945,16 +1963,385 @@ function renderArt() {
   host.scrollTop = scroll;
   renderServerLamp(); renderJobs();
 }
+// ------------------------------------------------------------ world view
+// A 3D editor for the story's places: what stands where, the lights, where
+// you start, where the cast stands and where you may walk. Drawn with WebGL.
+const world = { open: false, place: "", data: null, custom: false, dirty: false, sel: null, undo: [], models: [], places: [], blank: null, engine: true,
+  cam: { yaw: 0.6, pitch: 0.55, dist: 16, target: [0, 1, 0] }, gl: null, drag: null, listFilter: "" };
+const M4 = {
+  mul(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3]; return o; },
+  persp(fov, aspect, near, far) { const f = 1 / Math.tan(fov / 2), o = new Float32Array(16); o[0] = f / aspect; o[5] = f; o[10] = (far + near) / (near - far); o[11] = -1; o[14] = 2 * far * near / (near - far); return o; },
+  look(eye, at) {
+    const z = norm3(sub3(eye, at)), x = norm3(cross3([0, 1, 0], z)), y = cross3(z, x);
+    return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dot3(x, eye), -dot3(y, eye), -dot3(z, eye), 1]);
+  },
+};
+const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], add3 = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], mul3 = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm3 = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+/** The turn of a part as a 3x3 matrix (columns): about y first, then x, then z, as the game does. */
+function turnOf(rot) {
+  const [x, y, z] = (rot || [0, 0, 0]).map(d => d * Math.PI / 180), cx = Math.cos(x), sx = Math.sin(x), cy = Math.cos(y), sy = Math.sin(y), cz = Math.cos(z), sz = Math.sin(z);
+  // R = Ry * Rx * Rz
+  return [cy * cz + sy * sx * sz, cx * sz, -sy * cz + cy * sx * sz, -cy * sz + sy * sx * cz, cx * cz, sy * sz + cy * sx * cz, sy * cx, -sx, cy * cx];
+}
+const turn3 = (R, v) => [R[0] * v[0] + R[3] * v[1] + R[6] * v[2], R[1] * v[0] + R[4] * v[1] + R[7] * v[2], R[2] * v[0] + R[5] * v[1] + R[8] * v[2]];
+const unturn3 = (R, v) => [R[0] * v[0] + R[1] * v[1] + R[2] * v[2], R[3] * v[0] + R[4] * v[1] + R[5] * v[2], R[6] * v[0] + R[7] * v[1] + R[8] * v[2]];
+const hexRgb = h => { const n = parseInt((/^#[0-9a-f]{6}$/i.test(h || "") ? h : "#ffffff").slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
+
+/** A place as the server sends it leaves out whatever is at its default: fill those in. */
+function normPlace(d) {
+  for (const p of d.parts) { p.rot = p.rot || [0, 0, 0]; p.glow = p.glow || 0; p.rough = p.rough == null ? 1 : p.rough; p.metal = p.metal || 0; p.shadow = p.shadow !== false; p.solid = !!p.solid; p.file = p.file || ""; p.name = p.name || ""; p.color = p.color || "#ffffff"; }
+  for (const l of d.lights) { l.range = l.range || 0; l.shadows = !!l.shadows; l.color = l.color || "#ffffff"; }
+  d.solids = d.solids || [];
+  return d;
+}
+function worldMeshes(gl) {
+  const mesh = (pos, nor, mode) => { const m = { n: pos.length / 3, mode: mode || gl.TRIANGLES, pos: gl.createBuffer(), nor: gl.createBuffer() };
+    gl.bindBuffer(gl.ARRAY_BUFFER, m.pos); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pos), gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, m.nor); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(nor), gl.STATIC_DRAW); return m; };
+  // a box of side 1
+  const bp = [], bn = [];
+  for (const [n, u, v] of [[[1, 0, 0], [0, 1, 0], [0, 0, 1]], [[-1, 0, 0], [0, 0, 1], [0, 1, 0]], [[0, 1, 0], [0, 0, 1], [1, 0, 0]], [[0, -1, 0], [1, 0, 0], [0, 0, 1]], [[0, 0, 1], [1, 0, 0], [0, 1, 0]], [[0, 0, -1], [0, 1, 0], [1, 0, 0]]]) {
+    const c = (a, b) => add3(add3(mul3(n, 0.5), mul3(u, a)), mul3(v, b));
+    for (const q of [c(-0.5, -0.5), c(0.5, -0.5), c(0.5, 0.5), c(-0.5, -0.5), c(0.5, 0.5), c(-0.5, 0.5)]) { bp.push(...q); bn.push(...n); }
+  }
+  // a cylinder of diameter 1 and height 1
+  const cp = [], cn = [], N = 24;
+  for (let i = 0; i < N; i++) {
+    const a = i / N * 2 * Math.PI, b = (i + 1) / N * 2 * Math.PI, ax = Math.cos(a) / 2, az = Math.sin(a) / 2, bx = Math.cos(b) / 2, bz = Math.sin(b) / 2;
+    cp.push(ax, -0.5, az, bx, 0.5, bz, bx, -0.5, bz, ax, -0.5, az, ax, 0.5, az, bx, 0.5, bz); cn.push(ax, 0, az, bx, 0, bz, bx, 0, bz, ax, 0, az, ax, 0, az, bx, 0, bz);
+    cp.push(0, 0.5, 0, bx, 0.5, bz, ax, 0.5, az, 0, -0.5, 0, ax, -0.5, az, bx, -0.5, bz); cn.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0);
+  }
+  // a sphere of diameter 1
+  const sp = [], sn = [], U = 20, V = 12, pt = (i, j) => { const t = j / V * Math.PI, p = i / U * 2 * Math.PI; return [Math.sin(t) * Math.cos(p) / 2, Math.cos(t) / 2, Math.sin(t) * Math.sin(p) / 2]; };
+  for (let j = 0; j < V; j++) for (let i = 0; i < U; i++) for (const q of [pt(i, j), pt(i + 1, j), pt(i + 1, j + 1), pt(i, j), pt(i + 1, j + 1), pt(i, j + 1)]) { sp.push(...q); sn.push(...mul3(q, 2)); }
+  // lines: a square on the floor, and a ground grid
+  const sq = [-0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 0, 0.5, 0.5, 0, 0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, -0.5, 0, -0.5];
+  const grid = []; for (let i = -20; i <= 20; i++) grid.push(i, 0, -20, i, 0, 20, -20, 0, i, 20, 0, i);
+  const up = n => new Array(n).fill([0, 1, 0]).flat();
+  return { box: mesh(bp, bn), cylinder: mesh(cp, cn), sphere: mesh(sp, sn), square: mesh(sq, up(8), gl.LINES), grid: mesh(grid, up(grid.length / 3), gl.LINES) };
+}
+function worldGl() {
+  if (world.gl) return world.gl;
+  const canvas = $("#worldCanvas"), gl = canvas.getContext("webgl", { antialias: true, preserveDrawingBuffer: true });
+  if (!gl) return null;
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, "attribute vec3 p,n;uniform mat4 vp;uniform vec3 at,size;uniform mat3 turn;varying vec3 vn;void main(){vn=turn*(n/size);gl_Position=vp*vec4(turn*(p*size)+at,1.0);}"));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, "precision mediump float;uniform vec3 col;uniform float glow,flat_;varying vec3 vn;void main(){vec3 n=normalize(vn);float l=0.42+0.58*max(dot(n,normalize(vec3(0.45,0.8,0.4))),0.0);vec3 c=col*mix(l,1.0,max(flat_,min(glow,1.0)));gl_FragColor=vec4(c,1.0);}"));
+  gl.linkProgram(prog);
+  const u = {}; for (const k of ["vp", "at", "size", "turn", "col", "glow", "flat_"]) u[k] = gl.getUniformLocation(prog, k);
+  world.gl = { gl, prog, u, a: { p: gl.getAttribLocation(prog, "p"), n: gl.getAttribLocation(prog, "n") }, m: worldMeshes(gl) };
+  return world.gl;
+}
+/** Where the camera is, from its orbit about the point it looks at. */
+function camEye() { const c = world.cam; return add3(c.target, [Math.sin(c.yaw) * Math.cos(c.pitch) * c.dist, Math.sin(c.pitch) * c.dist, Math.cos(c.yaw) * Math.cos(c.pitch) * c.dist]); }
+/** Everything that can be picked and moved besides the parts: lights, the cast's places, the start. */
+function worldMarkers() {
+  const d = world.data, out = [];
+  d.lights.forEach((l, i) => out.push({ kind: "light", i, at: l.at, size: [0.45, 0.45, 0.45], col: hexRgb(l.color), shape: "sphere" }));
+  d.anchors.forEach((a, i) => out.push({ kind: "anchor", i, at: add3(a, [0, 0.85, 0]), size: [0.5, 1.7, 0.5], col: [[0.95, 0.5, 0.45], [0.95, 0.85, 0.4], [0.45, 0.7, 0.95]][i], shape: "cylinder" }));
+  out.push({ kind: "spawn", i: 0, at: add3(d.spawn, [0, 0.81, 0]), size: [0.4, 1.62, 0.4], col: [0.4, 0.95, 0.55], shape: "cylinder" });
+  return out;
+}
+function drawWorld() {
+  const g = worldGl(), d = world.data; if (!g || !d || !world.open) return;
+  const { gl, u, a, m } = g, canvas = gl.canvas;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  const sky = hexRgb(d.air.sky); gl.clearColor(sky[0] * 0.55 + 0.05, sky[1] * 0.55 + 0.05, sky[2] * 0.55 + 0.07, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); gl.enable(gl.DEPTH_TEST);
+  gl.useProgram(g.prog);
+  const vp = M4.mul(M4.persp(1.0, canvas.width / Math.max(1, canvas.height), 0.1, 6000), M4.look(camEye(), world.cam.target));
+  world.vp = vp; gl.uniformMatrix4fv(u.vp, false, vp);
+  const put = (mesh, at, size, rot, col, glow, flat) => {
+    gl.bindBuffer(gl.ARRAY_BUFFER, mesh.pos); gl.enableVertexAttribArray(a.p); gl.vertexAttribPointer(a.p, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, mesh.nor); gl.enableVertexAttribArray(a.n); gl.vertexAttribPointer(a.n, 3, gl.FLOAT, false, 0, 0);
+    gl.uniform3fv(u.at, at); gl.uniform3fv(u.size, size); gl.uniformMatrix3fv(u.turn, false, turnOf(rot)); gl.uniform3fv(u.col, col); gl.uniform1f(u.glow, glow || 0); gl.uniform1f(u.flat_, flat ? 1 : 0);
+    gl.drawArrays(mesh.mode, 0, mesh.n);
+  };
+  const isSel = (kind, i) => world.sel && world.sel.kind === kind && world.sel.i === i;
+  put(m.grid, [0, d.spawn[1] - 0.002, 0], [1, 1, 1], null, [0.3, 0.33, 0.5], 0, true);
+  d.parts.forEach((p, i) => {
+    let col = hexRgb(p.color); if (isSel("part", i)) col = col.map(c => c * 0.5 + 0.5);
+    if (p.shape === "capsule") {
+      // a round-ended post: a drum and two balls
+      const r = p.size[0], body = Math.max(0, p.size[1] - r), R = turnOf(p.rot);
+      put(m.cylinder, p.at, [r, body, p.size[2]], p.rot, col, p.glow);
+      for (const s of [-1, 1]) put(m.sphere, add3(p.at, turn3(R, [0, s * body / 2, 0])), [r, r, p.size[2]], p.rot, col, p.glow);
+    } else if (p.shape === "model") {
+      // a model file is shown as the box it is placed by (the game draws the model itself)
+      put(m.box, p.at, [0.5, 0.5, 0.5].map((v, k) => v * p.size[k]), p.rot, [0.9, 0.5, 0.9], 0.6);
+    } else put(m[p.shape] || m.box, p.at, p.size, p.rot, col, p.glow);
+    if (isSel("part", i)) put(m.square, [p.at[0], p.at[1] - p.size[1] / 2, p.at[2]], [p.size[0] * 1.08, 1, p.size[2] * 1.08], [0, p.rot[1], 0], [1, 0.85, 0.3], 0, true);
+  });
+  for (const k of worldMarkers()) put(m[k.shape], k.at, k.size, null, isSel(k.kind, k.i) ? [1, 1, 1] : k.col, 0.7);
+  // the floor you may walk on, and what is in the way on it
+  const f = d.floor, y = d.spawn[1] + 0.02;
+  put(m.square, [(f[0][0] + f[1][0]) / 2, y, (f[0][1] + f[1][1]) / 2], [f[1][0] - f[0][0], 1, f[1][1] - f[0][1]], null, isSel("floor", 0) ? [1, 1, 1] : [0.4, 0.95, 0.55], 0, true);
+  d.solids.forEach((s, i) => put(m.square, [s.at[0], y, s.at[1]], [s.half[0] * 2, 1, s.half[1] * 2], null, isSel("solid", i) ? [1, 1, 1] : [1, 0.4, 0.35], 0, true));
+}
+/** The ray from the eye through a point of the canvas. */
+function worldRay(ev) {
+  const r = $("#worldCanvas").getBoundingClientRect(), x = (ev.clientX - r.left) / r.width * 2 - 1, y = 1 - (ev.clientY - r.top) / r.height * 2;
+  const eye = camEye(), fwd = norm3(sub3(world.cam.target, eye)), right = norm3(cross3(fwd, [0, 1, 0])), up = cross3(right, fwd), t = Math.tan(0.5);
+  return { o: eye, d: norm3(add3(add3(fwd, mul3(right, x * t * r.width / r.height)), mul3(up, y * t))) };
+}
+/** Where a ray enters a box given by its middle, size and turn (as a distance along the ray), or null. */
+function hitBox(ray, at, size, rot) {
+  const R = turnOf(rot), o = unturn3(R, sub3(ray.o, at)), d = unturn3(R, ray.d); let t0 = -Infinity, t1 = Infinity;
+  for (let k = 0; k < 3; k++) {
+    const h = Math.max(size[k], 0.05) / 2;
+    if (Math.abs(d[k]) < 1e-9) { if (Math.abs(o[k]) > h) return null; continue; }
+    let a = (-h - o[k]) / d[k], b = (h - o[k]) / d[k]; if (a > b) [a, b] = [b, a];
+    t0 = Math.max(t0, a); t1 = Math.min(t1, b);
+  }
+  return t1 >= Math.max(t0, 0) ? Math.max(t0, 0) : null;
+}
+function worldPick(ev) {
+  const ray = worldRay(ev); let best = null;
+  const tryHit = (t, sel) => { if (t != null && (!best || t < best.t)) best = { t, sel }; };
+  for (const k of worldMarkers()) tryHit(hitBox(ray, k.at, k.size, null), { kind: k.kind, i: k.i });
+  // markers win over whatever they stand in front of or inside
+  if (best) return best.sel;
+  world.data.parts.forEach((p, i) => tryHit(hitBox(ray, p.at, p.shape === "model" ? p.size.map(v => v * 0.5) : p.size, p.rot), { kind: "part", i }));
+  return best ? best.sel : null;
+}
+/** The thing selected, and the three numbers that say where it is. */
+function worldSelected() {
+  const s = world.sel, d = world.data; if (!s || !d) return null;
+  if (s.kind === "part") return d.parts[s.i] && { obj: d.parts[s.i], at: d.parts[s.i].at };
+  if (s.kind === "light") return d.lights[s.i] && { obj: d.lights[s.i], at: d.lights[s.i].at };
+  if (s.kind === "anchor") return { obj: null, at: d.anchors[s.i] };
+  if (s.kind === "spawn") return { obj: null, at: d.spawn };
+  return null;
+}
+function worldChange(fn) {
+  world.undo.push(JSON.stringify(world.data)); if (world.undo.length > 60) world.undo.shift();
+  fn(); world.dirty = true; renderWorldPanels(); drawWorld();
+}
+function worldUndo() { if (!world.undo.length) return; world.data = JSON.parse(world.undo.pop()); world.sel = null; world.dirty = true; renderWorldPanels(); drawWorld(); }
+const r3 = v => Math.round(v * 1000) / 1000;
+
+async function openWorld(place) {
+  closeArt(); closeSound(); closeAdmin();
+  world.open = true; $("#world3d").classList.add("show"); $("#worldBtn").classList.add("primary");
+  await loadWorld(place || world.place || (doc.scenes.flatMap(s => s.items).find(i => i.t === "bg") || { name: meta.bgs[0] }).name);
+}
+function closeWorld() { world.open = false; $("#world3d").classList.remove("show"); $("#worldBtn").classList.remove("primary"); }
+async function loadWorld(place) {
+  if (world.dirty && place !== world.place && !confirm("This place has unsaved changes. Leave it without saving?")) { renderWorldPanels(); return; }
+  try {
+    const r = await api("GET", forStory("/api/world?place=" + encodeURIComponent(place)));
+    Object.assign(world, { place, data: normPlace(r.place), custom: r.custom, models: r.models, places: r.places, blank: normPlace(r.blank), engine: r.engine, folder: r.folder, dirty: false, undo: [], sel: null });
+    if (r.error) toast("This story's own version of the place could not be read; showing the game's. " + r.error, true);
+    // look at the middle of the floor from a little way off
+    const f = r.place.floor, span = Math.max(f[1][0] - f[0][0], f[1][1] - f[0][1]);
+    world.cam = { yaw: 0.6, pitch: 0.55, dist: Math.max(6, Math.min(60, span * 1.1)), target: [(f[0][0] + f[1][0]) / 2, r.place.spawn[1] + 1, (f[0][1] + f[1][1]) / 2] };
+  } catch (e) { toast(e.message, true); return; }
+  renderWorldPanels(); drawWorld();
+}
+async function saveWorld() {
+  if (locked) { toast("This story is locked. Unlock it under Manage to change its places.", true); return false; }
+  try {
+    const r = await api("PUT", forStory("/api/world?place=" + encodeURIComponent(world.place)), world.data);
+    world.data = normPlace(r.place); world.custom = true; world.dirty = false; const p = world.places.find(x => x.name === world.place); if (p) p.custom = true;
+    renderWorldPanels(); drawWorld(); toast("Place saved"); return true;
+  } catch (e) { toast("Could not save: " + e.message, true); return false; }
+}
+function uploadModel(file, then) {
+  if (!file) return;
+  if (file.size > 5.5 * 1024 * 1024) { toast("A model file can be up to about 5 MB here; copy larger ones into the story's world/models folder by hand.", true); return; }
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const name = file.name.replace(/[^A-Za-z0-9_.-]/g, "_");
+      const r = await api("POST", "/api/world/model", { story: storyId, name, data: String(reader.result).split(",")[1] || "" });
+      if (!world.models.includes(r.model)) world.models.push(r.model);
+      toast("Model added: " + r.model); then(r.model);
+    } catch (e) { toast(e.message, true); }
+  };
+  reader.readAsDataURL(file);
+}
+/** Three number fields for a point or a size. */
+function vec3Fields(arr, labels, step, onChange) {
+  return el("div", { class: "brow" }, labels.map((l, k) => [el("label", { text: l }), el("input", { type: "number", step, "data-axis": l, style: "width:68px;flex:1", value: r3(arr[k]), onchange: ev => onChange(k, num2(ev.target.value)) })]));
+}
+const num2 = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+function renderWorldPanels() {
+  const d = world.data; if (!d) return;
+  const left = $("#worldLeft"), right = $("#worldRight"), scroll = left.scrollTop; left.textContent = ""; right.textContent = "";
+  const addPart = (shape, extra) => worldChange(() => {
+    const t = world.cam.target, size = shape === "sphere" ? [1, 1, 1] : shape === "cylinder" ? [0.6, 1.2, 0.6] : [1, 1, 1];
+    d.parts.push(Object.assign({ shape, at: [r3(t[0]), r3(d.spawn[1] + size[1] / 2), r3(t[2])], rot: [0, 0, 0], size, color: "#b8b0a0", glow: 0, rough: 0.8, metal: 0, shadow: true, solid: true, file: "", name: "" }, extra || {}));
+    world.sel = { kind: "part", i: d.parts.length - 1 };
+  });
+  appendAll(left,
+    el("div", { class: "brow" }, el("select", { id: "worldPlace", style: "flex:1", onchange: ev => loadWorld(ev.target.value) }, world.places.map(p => el("option", { value: p.name, text: p.name + (p.custom ? "  (this story's own)" : ""), selected: p.name === world.place })))),
+    el("div", { class: "sub", style: "color:var(--dim);margin:6px 0", text: world.custom ? "This story has its own version of this place." : "This is the game's own build. Saving makes it this story's own; the game's is untouched." }),
+    !is3d(world.place) && el("div", { class: "pmsg warning", text: "The story shows this place as a painting. Set it to 3D on a Background block or under Scenes → This story to walk in it." }),
+    !world.engine && el("div", { class: "pmsg warning", style: "margin-top:6px", text: "This build of the game has no 3D engine to show places with: build it with --features world3d." }),
+    el("div", { class: "brow", style: "margin-top:8px" },
+      el("button", { id: "worldSave", class: "primary", text: "Save place", disabled: !world.dirty, onclick: saveWorld }),
+      el("button", { text: "Undo", disabled: !world.undo.length, onclick: worldUndo })),
+    el("div", { class: "sect", text: "Add" }),
+    el("div", { class: "brow" }, ["box", "cylinder", "sphere", "capsule"].map(sh => el("button", { "data-add-part": sh, text: "+ " + sh[0].toUpperCase() + sh.slice(1), onclick: () => addPart(sh) }))),
+    el("div", { class: "brow", style: "margin-top:4px" },
+      el("button", { "data-add-part": "lamp", text: "+ Lamp", onclick: () => worldChange(() => { const t = world.cam.target; d.lights.push({ kind: "point", at: [r3(t[0]), r3(d.spawn[1] + 2.4), r3(t[2])], color: "#ffd9a0", power: 300000, range: 30, shadows: false }); world.sel = { kind: "light", i: d.lights.length - 1 }; }) }),
+      el("button", { "data-add-part": "sun", text: "+ Sun", onclick: () => worldChange(() => { d.lights.push({ kind: "sun", at: [4, 9, 6], color: "#fff4e0", power: 9000, range: 0, shadows: true }); world.sel = { kind: "light", i: d.lights.length - 1 }; }) }),
+      el("button", { "data-add-part": "solid", title: "A patch of floor nobody can walk on", text: "+ No-go area", onclick: () => worldChange(() => { const t = world.cam.target; d.solids.push({ at: [r3(t[0]), r3(t[2])], half: [0.5, 0.5] }); world.sel = { kind: "solid", i: d.solids.length - 1 }; }) })),
+    el("div", { class: "brow", style: "margin-top:4px" },
+      world.models.length > 0 && el("select", { id: "worldModelSel", style: "flex:1", onchange: ev => { if (ev.target.value) addPart("model", { file: ev.target.value, color: "#ffffff", solid: false, name: ev.target.value.replace(/\.[^.]+$/, "") }); } }, el("option", { value: "", text: "+ Model from this story…" }), world.models.map(f => el("option", { value: f, text: f }))),
+      el("label", { class: "ghost", style: "cursor:pointer", title: "A .glb or .gltf file" }, "Upload a model…", el("input", { type: "file", id: "worldModelFile", accept: ".glb,.gltf", style: "display:none", onchange: ev => uploadModel(ev.target.files[0], f => addPart("model", { file: f, color: "#ffffff", solid: false, name: f.replace(/\.[^.]+$/, "") })) }))),
+    el("div", { class: "sect", text: "Start again from" }),
+    el("div", { class: "brow" },
+      el("button", { text: "An empty room", onclick: () => { if (confirm("Replace everything in this place with an empty room? (Undo brings it back until you leave.)")) worldChange(() => { world.data = JSON.parse(JSON.stringify(world.blank)); world.sel = null; }); } }),
+      world.custom && el("button", { text: "The game's own", onclick: async () => { if (!confirm("Go back to the game's own build of this place? This story's version is set aside in world/.removed.")) return; try { const r = await api("POST", "/api/world/reset", { story: storyId, place: world.place }); if (r.place) { world.data = normPlace(r.place); world.custom = false; world.dirty = false; world.undo = []; world.sel = null; const p = world.places.find(x => x.name === world.place); if (p) p.custom = false; renderWorldPanels(); drawWorld(); toast("Back to the game's own"); } else toast("The game has no build of this place.", true); } catch (e) { toast(e.message, true); } } })),
+    el("div", { class: "sect", text: `In this place (${d.parts.length} parts, ${d.lights.length} lights)` }),
+    el("input", { type: "text", id: "worldFilter", placeholder: "Filter by name, shape or colour…", style: "width:100%;margin-bottom:4px", value: world.listFilter, oninput: ev => { world.listFilter = ev.target.value; renderWorldList(); } }),
+    el("div", { id: "worldList" }));
+  left.scrollTop = scroll;
+  renderWorldList();
+  renderWorldProps();
+}
+function renderWorldList() {
+  const host = $("#worldList"), d = world.data; if (!host) return; host.textContent = "";
+  const q = world.listFilter.trim().toLowerCase(), row = (kind, i, text, col) => el("div", { class: "srow" + (world.sel && world.sel.kind === kind && world.sel.i === i ? " on" : ""), "data-world-row": kind + i, onclick: () => { world.sel = { kind, i }; const s = worldSelected(); if (s) world.cam.target = [s.at[0], s.at[1], s.at[2]]; renderWorldList(); renderWorldProps(); drawWorld(); } },
+    col && el("span", { style: `display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;background:${safeColor(col, "#888")}` }), text);
+  const rows = [row("spawn", 0, "Where you start"), ...["left", "centre", "right"].map((n, i) => row("anchor", i, "Cast: " + n)), row("floor", 0, "The floor you may walk on"),
+    ...d.lights.map((l, i) => row("light", i, l.kind === "sun" ? "Sun" : "Lamp", l.color)), ...d.solids.map((s, i) => row("solid", i, "No-go area"))];
+  let shown = 0, more = 0;
+  d.parts.forEach((p, i) => {
+    const text = (p.name || p.shape) + (p.shape === "model" ? " (" + p.file + ")" : "");
+    if (q && !(text + " " + p.shape + " " + p.color).toLowerCase().includes(q)) return;
+    // a long list is cut short: the filter, or a click in the view, finds the rest
+    if (shown >= 250 && !(world.sel && world.sel.kind === "part" && world.sel.i === i)) { more++; return; }
+    shown++; rows.push(row("part", i, text, p.color));
+  });
+  appendAll(host, rows, more > 0 && el("div", { class: "sub", style: "color:var(--dim);padding:6px", text: `… and ${more} more: filter the list, or click a part in the view.` }));
+}
+function renderWorldProps() {
+  const host = $("#worldRight"), d = world.data, s = world.sel; host.textContent = "";
+  const set = fn => worldChange(fn), color = (obj, key) => el("input", { type: "color", value: safeColor(obj[key], "#ffffff"), onchange: ev => set(() => obj[key] = ev.target.value) });
+  const slider = (obj, key, max) => el("input", { type: "range", min: 0, max, step: max / 100, value: obj[key], onchange: ev => set(() => obj[key] = +ev.target.value) });
+  const sect = t => el("div", { class: "sect", text: t });
+  if (s && s.kind === "part" && d.parts[s.i]) {
+    const p = d.parts[s.i];
+    appendAll(host, el("div", { class: "sect", style: "margin-top:0", text: "Part" }),
+      bindWorld(el("input", { type: "text", placeholder: "A name (for the list)", style: "width:100%" }), p, "name"),
+      el("div", { class: "brow", style: "margin-top:6px" }, el("label", { text: "Shape" }), el("select", { id: "partShape", onchange: ev => set(() => { p.shape = ev.target.value; if (p.shape !== "model") p.file = ""; else p.file = world.models[0] || ""; }) }, opts(["box", "cylinder", "sphere", "capsule", ...(world.models.length ? ["model"] : [])], p.shape))),
+      p.shape === "model" && el("div", { class: "brow" }, el("label", { text: "File" }), el("select", { onchange: ev => set(() => p.file = ev.target.value) }, opts(world.models, p.file))),
+      sect("Where"), vec3Fields(p.at, ["x", "y", "z"], 0.1, (k, v) => set(() => p.at[k] = v)),
+      sect(p.shape === "model" ? "Scale" : "Size (width, height, depth)"), vec3Fields(p.size, ["w", "h", "d"], 0.1, (k, v) => set(() => p.size[k] = Math.max(0.005, v))),
+      sect("Turned (degrees about x, y, z)"), vec3Fields(p.rot, ["rx", "ry", "rz"], 5, (k, v) => set(() => p.rot[k] = v)),
+      p.shape !== "model" && [sect("Surface"),
+        el("div", { class: "brow" }, el("label", { text: "Colour" }), color(p, "color")),
+        el("div", { class: "brow" }, el("label", { text: "Shines by itself" }), slider(p, "glow", 10)),
+        el("div", { class: "brow" }, el("label", { text: "Rough" }), slider(p, "rough", 1)),
+        el("div", { class: "brow" }, el("label", { text: "Metal" }), slider(p, "metal", 1))],
+      el("label", { style: "display:flex;gap:6px;margin-top:8px" }, el("input", { type: "checkbox", id: "partSolid", checked: p.solid, onchange: ev => set(() => p.solid = ev.target.checked) }), "Solid: you walk around it"),
+      el("label", { style: "display:flex;gap:6px;margin-top:4px" }, el("input", { type: "checkbox", checked: p.shadow, onchange: ev => set(() => p.shadow = ev.target.checked) }), "Casts a shadow"),
+      el("div", { class: "brow", style: "margin-top:10px" },
+        el("button", { id: "partDup", text: "Duplicate", onclick: () => set(() => { const c = JSON.parse(JSON.stringify(p)); c.at[0] = r3(c.at[0] + Math.max(0.3, p.size[0])); d.parts.push(c); world.sel = { kind: "part", i: d.parts.length - 1 }; }) }),
+        el("button", { id: "partDel", class: "danger", text: "Delete", onclick: () => set(() => { d.parts.splice(s.i, 1); world.sel = null; }) })));
+  } else if (s && s.kind === "light" && d.lights[s.i]) {
+    const l = d.lights[s.i];
+    appendAll(host, el("div", { class: "sect", style: "margin-top:0", text: l.kind === "sun" ? "Sun (light from far away)" : "Lamp" }),
+      el("div", { class: "brow" }, el("label", { text: "Kind" }), el("select", { onchange: ev => set(() => { l.kind = ev.target.value; l.power = l.kind === "sun" ? 9000 : 300000; }) }, opts([{ value: "point", label: "Lamp" }, { value: "sun", label: "Sun" }], l.kind))),
+      sect(l.kind === "sun" ? "Shines from (towards the middle)" : "Where"), vec3Fields(l.at, ["x", "y", "z"], 0.1, (k, v) => set(() => l.at[k] = v)),
+      el("div", { class: "brow", style: "margin-top:6px" }, el("label", { text: "Colour" }), color(l, "color")),
+      el("div", { class: "brow" }, el("label", { text: l.kind === "sun" ? "Brightness (lux)" : "Brightness (lumens)" }), el("input", { type: "number", min: 0, step: l.kind === "sun" ? 500 : 20000, value: l.power, onchange: ev => set(() => l.power = Math.max(0, num2(ev.target.value))) })),
+      el("label", { style: "display:flex;gap:6px;margin-top:8px" }, el("input", { type: "checkbox", checked: l.shadows, onchange: ev => set(() => l.shadows = ev.target.checked) }), "Casts shadows (costly: one or two per place)"),
+      el("button", { class: "danger", style: "margin-top:10px", text: "Delete", onclick: () => set(() => { d.lights.splice(s.i, 1); world.sel = null; }) }));
+  } else if (s && (s.kind === "anchor" || s.kind === "spawn")) {
+    const at = s.kind === "anchor" ? d.anchors[s.i] : d.spawn;
+    appendAll(host, el("div", { class: "sect", style: "margin-top:0", text: s.kind === "spawn" ? "Where you start" : "Where the cast stands: " + ["left", "centre", "right"][s.i] }),
+      el("div", { class: "sub", style: "color:var(--dim);margin-bottom:6px", text: s.kind === "spawn" ? "Your feet, as the place comes into view." : "Their feet. Whoever the story shows on this side stands here." }),
+      vec3Fields(at, ["x", "y", "z"], 0.1, (k, v) => set(() => at[k] = v)),
+      s.kind === "spawn" && el("div", { class: "brow", style: "margin-top:6px" }, el("label", { text: "Facing (degrees; 0 looks along -z)" }), el("input", { type: "number", step: 5, value: d.yaw, onchange: ev => set(() => d.yaw = num2(ev.target.value)) })));
+  } else if (s && s.kind === "solid" && d.solids[s.i]) {
+    const so = d.solids[s.i];
+    appendAll(host, el("div", { class: "sect", style: "margin-top:0", text: "No-go area" }),
+      el("div", { class: "brow" }, el("label", { text: "middle x" }), el("input", { type: "number", step: 0.1, value: so.at[0], onchange: ev => set(() => so.at[0] = num2(ev.target.value)) }), el("label", { text: "z" }), el("input", { type: "number", step: 0.1, value: so.at[1], onchange: ev => set(() => so.at[1] = num2(ev.target.value)) })),
+      el("div", { class: "brow" }, el("label", { text: "width" }), el("input", { type: "number", step: 0.1, min: 0.02, value: r3(so.half[0] * 2), onchange: ev => set(() => so.half[0] = Math.max(0.01, num2(ev.target.value) / 2)) }), el("label", { text: "depth" }), el("input", { type: "number", step: 0.1, min: 0.02, value: r3(so.half[1] * 2), onchange: ev => set(() => so.half[1] = Math.max(0.01, num2(ev.target.value) / 2)) })),
+      el("button", { class: "danger", style: "margin-top:10px", text: "Delete", onclick: () => set(() => { d.solids.splice(s.i, 1); world.sel = null; }) }));
+  } else {
+    // nothing selected: the place as a whole
+    const f = d.floor;
+    appendAll(host, el("div", { class: "sect", style: "margin-top:0", text: "The place" }),
+      el("div", { class: "sub", style: "color:var(--dim)", text: "Click something to select it; drag it to move it across the floor (Shift: up and down). Drag empty space to look around, scroll to zoom, right-drag to slide the view." }),
+      sect("The floor you may walk on"),
+      el("div", { class: "brow" }, el("label", { text: "x from" }), el("input", { type: "number", step: 0.5, "data-floor": "x0", value: f[0][0], onchange: ev => set(() => f[0][0] = num2(ev.target.value)) }), el("label", { text: "to" }), el("input", { type: "number", step: 0.5, value: f[1][0], onchange: ev => set(() => f[1][0] = num2(ev.target.value)) })),
+      el("div", { class: "brow" }, el("label", { text: "z from" }), el("input", { type: "number", step: 0.5, value: f[0][1], onchange: ev => set(() => f[0][1] = num2(ev.target.value)) }), el("label", { text: "to" }), el("input", { type: "number", step: 0.5, value: f[1][1], onchange: ev => set(() => f[1][1] = num2(ev.target.value)) })),
+      el("label", { style: "display:flex;gap:6px;margin-top:8px" }, el("input", { type: "checkbox", checked: d.floating, onchange: ev => set(() => d.floating = ev.target.checked) }), "No gravity here: people drift"),
+      sect("Air and light"),
+      el("div", { class: "brow" }, el("label", { text: "Sky and distance" }), color(d.air, "sky")),
+      el("div", { class: "brow" }, el("label", { text: "Light from all round" }), color(d.air, "ambient")),
+      el("div", { class: "brow" }, el("label", { text: "How much of it" }), el("input", { type: "number", min: 0, step: 50, value: d.air.brightness, onchange: ev => set(() => d.air.brightness = Math.max(0, num2(ev.target.value))) })),
+      el("div", { class: "brow" }, el("label", { text: "Distance fades from" }), el("input", { type: "number", min: 0, step: 5, value: d.air.fog[0], onchange: ev => set(() => d.air.fog[0] = Math.max(0, num2(ev.target.value))) }), el("label", { text: "to" }), el("input", { type: "number", min: 1, step: 5, value: d.air.fog[1], onchange: ev => set(() => d.air.fog[1] = Math.max(d.air.fog[0] + 1, num2(ev.target.value))) })),
+      el("div", { style: "margin-top:14px;color:var(--dim);font-size:12px", text: "Green outline: the floor. Red outlines: no-go areas. Green post: where you start. Red, yellow and blue posts: the cast's left, centre and right. The view here is a plain sketch; the game lights it properly." }));
+  }
+}
+/** A text field of the world editor: changes as you type, one undo step per visit. */
+function bindWorld(input, obj, key) {
+  input.value = obj[key] || ""; let noted = false;
+  input.addEventListener("input", () => { if (!noted) { world.undo.push(JSON.stringify(world.data)); noted = true; } obj[key] = input.value; world.dirty = true; $("#worldSave").disabled = false; });
+  input.addEventListener("blur", () => { if (noted) renderWorldList(); noted = false; });
+  return input;
+}
+function wireWorld() {
+  const c = $("#worldCanvas");
+  c.addEventListener("contextmenu", ev => ev.preventDefault());
+  c.addEventListener("mousedown", ev => {
+    if (!world.data) return;
+    const hit = ev.button === 0 && !ev.altKey ? worldPick(ev) : null;
+    if (hit) {
+      const changed = !world.sel || world.sel.kind !== hit.kind || world.sel.i !== hit.i;
+      world.sel = hit; if (changed) { renderWorldList(); renderWorldProps(); }
+      const s = worldSelected();
+      // dragging moves it across the floor at its own height (Shift: straight up and down)
+      if (s) { const ray = worldRay(ev), t = Math.abs(ray.d[1]) > 1e-4 ? (s.at[1] - ray.o[1]) / ray.d[1] : 0, p = add3(ray.o, mul3(ray.d, t)); world.drag = { kind: "move", grab: [p[0] - s.at[0], p[2] - s.at[2]], y: ev.clientY, y0: s.at[1], before: JSON.stringify(world.data), moved: false }; }
+    } else {
+      if (ev.button === 0 && !ev.altKey && world.sel) { world.sel = null; renderWorldList(); renderWorldProps(); }
+      world.drag = { kind: ev.button === 2 || ev.button === 1 || ev.altKey ? "pan" : "orbit", x: ev.clientX, y: ev.clientY };
+    }
+    drawWorld(); ev.preventDefault();
+  });
+  window.addEventListener("mousemove", ev => {
+    const g = world.drag; if (!g || !world.open) return;
+    if (g.kind === "move") {
+      const s = worldSelected(); if (!s) return;
+      if (ev.shiftKey) s.at[1] = r3(g.y0 + (g.y - ev.clientY) * world.cam.dist * 0.0022);
+      else { const ray = worldRay(ev); if (Math.abs(ray.d[1]) > 1e-4) { const t = (s.at[1] - ray.o[1]) / ray.d[1]; if (t > 0 && t < 4000) { const p = add3(ray.o, mul3(ray.d, t)); s.at[0] = r3(p[0] - g.grab[0]); s.at[2] = r3(p[2] - g.grab[1]); } } }
+      g.moved = true;
+    } else if (g.kind === "orbit") {
+      world.cam.yaw -= (ev.clientX - g.x) * 0.008; world.cam.pitch = Math.max(-0.2, Math.min(1.5, world.cam.pitch + (ev.clientY - g.y) * 0.008)); g.x = ev.clientX; g.y = ev.clientY;
+    } else {
+      const eye = camEye(), fwd = norm3(sub3(world.cam.target, eye)), right = norm3(cross3(fwd, [0, 1, 0])), flat = norm3([fwd[0], 0, fwd[2]]), k = world.cam.dist * 0.0018;
+      world.cam.target = add3(world.cam.target, add3(mul3(right, -(ev.clientX - g.x) * k), mul3(flat, (ev.clientY - g.y) * k))); g.x = ev.clientX; g.y = ev.clientY;
+    }
+    drawWorld();
+  });
+  window.addEventListener("mouseup", () => {
+    const g = world.drag; world.drag = null;
+    if (g && g.kind === "move" && g.moved) { world.undo.push(g.before); if (world.undo.length > 60) world.undo.shift(); world.dirty = true; renderWorldPanels(); drawWorld(); }
+  });
+  c.addEventListener("wheel", ev => { world.cam.dist = Math.max(1.5, Math.min(3000, world.cam.dist * Math.exp(ev.deltaY * 0.0012))); drawWorld(); ev.preventDefault(); }, { passive: false });
+  window.addEventListener("resize", () => { if (world.open) drawWorld(); });
+}
+
 // ---------------------------------------------------------- manage view
 const admin = { open: false, data: null, history: [] };
 const fmtBytes = n => n >= 1 << 30 ? (n / (1 << 30)).toFixed(1) + " GB" : n >= 1 << 20 ? (n / (1 << 20)).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
 const fmtTime = secs => secs ? new Date(secs * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
 async function openAdmin() {
-  closeArt(); closeSound();
+  closeArt(); closeSound(); closeWorld();
   admin.open = true; $("#admin").classList.add("show"); $("#adminBtn").classList.add("primary");
   await refreshAdmin();
 }
-function closeAdmin() { admin.open = false; $("#admin").classList.remove("show"); $("#adminBtn").classList.remove("primary"); }
+function closeAdmin() { if (world.open) closeWorld(); admin.open = false; $("#admin").classList.remove("show"); $("#adminBtn").classList.remove("primary"); }
 async function refreshAdmin() {
   try {
     const [data, hist] = await Promise.all([api("GET", "/api/admin"), api("GET", forStory("/api/history"))]);
@@ -2269,6 +2656,8 @@ function wire() {
   $("#artBtn").onclick = () => art.open ? closeArt() : openArt();
   $("#soundBtn").onclick = () => sound.open ? closeSound() : openSound();
   $("#adminBtn").onclick = () => admin.open ? closeAdmin() : openAdmin();
+  $("#worldBtn").onclick = () => world.open ? closeWorld() : openWorld();
+  wireWorld();
   $("#findBtn").onclick = () => $("#find").classList.contains("show") ? closeFind() : openFind();
   window.addEventListener("pagehide", writeDraft);
   $("#sound").addEventListener("focusout", () => setTimeout(() => { if (sound.stale && sound.open && !soundTyping()) refreshSound(); }, 50));
@@ -2281,12 +2670,15 @@ function wire() {
   $("#helpBtn").onclick = () => $("#help").classList.add("show"); $("#helpClose").onclick = () => $("#help").classList.remove("show");
   window.addEventListener("keydown", ev => {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
-    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); if (dirty) save(); }
+    if (world.open && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); if (world.dirty) saveWorld(); }
+    else if (world.open && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z" && !typing) { ev.preventDefault(); worldUndo(); }
+    else if (world.open && (ev.key === "Delete" || ev.key === "Backspace") && !typing && world.sel && world.sel.kind === "part") { ev.preventDefault(); worldChange(() => { world.data.parts.splice(world.sel.i, 1); world.sel = null; }); }
+    else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); if (dirty) save(); }
     else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z" && !typing) { ev.preventDefault(); ev.shiftKey ? redo() : undo(); }
     else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "f") { ev.preventDefault(); openFind(); }
     else if (ev.key === "Escape") { closeFind(); $("#probs").classList.remove("show"); $("#help").classList.remove("show"); $("#compare").classList.remove("show"); }
   });
-  window.addEventListener("beforeunload", ev => { if (dirty) { ev.preventDefault(); ev.returnValue = ""; } });
+  window.addEventListener("beforeunload", ev => { if (dirty || world.dirty) { ev.preventDefault(); ev.returnValue = ""; } });
   window.addEventListener("resize", drawEdges);
 }
 boot();

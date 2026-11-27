@@ -15,7 +15,8 @@ ureq = { version = "2", default-features = false, features = ["json"] }
 bevy = { version = "0.16", optional = true, default-features = false, features = [
     "std", "async_executor", "multi_threaded", "bevy_log",
     "bevy_asset", "bevy_color", "bevy_window", "bevy_winit", "x11",
-    "bevy_render", "bevy_core_pipeline", "bevy_pbr", "bevy_sprite", "tonemapping_luts", "png",
+    "bevy_render", "bevy_core_pipeline", "bevy_pbr", "bevy_sprite", "tonemapping_luts", "png", "jpeg",
+    "bevy_scene", "bevy_gltf",
 ] }
 
 bevy_mod_openxr = { version = "0.3", optional = true }

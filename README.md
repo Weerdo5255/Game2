@@ -344,9 +344,9 @@ cargo run --release --features world3d
 Everything else is as in the table under Controls. A build without the
 feature plays the same stories and shows the paintings instead, saying so
 once; `--2d` asks for that on purpose. All seven places the game paints
-have a 3D build (`src/world3d.rs`): each is put together in code from simple
-shapes, lights and fog, in keeping with the rest of the game having no art
-files. Enhanced portraits from ComfyUI are used for the cast in 3D too.
+have a 3D build, each a description in `assets/places/` of simple shapes,
+lights and air; a story can replace any of them with its own (next
+section). Enhanced portraits from ComfyUI are used for cut-outs in 3D too.
 
 To check a build on a machine with no screen or graphics card:
 
@@ -358,6 +358,59 @@ takes a picture in each place (under `xvfb-run` with Mesa's software Vulkan,
 `mesa-vulkan-drivers`; that is how the pictures above were made). It has
 only been run that way: on a software renderer, not yet on a real graphics
 card.
+
+## 3D environments and 3D characters
+
+**Places are data.** A 3D place is a JSON file: its parts (boxes, cylinders,
+spheres, capsules, or glTF models), its lights, its air (sky, ambient light,
+fog), where you start, where the cast's left, centre and right stand, the
+floor you may walk on and what is in the way. The game's own seven are in
+`assets/places/`. A story keeps its own versions in a `world` folder beside
+its story file (`world/<place>.json`), with model files in `world/models/`;
+they travel with an exported bundle.
+
+**The World view** in the story editor is a 3D editor for them:
+
+![The 3D environment editor on one of the game's own places](docs/editor_world.png)
+
+- Pick a place; it opens as this story's version, or the game's own.
+- Add boxes, cylinders, spheres, capsules, lamps, a sun, no-go areas, or a
+  model file (`.glb` / `.gltf`, uploaded or already in the story).
+- Click to select; drag to move across the floor (Shift: up and down); the
+  panel on the right sets position, size, turn, colour, glow, roughness,
+  metal, whether it is solid and whether it casts a shadow.
+- The green post is where you start, the red, yellow and blue posts where
+  the cast stand; the green outline is the walkable floor.
+- Drag empty space to look around, scroll to zoom, right-drag to slide.
+  Ctrl+Z undoes, Ctrl+S saves, Delete removes the selected part.
+- "An empty room" starts from nothing; "The game's own" goes back to the
+  built-in place (this story's version is set aside, not deleted).
+
+The view there is a plain sketch (flat light, model files shown as
+placeholder boxes); the game lights the same description with shadows, lamps
+and fog:
+
+| | |
+|---|---|
+| ![Building a room in the editor](docs/editor_world_new.png) | ![A story's own place in the game, with a model file and a 3D figure](docs/world_own.png) |
+
+**Characters in 3D** can be, each to their own (Cast > "In a 3D place", or a
+`model` line in the story file):
+
+| | |
+|---|---|
+| a cut-out of their portrait | the default; turns to face you |
+| `model p \| figure` | a 3D figure built from their look: skin, hair and coat colours, with brows, eyes and mouth that follow their expression |
+| `model v \| varrow.glb \| 1.2` | a glTF model from `world/models/`, shown at 1.2 times its made size |
+
+![3D figures standing in for the cast](docs/world_figures.png)
+
+Model support is limited to what the engine's glTF loader shows as a still
+scene: meshes and materials (with PNG or JPEG textures). Animations in a
+file are not played, and a model keeps one face whatever the character's
+expression. It has been tried with a small generated model
+(`node tools/make_glb.js out.glb`), not with a rigged character from a
+modelling package.
 
 ## In a VR headset
 
@@ -613,6 +666,10 @@ cargo build && node tools/editor_schedule_e2e.js
 
 ```bash
 cargo build && node tools/editor_holdings_e2e.js
+```
+
+```bash
+cargo build && node tools/editor_world3d_e2e.js
 ```
 
 The 3D world has its own unit tests (`cargo test --features world3d`) and
