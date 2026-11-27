@@ -183,8 +183,10 @@ class Workflows(Base):
         seen = set()
         for name in sorted(os.listdir(folder)):
             template = enhance.load_json(os.path.join(folder, name), "workflow")
-            self.assertIn(template["kind"], ("background", "sprite", "expression"), name)
+            self.assertIn(template["kind"], ("background", "sprite", "expression", "voice", "music"), name)
             self.assertTrue(template["title"])
+            if template["kind"] in ("voice", "music"):
+                continue  # sound is generated from the story editor, not by this runner
             cfg = dict(self.cfg, kinds={k: dict(v, workflow=name) for k, v in self.cfg["kinds"].items()})
             for a in self.assets:
                 if enhance.asset_kind(a) != template["kind"]:

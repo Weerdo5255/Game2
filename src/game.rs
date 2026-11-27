@@ -1,6 +1,7 @@
 //! Presentation layer: title screen, dialogue box, choices, HUD, save/load.
 
 use crate::art;
+use crate::audio::Audio;
 use crate::gfx::*;
 use crate::script::{parse_color, Cmd, Script, Vm, NARRATOR};
 use std::collections::HashMap;
@@ -21,6 +22,7 @@ pub struct Input {
     pub skip: bool,
     pub save: bool,
     pub load: bool,
+    pub mute: bool,
     pub back: bool,
     pub click: bool,
     pub mouse: (i32, i32),
@@ -59,6 +61,7 @@ pub struct Game {
     bg_cache: Option<(String, Canvas, bool)>,
     /// Directory of enhanced art that overrides the procedural paintings.
     art_dir: Option<PathBuf>,
+    pub audio: Audio,
     cur_pc: usize,
     pub quit: bool,
 }
@@ -104,7 +107,7 @@ fn title_item_y(i: usize) -> i32 {
 }
 
 impl Game {
-    pub fn new(script: Script, art_dir: Option<PathBuf>) -> Game {
+    pub fn new(script: Script, art_dir: Option<PathBuf>, audio: Audio) -> Game {
         Game {
             vm: Vm::new(&script),
             script,
@@ -119,6 +122,7 @@ impl Game {
             sprites: HashMap::new(),
             bg_cache: None,
             art_dir,
+            audio,
             cur_pc: 0,
             quit: false,
         }
@@ -133,6 +137,8 @@ impl Game {
         self.slots = [None, None, None];
         self.fade = None;
         self.toasts.clear();
+        self.audio.stop_voice();
+        self.audio.play_music("");
     }
 
     pub fn new_game(&mut self) {
@@ -214,8 +220,10 @@ impl Game {
                 }
                 Cmd::Hide(None) => self.slots = [None, None, None],
                 Cmd::Hide(Some(s)) => self.slots[s] = None,
+                Cmd::Music(track) => self.audio.play_music(&track),
                 Cmd::Say { who, text } => {
                     self.cur_pc = i;
+                    self.audio.say(&who, &text);
                     let lines = wrap(&text, COLS);
                     let pages = lines.chunks(LINES).map(|c| c.to_vec()).collect();
                     self.mode = Mode::Say { who, pages, page: 0, shown: 0.0 };
@@ -257,7 +265,7 @@ impl Game {
         if !matches!(self.mode, Mode::Say { .. } | Mode::Choice { .. }) {
             return;
         }
-        let mut s = format!("pc={}\nbg={}\n", self.cur_pc, self.bg);
+        let mut s = format!("pc={}\nbg={}\nmusic={}\n", self.cur_pc, self.bg, self.audio.current_music());
         for (i, slot) in self.slots.iter().enumerate() {
             if let Some(sl) = slot {
                 s += &format!("slot{}={},{}\n", i, sl.who, sl.expr);
@@ -280,6 +288,7 @@ impl Game {
         };
         let mut vm = Vm::new(&self.script);
         let mut bg = String::new();
+        let mut music = String::new();
         let mut slots: [Option<Slot>; 3] = [None, None, None];
         let mut pc = None;
         for line in text.lines() {
@@ -288,6 +297,8 @@ impl Game {
                 pc = v.parse::<usize>().ok();
             } else if k == "bg" {
                 bg = v.to_string();
+            } else if k == "music" {
+                music = v.to_string();
             } else if let Some(name) = k.strip_prefix("var.") {
                 vm.vars.insert(name.to_string(), v.parse().unwrap_or(0));
             } else if let Some(i) = k.strip_prefix("slot").and_then(|i| i.parse::<usize>().ok()) {
@@ -303,6 +314,7 @@ impl Game {
                 self.vm = vm;
                 self.bg = bg;
                 self.slots = slots;
+                self.audio.play_music(&music);
                 self.run();
                 self.note = Some(("Game loaded".into(), 2.5));
             }
@@ -326,6 +338,10 @@ impl Game {
             s.appear = (s.appear + dt * 4.0).min(1.0);
         }
 
+        if inp.mute && self.audio.available() {
+            self.audio.toggle_mute();
+            self.note = Some((if self.audio.muted { "Sound off".into() } else { "Sound on".into() }, 1.5));
+        }
         if inp.load {
             self.load();
             return;
@@ -509,7 +525,7 @@ impl Game {
                 }
                 c.rect_blend(0, 556, W, 92, rgba(8, 8, 28, 150));
                 c.text_c(W / 2, 572, "Enter / Space / Click: advance    Arrows: choose", rgb(200, 210, 255), 2);
-                c.text_c(W / 2, 604, "Ctrl: skip   F5: save   F9: load   Esc: title", rgb(200, 210, 255), 2);
+                c.text_c(W / 2, 604, "Ctrl: skip   F5: save   F9: load   M: sound   Esc: title", rgb(200, 210, 255), 2);
             }
             Mode::Card { title, sub, t } => {
                 c.clear(rgb(8, 8, 24));

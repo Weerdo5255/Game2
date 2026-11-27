@@ -7,6 +7,7 @@
 //! from its own page, so other web sites cannot reach it through a browser.
 
 use crate::art;
+use crate::audio;
 use crate::comfy::{self, Jobs, Overrides};
 use crate::gfx::Canvas;
 use crate::script::{valid_id, CharDef, Doc, Item, Problem, Scene, VarDef, OPS, SLOTS};
@@ -147,6 +148,43 @@ impl Library {
         }
         std::fs::rename(self.dir.join(id), &target).map_err(|e| format!("could not move the story: {}", e))
     }
+}
+
+/// Move a file into a `.removed` folder beside it, under a name not yet taken.
+fn set_aside(file: &Path) -> bool {
+    let Some(dir) = file.parent() else { return false };
+    let bin = dir.join(".removed");
+    let (stem, ext) = (file.file_stem().unwrap_or_default().to_string_lossy().to_string(), file.extension().unwrap_or_default().to_string_lossy().to_string());
+    let mut target = bin.join(format!("{}.{}", stem, ext));
+    let mut n = 1;
+    while target.exists() {
+        n += 1;
+        target = bin.join(format!("{}-{}.{}", stem, n, ext));
+    }
+    std::fs::create_dir_all(&bin).and_then(|_| std::fs::rename(file, &target)).is_ok()
+}
+
+fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(text.len() * 3 / 4);
+    let (mut acc, mut bits) = (0u32, 0u32);
+    for c in text.bytes().filter(|c| !c.is_ascii_whitespace() && *c != b'=') {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            _ => return None,
+        };
+        acc = (acc << 6) | v as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
 }
 
 fn same_file(a: &Path, b: &Path) -> bool {
@@ -351,7 +389,39 @@ impl State {
     fn overrides(&self, story: &Path) -> Overrides {
         let prefs = self.prefs(story);
         let strings = |v: &Value| -> BTreeMap<String, String> { v.as_object().into_iter().flatten().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))).collect() };
-        Overrides { prompts: strings(&prefs["prompts"]), workflows: strings(&prefs["workflows"]), ..Default::default() }
+        let voices = serde_json::from_value(prefs["voices"].clone()).unwrap_or_default();
+        Overrides { prompts: strings(&prefs["prompts"]), workflows: strings(&prefs["workflows"]), voices, ..Default::default() }
+    }
+
+    /// Everything the Sound view shows for a story: who speaks and how much
+    /// of it is recorded, and the music tracks.
+    fn sound_overview(&self, story: &Path) -> Result<Value, String> {
+        let (doc, _) = self.load(story)?;
+        let dir = audio::audio_dir(story);
+        let assets = comfy::audio_assets(&doc);
+        let file_of = |stem: &str| audio::find(&dir, stem).and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_string()));
+        let mut speakers: Vec<Value> = Vec::new();
+        let ids = std::iter::once(crate::script::NARRATOR.to_string()).chain(doc.characters.iter().map(|c| c.id.clone()));
+        for id in ids {
+            let lines: Vec<&comfy::Asset> = assets.iter().filter(|a| a.kind == "voice" && a.who == id).collect();
+            if lines.is_empty() {
+                continue;
+            }
+            let ch = doc.characters.iter().find(|c| c.id == id);
+            speakers.push(json!({
+                "id": id, "name": lines[0].name, "color": ch.map_or("#d6deff", |c| c.color.as_str()),
+                "lines": lines.len(), "voiced": lines.iter().filter(|a| file_of(&a.id).is_some()).count(),
+            }));
+        }
+        let tracks: Vec<Value> = doc.tracks.iter().map(|t| json!({ "id": t.id, "asset": audio::music_stem(&t.id), "file": file_of(&audio::music_stem(&t.id)) })).collect();
+        let cfg = self.jobs.suite.config()?;
+        let workflows: Vec<comfy::WorkflowInfo> = self.jobs.suite.workflows().into_iter().filter(|w| w.kind == "voice" || w.kind == "music").collect();
+        Ok(json!({
+            "speakers": speakers, "tracks": tracks, "workflows": workflows, "prefs": self.prefs(story),
+            "defaults": { "voice": cfg["kinds"]["voice"]["workflow"], "music": cfg["kinds"]["music"]["workflow"] },
+            "api_key": std::env::var("COMFY_ORG_API_KEY").map_or(false, |k| !k.trim().is_empty()),
+            "folder": dir.display().to_string(), "playback": cfg!(feature = "audio"),
+        }))
     }
 
     /// Everything the Art view shows for a story.
@@ -522,8 +592,14 @@ impl State {
                 answer(stream, saved.map(|_| json!({ "ok": true })))
             }
             ("PUT", "/api/art/prefs") => {
-                // the story's own prompts and preferred workflows, kept beside it
-                let clean = json!({ "prompts": body["prompts"].as_object().cloned().unwrap_or_default(), "workflows": body["workflows"].as_object().cloned().unwrap_or_default() });
+                // the story's own prompts, preferred workflows and voices, kept beside it
+                let voices: BTreeMap<String, comfy::Voice> = serde_json::from_value(body["voices"].clone()).unwrap_or_default();
+                let voices: BTreeMap<String, comfy::Voice> = voices.into_iter().filter(|(id, _)| valid_id(id)).collect();
+                // a page that does not send a section leaves it as it was
+                let old = self.prefs(&story);
+                let section = |key: &str| body[key].as_object().cloned().or_else(|| old[key].as_object().cloned()).unwrap_or_default();
+                let voices = if body["voices"].is_object() { json!(voices) } else { old["voices"].clone() };
+                let clean = json!({ "prompts": section("prompts"), "workflows": section("workflows"), "voices": if voices.is_object() { voices } else { json!({}) } });
                 let text = serde_json::to_string_pretty(&clean).unwrap_or_default() + "\n";
                 answer(stream, std::fs::write(story.with_file_name("art.json"), text).map(|_| json!({ "ok": true })).map_err(|e| e.to_string()))
             }
@@ -549,6 +625,12 @@ impl State {
                 let dir = comfy::enhanced_dir(&story);
                 let mut moved = 0;
                 for id in ids(&body["assets"]).iter().filter(|id| valid_id(id)) {
+                    if id.starts_with("voice_") || id.starts_with("music_") {
+                        if let Some(file) = audio::find(&audio::audio_dir(&story), id) {
+                            moved += set_aside(&file) as usize;
+                        }
+                        continue;
+                    }
                     let file = dir.join(format!("{}.png", id));
                     // never on top of an image set aside earlier
                     let mut target = dir.join(".removed").join(format!("{}.png", id));
@@ -563,6 +645,110 @@ impl State {
                 }
                 self.jobs.version.fetch_add(1, Ordering::Relaxed);
                 respond_json(stream, "200 OK", &json!({ "reverted": moved }))
+            }
+            // ---- sound
+            ("GET", "/api/sound") => answer(stream, self.sound_overview(&story)),
+            ("GET", "/api/sound/lines") => {
+                // every distinct line one speaker says, and whether it is recorded
+                let who = q.get("who").cloned().unwrap_or_default();
+                let listed = self.load(&story).map(|(doc, _)| {
+                    let dir = audio::audio_dir(&story);
+                    let mut scene_of: HashMap<String, String> = HashMap::new();
+                    for sc in &doc.scenes {
+                        for it in &sc.items {
+                            if let Item::Say { who: w, text } = it {
+                                scene_of.entry(audio::voice_stem(w, text)).or_insert_with(|| sc.label.clone());
+                            }
+                        }
+                    }
+                    let lines: Vec<Value> = comfy::audio_assets(&doc)
+                        .iter()
+                        .filter(|a| a.kind == "voice" && a.who == who)
+                        .map(|a| json!({ "id": a.id, "text": a.text, "scene": scene_of.get(&a.id), "file": audio::find(&dir, &a.id).and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_string())) }))
+                        .collect();
+                    json!({ "lines": lines })
+                });
+                answer(stream, listed)
+            }
+            ("GET", "/api/sound/options") => {
+                // the stock voices a workflow can use, read from the ComfyUI server itself
+                let file = q.get("workflow").cloned().unwrap_or_default();
+                let found = self.jobs.suite.workflows().into_iter().find(|w| w.file == file).and_then(|w| w.voice_options);
+                let reply = match found {
+                    None => json!({ "options": [] }),
+                    Some((node, input)) => {
+                        let cfg = self.jobs.suite.config().unwrap_or(Value::Null);
+                        let client = comfy::Client::new(cfg["server"].as_str().unwrap_or("http://127.0.0.1:8188"), Duration::from_secs(8));
+                        match client.options(&node, &input) {
+                            Ok(options) => json!({ "options": options }),
+                            Err(e) => json!({ "options": [], "error": e }),
+                        }
+                    }
+                };
+                respond_json(stream, "200 OK", &reply)
+            }
+            ("POST", "/api/sound/sample") => {
+                // a recording of a speaker to clone the voice from, sent as base64
+                let who = body["who"].as_str().unwrap_or("").to_string();
+                let ext = body["name"].as_str().unwrap_or("").rsplit('.').next().unwrap_or("").to_lowercase();
+                let saved = (|| {
+                    if !valid_id(&who) {
+                        return Err("unknown speaker".to_string());
+                    }
+                    if !["wav", "mp3", "flac", "ogg", "m4a"].contains(&ext.as_str()) {
+                        return Err("a voice sample must be a WAV, MP3, FLAC, OGG or M4A file".to_string());
+                    }
+                    let bytes = base64_decode(body["data"].as_str().unwrap_or("")).filter(|b| b.len() > 64).ok_or("the sample did not arrive intact")?;
+                    let dir = audio::audio_dir(&story).join("samples");
+                    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                    for old in ["wav", "mp3", "flac", "ogg", "m4a"] {
+                        let _ = std::fs::remove_file(dir.join(format!("{}.{}", who, old)));
+                    }
+                    let name = format!("{}.{}", who, ext);
+                    std::fs::write(dir.join(&name), bytes).map_err(|e| e.to_string())?;
+                    Ok(json!({ "sample": name }))
+                })();
+                answer(stream, saved)
+            }
+            ("POST", "/api/sound/prune") => {
+                // recordings of lines that have since been reworded or cut
+                let pruned = self.load(&story).map(|(doc, _)| {
+                    let wanted: HashSet<String> = comfy::audio_assets(&doc).into_iter().map(|a| a.id).collect();
+                    let mut moved = 0;
+                    for entry in std::fs::read_dir(audio::audio_dir(&story)).into_iter().flatten().filter_map(|e| e.ok()) {
+                        let path = entry.path();
+                        let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                        if path.is_file() && (stem.starts_with("voice_") || stem.starts_with("music_")) && !wanted.contains(&stem) {
+                            moved += set_aside(&path) as usize;
+                        }
+                    }
+                    self.jobs.version.fetch_add(1, Ordering::Relaxed);
+                    json!({ "removed": moved })
+                });
+                answer(stream, pruned)
+            }
+            ("GET", "/audio") => {
+                // play back a recording, a track or a sample in the page
+                let file = q.get("file").cloned().unwrap_or_default();
+                let parts: Vec<&str> = file.split('/').collect();
+                let safe = |p: &str| !p.is_empty() && !p.starts_with('.') && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.');
+                let ok = match parts.as_slice() {
+                    [name] => safe(name),
+                    ["samples", name] => safe(name),
+                    _ => false,
+                };
+                let kind = match file.rsplit('.').next().unwrap_or("") {
+                    "wav" => "audio/wav",
+                    "mp3" => "audio/mpeg",
+                    "flac" => "audio/flac",
+                    "ogg" => "audio/ogg",
+                    "m4a" => "audio/mp4",
+                    _ => "",
+                };
+                match std::fs::read(audio::audio_dir(&story).join(&file)) {
+                    Ok(bytes) if ok && !kind.is_empty() => respond(stream, "200 OK", kind, false, &bytes),
+                    _ => respond(stream, "404 Not Found", "text/plain", false, b"no such recording"),
+                }
             }
             _ => respond(stream, "404 Not Found", "text/plain", false, b"not found"),
         }

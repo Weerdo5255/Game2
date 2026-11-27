@@ -10,7 +10,14 @@ font8x8 = "0.3"
 png = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+rodio = { version = "0.20", optional = true, default-features = false, features = ["flac", "vorbis", "wav", "mp3"] }
 ureq = { version = "2", default-features = false, features = ["json"] }
+
+[features]
+# Sound needs an audio library at build time (on Linux: ALSA development
+# files, e.g. libasound2-dev). Build with --no-default-features to do without.
+default = ["audio"]
+audio = ["dep:rodio"]
 
 [profile.dev]
 opt-level = 2

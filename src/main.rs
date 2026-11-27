@@ -5,6 +5,7 @@
 //!       (--port N, --no-browser, --stories DIR, --comfy-dir DIR)
 //!   cargo run --release -- --story FILE    use another story file
 //!   cargo run --release -- --start LABEL   begin at a scene
+//!   cargo run --release -- --silent        no music or voices
 //!   cargo run --release -- --format-story  tidy the story file's layout
 //!   cargo run --release -- --procedural    ignore assets/enhanced
 //!   cargo run --release -- --art-dir DIR   load enhanced art from DIR
@@ -16,6 +17,7 @@
 //!       and saving screenshots
 
 mod art;
+mod audio;
 mod comfy;
 mod editor;
 mod game;
@@ -140,7 +142,11 @@ fn main() {
     if let Some(dir) = &art_dir {
         println!("enhanced art: {}", dir.display());
     }
-    let mut game = Game::new(script, art_dir);
+    // sound lives beside the story, in "audio"; headless runs stay silent but log what would play
+    let headless_run = arg("--autoplay").is_some();
+    let story_file = arg("--story").map(PathBuf::from).or_else(|| Some(PathBuf::from("assets/story.txt")).filter(|p| p.is_file()));
+    let sound = audio::Audio::new(story_file.map(|s| audio::audio_dir(&s)).filter(|_| !flag("--silent")), !headless_run);
+    let mut game = Game::new(script, art_dir, sound);
 
     if let Some(list) = arg("--autoplay") {
         let picks = list.split(',').filter_map(|s| s.trim().parse().ok()).collect();
@@ -220,6 +226,7 @@ fn windowed(mut game: Game, size: (usize, usize)) -> Result<(), minifb::Error> {
             skip: window.is_key_down(Key::LeftCtrl) || window.is_key_down(Key::RightCtrl),
             save: pressed(&[Key::F5]),
             load: pressed(&[Key::F9]),
+            mute: pressed(&[Key::M]),
             back: pressed(&[Key::Escape]),
             click: down && !was_down,
             mouse,
@@ -280,6 +287,11 @@ fn headless(mut game: Game, picks: Vec<usize>, shots: Option<String>, start: &st
                 next_pick += 1;
             }
             "ending" => {
+                if !game.audio.log.is_empty() {
+                    let voiced = game.audio.log.iter().filter(|l| l.starts_with("voice ")).count();
+                    let music: Vec<&str> = game.audio.log.iter().filter(|l| l.starts_with("music ")).map(|l| &l[6..]).collect();
+                    println!("sound: {} voiced line(s); music: {}", voiced, if music.is_empty() { "none".to_string() } else { music.join(", ") });
+                }
                 println!(
                     "ending: {} (peace {}, heat {}, favor {}, trust {})",
                     game.ending_title().unwrap_or("?"),

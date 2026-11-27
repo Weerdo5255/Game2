@@ -73,6 +73,8 @@ fn yes() -> bool {
 pub enum Item {
     Say { who: String, text: String },
     Bg { name: String },
+    /// Start a music track (it loops until another starts); "" for silence.
+    Music { track: String },
     Show { who: String, expr: String, slot: String },
     /// `slot` is left, center, right or all.
     Hide { slot: String },
@@ -84,6 +86,21 @@ pub enum Item {
     End { title: String, text: String },
     Choice { options: Vec<Opt> },
     Comment { text: String },
+}
+
+/// A piece of background music: generated from `prompt` through ComfyUI by
+/// the editor, and started in a scene with a `music` line.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct TrackDef {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    /// Length to generate, in seconds.
+    #[serde(default)]
+    pub seconds: i32,
+    /// What it should sound like.
+    #[serde(default)]
+    pub prompt: String,
 }
 
 /// A chapter: a named group of scenes that the editor shows as one panel
@@ -127,6 +144,8 @@ pub struct Doc {
     pub characters: Vec<CharDef>,
     #[serde(default)]
     pub vars: Vec<VarDef>,
+    #[serde(default)]
+    pub tracks: Vec<TrackDef>,
     #[serde(default)]
     pub chapters: Vec<ChapterDef>,
     #[serde(default)]
@@ -184,6 +203,7 @@ enum Line {
     Title(String, String),
     Character(CharDef),
     Var(VarDef),
+    Track(TrackDef),
     Chapter(ChapterDef),
     InChapter(String),
     Label(String),
@@ -281,6 +301,18 @@ fn parse_line(line: &str) -> Result<Line, String> {
             };
             return Ok(Line::Chapter(ChapterDef { name: parts[0].to_string(), pos: if is_pos { Some((xy[0], xy[1])) } else { None }, note }));
         }
+        "track" => {
+            // track id | Title | seconds | prompt
+            let parts: Vec<&str> = rest.splitn(4, '|').map(str::trim).collect();
+            let seconds = parts.get(2).filter(|s| !s.is_empty()).map(|s| number(s)).transpose()?.unwrap_or(0);
+            return Ok(Line::Track(TrackDef {
+                id: parts[0].to_string(),
+                title: parts.get(1).unwrap_or(&"").to_string(),
+                seconds,
+                prompt: parts.get(3).unwrap_or(&"").to_string(),
+            }));
+        }
+        "music" if toks.len() == 2 => Item::Music { track: if toks[1] == "off" { String::new() } else { toks[1].into() } },
         "bg" if toks.len() == 2 => Item::Bg { name: toks[1].into() },
         "show" if toks.len() == 4 => Item::Show { who: toks[1].into(), expr: toks[2].into(), slot: toks[3].into() },
         "hide" if toks.len() == 2 => Item::Hide { slot: toks[1].into() },
@@ -332,6 +364,7 @@ impl Doc {
                 }
                 Line::Character(c) => doc.characters.push(c),
                 Line::Var(v) => doc.vars.push(v),
+                Line::Track(t) => doc.tracks.push(t),
                 Line::Chapter(c) => doc.chapters.push(c),
                 Line::InChapter(name) => match doc.scenes.last_mut() {
                     // like the position marker, it sits straight under the label
@@ -409,6 +442,12 @@ impl Doc {
             pipe_free(&mut v.label);
             id(&mut v.character);
         }
+        for t in &mut self.tracks {
+            id(&mut t.id);
+            pipe_free(&mut t.title);
+            t.seconds = t.seconds.clamp(0, 600);
+            t.prompt = last_field(&t.prompt).replace('|', ",");
+        }
         // every chapter a scene names exists, once
         for c in &mut self.chapters {
             pipe_free(&mut c.name);
@@ -431,6 +470,12 @@ impl Doc {
                         *text = one_line(text);
                     }
                     Item::Bg { name } => id(name),
+                    Item::Music { track } => {
+                        id(track);
+                        if track == "off" {
+                            track.clear();
+                        }
+                    }
                     Item::Show { who, expr, slot } => {
                         id(who);
                         id(expr);
@@ -518,6 +563,13 @@ impl Doc {
             }
             out.push_str(&format!("var {} | {} | {} | {}\n", v.id, v.label, v.initial, flags.join(" ")));
         }
+        if !self.tracks.is_empty() {
+            out.push('\n');
+        }
+        for t in &self.tracks {
+            out.push_str(format!("track {} | {} | {} | {}", t.id, t.title, t.seconds, t.prompt).trim_end());
+            out.push('\n');
+        }
         if !self.chapters.is_empty() {
             out.push('\n');
         }
@@ -541,6 +593,7 @@ impl Doc {
                 match item {
                     Item::Say { who, text } => out.push_str(&format!("{}: {}\n", who, text)),
                     Item::Bg { name } => out.push_str(&format!("bg {}\n", name)),
+                    Item::Music { track } => out.push_str(&format!("music {}\n", if track.is_empty() { "off" } else { track })),
                     Item::Show { who, expr, slot } => out.push_str(&format!("show {} {} {}\n", who, expr, slot)),
                     Item::Hide { slot } => out.push_str(&format!("hide {}\n", slot)),
                     Item::Add { var, n } => out.push_str(&format!("add {} {}\n", var, n)),
@@ -669,6 +722,16 @@ impl Doc {
             }
         }
         seen.clear();
+        let tracks: HashSet<&str> = self.tracks.iter().map(|t| t.id.as_str()).collect();
+        for t in &self.tracks {
+            if !valid_id(&t.id) || t.id == "off" {
+                push("error", "", None, format!("music track id '{}' is not usable (letters, digits and _ only; not 'off')", t.id));
+            }
+            if !seen.insert(t.id.as_str()) {
+                push("error", "", None, format!("two music tracks share the id '{}'", t.id));
+            }
+        }
+        seen.clear();
         if !labels.contains("start") {
             push("error", "", None, "there is no scene called 'start'".into());
         }
@@ -708,6 +771,11 @@ impl Doc {
                     Item::Bg { name } => {
                         if !bgs.contains(&name.as_str()) {
                             err(format!("unknown background '{}'", name));
+                        }
+                    }
+                    Item::Music { track } => {
+                        if !track.is_empty() && !tracks.contains(track.as_str()) {
+                            err(format!("unknown music track '{}'", track));
                         }
                     }
                     Item::Show { who, expr, slot } => {
@@ -824,6 +892,8 @@ impl Doc {
 #[derive(Clone, Debug)]
 pub enum Cmd {
     Bg(String),
+    /// "" stops the music.
+    Music(String),
     Show { who: String, expr: String, slot: usize },
     /// `None` hides everyone.
     Hide(Option<usize>),
@@ -859,6 +929,7 @@ impl Script {
                 cmds.push(match item.clone() {
                     Item::Say { who, text } => Cmd::Say { who, text },
                     Item::Bg { name } => Cmd::Bg(name),
+                    Item::Music { track } => Cmd::Music(track),
                     Item::Show { who, expr, slot: s } => match slot(&s) {
                         Some(slot) => Cmd::Show { who, expr, slot },
                         None => continue,
@@ -1126,6 +1197,21 @@ mod tests {
         doc.sanitize();
         assert!(doc.survives_text().is_ok(), "{:?}", doc.survives_text());
         assert_eq!(doc.subtitle, "What now");
+    }
+
+    #[test]
+    fn music_tracks_round_trip_and_are_checked() {
+        let src = "track calm | Calm Morning | 45 | soft harp, slow strings\ntrack war | | | \n*start\nmusic calm\nn: Hi.\nmusic off\nmusic nope\nend X | y\n";
+        let (mut doc, errors) = Doc::parse(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert_eq!(doc.tracks[0], TrackDef { id: "calm".into(), title: "Calm Morning".into(), seconds: 45, prompt: "soft harp, slow strings".into() });
+        assert_eq!(doc.scenes[0].items[2], Item::Music { track: String::new() });
+        assert!(problems(&doc).iter().any(|p| p.msg.contains("unknown music track 'nope'")));
+        doc.tracks[1].prompt = "drums | brass |".into();
+        doc.sanitize();
+        assert!(doc.survives_text().is_ok(), "{:?}", doc.survives_text());
+        let cmds = Script::compile(&doc).cmds;
+        assert!(matches!(&cmds[0], Cmd::Music(t) if t == "calm") && matches!(&cmds[2], Cmd::Music(t) if t.is_empty()));
     }
 
     #[test]

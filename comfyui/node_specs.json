@@ -1,6 +1,6 @@
 {
   "_comment": "Signatures of the core ComfyUI nodes these workflows use, transcribed from the ComfyUI source (nodes.py, comfy_extras/nodes_canny.py, nodes_mask.py, nodes_compositing.py, nodes_post_processing.py; comfy/samplers.py for the sampler and scheduler names). Used to validate workflows offline and by the test mock server. Re-check with: python3 enhance.py verify-specs --comfy-src /path/to/ComfyUI",
-  "_verified_against": "comfyanonymous/ComfyUI commit a2103ae",
+  "_verified_against": "comfyanonymous/ComfyUI commit a2103ae (core and partner nodes); custom nodes name their own source",
   "nodes": {
     "CheckpointLoaderSimple": {
       "inputs": {"ckpt_name": {"type": "COMBO", "models": "checkpoints"}},
@@ -56,6 +56,104 @@
         "batch_size": {"type": "INT", "min": 1, "max": 4096}
       },
       "outputs": ["LATENT"]
+    },
+    "CLIPLoader": {
+      "inputs": {
+        "clip_name": {"type": "COMBO", "models": "text_encoders"},
+        "type": {"type": "COMBO", "options": ["stable_diffusion", "stable_cascade", "sd3", "stable_audio", "mochi", "ltxv", "pixart", "cosmos", "lumina2", "wan", "hidream", "chroma", "ace", "omnigen2", "qwen_image", "hunyuan_image", "flux2", "ovis", "longcat_image", "cogvideox"], "server_list": true},
+        "device": {"type": "COMBO", "options": ["default", "cpu"], "optional": true}
+      },
+      "outputs": ["CLIP"]
+    },
+    "ConditioningZeroOut": {
+      "inputs": {"conditioning": {"type": "CONDITIONING"}},
+      "outputs": ["CONDITIONING"]
+    },
+    "EmptyLatentAudio": {
+      "inputs": {"seconds": {"type": "FLOAT", "min": 1.0, "max": 1000.0}, "batch_size": {"type": "INT", "min": 1, "max": 4096}},
+      "outputs": ["LATENT"]
+    },
+    "EmptyAceStepLatentAudio": {
+      "inputs": {"seconds": {"type": "FLOAT", "min": 1.0, "max": 1000.0}, "batch_size": {"type": "INT", "min": 1, "max": 4096}},
+      "outputs": ["LATENT"]
+    },
+    "TextEncodeAceStepAudio": {
+      "inputs": {
+        "clip": {"type": "CLIP"},
+        "tags": {"type": "STRING"},
+        "lyrics": {"type": "STRING"},
+        "lyrics_strength": {"type": "FLOAT", "min": 0.0, "max": 10.0}
+      },
+      "outputs": ["CONDITIONING"]
+    },
+    "VAEDecodeAudio": {
+      "inputs": {"samples": {"type": "LATENT"}, "vae": {"type": "VAE"}},
+      "outputs": ["AUDIO"]
+    },
+    "LoadAudio": {
+      "inputs": {"audio": {"type": "COMBO", "uploaded": true}},
+      "outputs": ["AUDIO"]
+    },
+    "SaveAudio": {
+      "inputs": {"audio": {"type": "AUDIO"}, "filename_prefix": {"type": "STRING"}},
+      "outputs": ["AUDIO"]
+    },
+    "SaveAudioMP3": {
+      "inputs": {
+        "audio": {"type": "AUDIO"},
+        "filename_prefix": {"type": "STRING"},
+        "quality": {"type": "COMBO", "options": ["V0", "128k", "320k"]}
+      },
+      "outputs": ["AUDIO"]
+    },
+    "ElevenLabsVoiceSelector": {
+      "requires": "ComfyUI's built-in partner nodes (comfy_api_nodes)",
+      "source": "comfy_api_nodes/nodes_elevenlabs.py",
+      "inputs": {"voice": {"type": "COMBO"}},
+      "outputs": ["ELEVENLABS_VOICE"]
+    },
+    "ElevenLabsInstantVoiceClone": {
+      "requires": "ComfyUI's built-in partner nodes and a Comfy account API key (paid service)",
+      "source": "comfy_api_nodes/nodes_elevenlabs.py",
+      "inputs": {
+        "files.audio0": {"type": "AUDIO"},
+        "remove_background_noise": {"type": "BOOLEAN"}
+      },
+      "outputs": ["ELEVENLABS_VOICE"]
+    },
+    "ElevenLabsTextToSpeech": {
+      "requires": "ComfyUI's built-in partner nodes and a Comfy account API key (paid service)",
+      "source": "comfy_api_nodes/nodes_elevenlabs.py",
+      "inputs": {
+        "voice": {"type": "ELEVENLABS_VOICE"},
+        "text": {"type": "STRING"},
+        "stability": {"type": "FLOAT", "min": 0.0, "max": 1.0},
+        "apply_text_normalization": {"type": "COMBO", "options": ["auto", "on", "off"]},
+        "model": {"type": "COMBO", "options": ["eleven_v4", "eleven_v4_turbo", "eleven_multilingual_v2", "eleven_v3"], "server_list": true},
+        "model.speed": {"type": "FLOAT", "min": 0.7, "max": 1.2, "optional": true},
+        "model.similarity_boost": {"type": "FLOAT", "min": 0.0, "max": 1.0, "optional": true},
+        "model.use_speaker_boost": {"type": "BOOLEAN", "optional": true},
+        "model.style": {"type": "FLOAT", "min": 0.0, "max": 0.2, "optional": true},
+        "language_code": {"type": "STRING"},
+        "seed": {"type": "INT", "min": 0, "max": 2147483647},
+        "output_format": {"type": "COMBO", "options": ["mp3_44100_192", "opus_48000_192"]}
+      },
+      "outputs": ["AUDIO"]
+    },
+    "F5TTSAudioInputs": {
+      "requires": "the ComfyUI-F5-TTS custom nodes (github.com/niknah/ComfyUI-F5-TTS)",
+      "custom": "niknah/ComfyUI-F5-TTS commit 06f5bd9, F5TTS.py",
+      "inputs": {
+        "sample_audio": {"type": "AUDIO"},
+        "sample_text": {"type": "STRING"},
+        "speech": {"type": "STRING"},
+        "seed": {"type": "INT", "min": -1},
+        "model": {"type": "COMBO"},
+        "vocoder": {"type": "COMBO", "options": ["auto", "vocos", "bigvgan"]},
+        "speed": {"type": "FLOAT"},
+        "model_type": {"type": "COMBO"}
+      },
+      "outputs": ["AUDIO"]
     },
     "VAEEncode": {
       "inputs": {"pixels": {"type": "IMAGE"}, "vae": {"type": "VAE"}},

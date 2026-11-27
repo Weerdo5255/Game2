@@ -28,10 +28,24 @@ def make_png(width, height, alpha):
     return enhance.PNG_MAGIC + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(row * height)) + chunk(b"IEND", b"")
 
 
+def make_wav(seconds=0.2, rate=8000):
+    """A short, valid, silent WAV file."""
+    n = int(seconds * rate)
+    data = b"\x00\x00" * n
+    return (b"RIFF" + struct.pack("<I", 36 + len(data)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16)
+            + b"data" + struct.pack("<I", len(data)) + data)
+
+
+AUDIO_SAVERS = ("SaveAudio", "SaveAudioMP3")
+VOICES = ["Roger (male, american)", "Sarah (female, american)", "Charlie (male, australian)"]
+
+
 class MockComfy:
-    def __init__(self, checkpoints=("sd_xl_base_1.0.safetensors",), controlnets=("diffusers_xl_canny_full.safetensors",)):
+    def __init__(self, checkpoints=("sd_xl_base_1.0.safetensors", "stable-audio-open-1.0.safetensors", "ace_step_v1_3.5b.safetensors"),
+                 controlnets=("diffusers_xl_canny_full.safetensors",)):
         self.specs = enhance.load_specs()
-        self.models = {"checkpoints": list(checkpoints), "controlnet": list(controlnets)}
+        self.models = {"checkpoints": list(checkpoints), "controlnet": list(controlnets), "text_encoders": ["t5-base.safetensors"]}
+        self.extra = []      # extra_data of every accepted prompt (API keys travel here)
         self.files = {}      # input folder: name -> bytes
         self.prompts = []    # every accepted graph, in order
         self.history = {}
@@ -124,7 +138,8 @@ class MockComfy:
             required, optional = {}, {}
             for name, i in spec["inputs"].items():
                 if i["type"] == "COMBO":
-                    options = self.models[i["models"]] if i.get("models") else sorted(self.files) if i.get("uploaded") else i["options"]
+                    options = (self.models[i["models"]] if i.get("models") else sorted(self.files) if i.get("uploaded")
+                               else VOICES if cls == "ElevenLabsVoiceSelector" else i.get("options", []))
                     # real servers use both shapes, depending on the node's API version
                     entry = ["COMBO", {"options": options}] if cls == "KSampler" else [options, {}]
                 else:
@@ -138,7 +153,10 @@ class MockComfy:
         if not isinstance(prompt, dict) or "client_id" not in payload:
             return 400, {"error": {"type": "no_prompt", "message": "No prompt provided", "details": ""}, "node_errors": {}}
         errors = enhance.validate_graph(prompt, self.specs, self.models, set(self.files))
-        saves = [nid for nid, node in prompt.items() if node.get("class_type") == "SaveImage"]
+        saves = [nid for nid, node in prompt.items() if node.get("class_type") in ("SaveImage",) + AUDIO_SAVERS]
+        for node in prompt.values():
+            if node.get("class_type") == "ElevenLabsVoiceSelector" and node["inputs"].get("voice") not in VOICES:
+                errors.append("voice %r is not one of the stock voices" % node["inputs"].get("voice"))
         if not saves:
             errors.append("prompt has no outputs")
         if errors:
@@ -146,6 +164,7 @@ class MockComfy:
             return 400, {"error": {"type": "prompt_outputs_failed_validation", "message": "Prompt outputs failed validation", "details": ""}, "node_errors": node_errors}
         pid = str(uuid.uuid4())
         self.prompts.append(prompt)
+        self.extra.append(payload.get("extra_data", {}))
         if self.never_finish:
             return 200, {"prompt_id": pid, "number": len(self.prompts), "node_errors": {}}
         if self.fail_execution:
@@ -154,9 +173,15 @@ class MockComfy:
         else:
             outputs = {}
             for nid in saves:
-                source = prompt[prompt[nid]["inputs"]["images"][0]]
                 prefix = prompt[nid]["inputs"]["filename_prefix"]
                 subfolder, _, stem = prefix.rpartition("/")
+                if prompt[nid]["class_type"] in AUDIO_SAVERS:
+                    # the real nodes write FLAC or MP3; a WAV keeps this stand-in honest about what it returns
+                    name = stem + "_00001_.wav"
+                    self.outputs[(name, subfolder, "output")] = make_wav()
+                    outputs[nid] = {"audio": [{"filename": name, "subfolder": subfolder, "type": "output"}]}
+                    continue
+                source = prompt[prompt[nid]["inputs"]["images"][0]]
                 name = stem + "_00001_.png"
                 self.outputs[(name, subfolder, "output")] = make_png(8, 8, source["class_type"] == "JoinImageWithAlpha")
                 outputs[nid] = {"images": [{"filename": name, "subfolder": subfolder, "type": "output"}]}

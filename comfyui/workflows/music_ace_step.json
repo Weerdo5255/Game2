@@ -1,0 +1,16 @@
+{
+  "title": "ACE-Step",
+  "kind": "music",
+  "description": "Instrumental music from style tags, with ACE-Step v1 (runs locally). Needs its all-in-one checkpoint in models/checkpoints. Write the description as comma-separated tags.",
+  "defaults": {"music_checkpoint": "ace_step_v1_3.5b.safetensors", "music_steps": 50, "music_cfg": 5.0, "music_sampler": "euler", "music_scheduler": "simple"},
+  "output_node": "7",
+  "prompt": {
+    "1": {"class_type": "CheckpointLoaderSimple", "_meta": {"title": "ACE-Step checkpoint"}, "inputs": {"ckpt_name": "$music_checkpoint"}},
+    "2": {"class_type": "TextEncodeAceStepAudio", "_meta": {"title": "Style tags (no lyrics)"}, "inputs": {"clip": ["1", 1], "tags": "$positive", "lyrics": "[instrumental]", "lyrics_strength": 1.0}},
+    "3": {"class_type": "ConditioningZeroOut", "_meta": {"title": "Empty negative"}, "inputs": {"conditioning": ["2", 0]}},
+    "4": {"class_type": "EmptyAceStepLatentAudio", "_meta": {"title": "Length"}, "inputs": {"seconds": "$seconds", "batch_size": 1}},
+    "5": {"class_type": "KSampler", "_meta": {"title": "Generate"}, "inputs": {"model": ["1", 0], "seed": "$seed", "steps": "$music_steps", "cfg": "$music_cfg", "sampler_name": "$music_sampler", "scheduler": "$music_scheduler", "positive": ["2", 0], "negative": ["3", 0], "latent_image": ["4", 0], "denoise": 1.0}},
+    "6": {"class_type": "VAEDecodeAudio", "_meta": {"title": "Decode"}, "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
+    "7": {"class_type": "SaveAudio", "_meta": {"title": "Save (FLAC)"}, "inputs": {"audio": ["6", 0], "filename_prefix": "$prefix"}}
+  }
+}

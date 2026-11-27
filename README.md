@@ -29,7 +29,11 @@ cargo run --release
 ```
 
 Requires a Rust toolchain. On Linux the window uses X11 (`libx11-dev` or your
-distribution's equivalent); Windows and macOS need nothing extra.
+distribution's equivalent) and sound uses ALSA (`libasound2-dev`); Windows
+and macOS need nothing extra. To build without sound, and without the ALSA
+requirement: `cargo run --release --no-default-features`.
+
+`--silent` starts the game without music or voices.
 
 The game renders at 1152x648. The window is resizable; `--window 800x450`
 sets its starting size.
@@ -41,6 +45,7 @@ sets its starting size.
 | Enter / Space / Z / left click | advance text, confirm |
 | Up / Down (or W / S), mouse | pick a choice |
 | Ctrl (hold) | skip text |
+| M | sound off / on |
 | F5 / F9 | save / load (one slot, `below_stairs.sav`) |
 | Esc | back to title; quit from title |
 
@@ -165,6 +170,52 @@ Options: `--port N`, `--no-browser`, `--story FILE` (the main story),
 `--stories DIR`, `--comfy-dir DIR`. The editor listens on your own machine
 only and refuses requests from other web pages.
 
+## Voices and music
+
+The game plays whatever recordings it finds beside the story, in `audio/`:
+
+| File | Played |
+|---|---|
+| `music_<track>.<ext>` | looped, from a `music <track>` line until the next one (`music off` stops it) |
+| `voice_<who>_<hash>.<ext>` | when that speaker says exactly those words (`n` is the narrator) |
+
+FLAC, MP3, Ogg Vorbis and WAV are read. Anything missing is simply silent,
+so the game works with none, some or all of it recorded. A line's file name
+is made from its words: reword the line and it needs recording again.
+
+The files are made in the editor's **Sound** view, through ComfyUI:
+
+- **Music.** Add a track, describe it ("slow tense low strings, a ticking
+  pulse"), set its length and press Generate. Start it in a scene with a
+  **Music** block. In the story file: `track id | Title | seconds | prompt`
+  and `music id`.
+- **Voices.** Each speaker gets a voice: a stock voice picked from a list, or
+  one cloned from a short sample recording you upload (5 to 15 seconds of
+  clear speech; some workflows also want the words spoken in it). "Record
+  missing lines" sends every unrecorded line of that speaker; single lines can
+  be redone, played back and removed. Choices are kept with the story in
+  `art.json`, samples in `audio/samples/`.
+- "Tidy up old recordings" sets aside the files of lines that were reworded
+  or cut (into `audio/.removed`).
+
+![The Sound view](docs/editor_sound.png)
+
+Which workflow does the work is selectable, per kind and per speaker:
+
+| Workflow | Needs |
+|---|---|
+| `music_stable_audio.json` | Stable Audio Open checkpoint and its T5 text encoder (local) |
+| `music_ace_step.json` | ACE-Step checkpoint (local) |
+| `voice_elevenlabs.json` | stock voices; ComfyUI's ElevenLabs partner node, a **paid** service |
+| `voice_elevenlabs_clone.json` | a sample; the same paid service |
+| `voice_f5_clone.json` | a sample and its transcript; the ComfyUI-F5-TTS custom node (local) |
+
+Partner nodes need a Comfy account key. Set it in the environment when
+starting the editor (`COMFY_ORG_API_KEY=... cargo run -- --editor`); it is
+sent to your ComfyUI server with those jobs and never written to a file or
+shown in the page. See [`comfyui/README.md`](comfyui/README.md) for the
+details and for what has and has not been tried against a real server.
+
 ## Graphics
 
 All artwork is procedural: there are no image files in the game. Each scene
@@ -229,6 +280,10 @@ The editor has a browser test (needs Node with Playwright):
 
 ```bash
 cargo build && node tools/editor_e2e.js
+```
+
+```bash
+cargo build && node tools/editor_sound_e2e.js
 ```
 
 ```bash

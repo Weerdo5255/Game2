@@ -47,6 +47,17 @@
       "face_grow": 10,
       "face_feather": 9,
       "face_sigma": 4.0
+    },
+    "voice": {
+      "workflow": "voice_elevenlabs.json",
+      "speed": 1.0
+    },
+    "music": {
+      "workflow": "music_stable_audio.json",
+      "seconds": 30,
+      "style_prefix": "",
+      "style_suffix": ", instrumental, video game soundtrack, seamless loop",
+      "music_negative": "vocals, singing, speech, noise, distortion, low quality"
     }
   },
 

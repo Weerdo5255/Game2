@@ -92,6 +92,42 @@ of asset. A workflow file carries a `title`, a `kind`, and optionally
 `defaults` (settings it prefers, which per-asset `overrides` still beat) and
 `"guide": "enhanced"` (start from the current enhanced image).
 
+## Voice and music workflows
+
+These are used from the story editor's Sound view (the command-line runner
+handles images only). They share the template format: `kind` is `voice` or
+`music`, and the output node is one of ComfyUI's audio savers.
+
+| File | Kind | Nodes | Placeholders |
+|---|---|---|---|
+| `music_stable_audio.json` | music | `CheckpointLoaderSimple`, `CLIPLoader` (stable_audio), `CLIPTextEncode`, `EmptyLatentAudio`, `KSampler`, `VAEDecodeAudio`, `SaveAudio` | `$positive`, `$negative`, `$seconds`, `$seed` |
+| `music_ace_step.json` | music | `CheckpointLoaderSimple`, `TextEncodeAceStepAudio`, `EmptyAceStepLatentAudio`, `ConditioningZeroOut`, `KSampler`, `VAEDecodeAudio`, `SaveAudio` | the same |
+| `voice_elevenlabs.json` | voice | `ElevenLabsVoiceSelector`, `ElevenLabsTextToSpeech`, `SaveAudioMP3` | `$text`, `$voice`, `$speed`, `$seed` |
+| `voice_elevenlabs_clone.json` | voice | `LoadAudio`, `ElevenLabsInstantVoiceClone`, `ElevenLabsTextToSpeech`, `SaveAudioMP3` | `$text`, `$sample`, `$speed` |
+| `voice_f5_clone.json` | voice | `LoadAudio`, `F5TTSAudioInputs` (custom node), `SaveAudio` | `$text`, `$sample`, `$sample_text`, `$speed` |
+
+A voice workflow may declare `"voice_options": {"node": ..., "input": ...}`:
+the editor then reads the list of stock voices from that node on your server.
+A workflow that uses `$sample` gets the speaker's sample uploaded to
+`ComfyUI/input/` first. Model file names and music settings are under
+`kinds.music` and `kinds.voice` in `config.json`.
+
+To add another engine (a different TTS custom node, say), copy one of these
+files, swap the middle node and keep the placeholders. If its class is not
+in `node_specs.json` the editor cannot check the graph beforehand and
+ComfyUI's own validation reports any mistake when the job is queued.
+
+**How far this is verified.** Nothing here has been run on a real ComfyUI
+server; there was no GPU or account where it was written. The core audio
+nodes and the ElevenLabs partner nodes were checked input by input against
+the ComfyUI source (`verify-specs` covers them), and `F5TTSAudioInputs`
+against the niknah/ComfyUI-F5-TTS source, which `verify-specs` skips as a
+custom node. The ElevenLabs nodes use ComfyUI's newer nested inputs (written
+`model.speed`, `files.audio0` in the workflow file); that spelling is read
+from the source and is the most likely thing to need a correction on first
+contact. The mock server in the tests accepts these graphs and returns a
+short WAV, which proves the plumbing, not the sound.
+
 ## The three workflows
 
 Templates are in `workflows/`, in ComfyUI's API format, with `$name`

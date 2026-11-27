@@ -519,7 +519,7 @@ def cmd_verify_specs(args):
     import re
 
     sources = {}
-    for root in (args.comfy_src, os.path.join(args.comfy_src, "comfy_extras")):
+    for root in (args.comfy_src, os.path.join(args.comfy_src, "comfy_extras"), os.path.join(args.comfy_src, "comfy_api_nodes")):
         if not os.path.isdir(root):
             raise EnhanceError(f"not a ComfyUI checkout: {args.comfy_src}")
         for name in os.listdir(root):
@@ -527,7 +527,11 @@ def cmd_verify_specs(args):
                 with open(os.path.join(root, name), encoding="utf-8") as f:
                     sources[name] = f.read()
     problems = []
+    skipped = 0
     for cls, spec in load_specs().items():
+        if spec.get("custom"):
+            skipped += 1  # a custom node pack, not part of ComfyUI: see its "custom" note for where it was read
+            continue
         body = None
         for name, text in sources.items():
             m = re.search(r'node_id="%s"' % re.escape(cls), text) or re.search(r"^class %s\b" % re.escape(cls), text, re.M)
@@ -540,8 +544,10 @@ def cmd_verify_specs(args):
             problems.append(f"{cls}: no definition found")
             continue
         for inp in spec["inputs"]:
-            if f'"{inp}"' not in body:
-                problems.append(f"{cls}: input '{inp}' not found in its definition")
+            # dynamic inputs are written "group.name" (and "group.prefixN" for growing lists)
+            for part in inp.split("."):
+                if f'"{part}"' not in body and f'"{part.rstrip("0123456789")}"' not in body and not any(f'"{part}"' in t for t in sources.values()):
+                    problems.append(f"{cls}: input '{inp}' not found in its definition")
         for opt in [o for info in spec["inputs"].values() if not info.get("server_list") for o in info.get("options", [])]:
             if f'"{opt}"' not in body and f"'{opt}'" not in body and not any(f'"{opt}"' in t for t in sources.values()):
                 problems.append(f"{cls}: option '{opt}' not found")
@@ -549,7 +555,7 @@ def cmd_verify_specs(args):
         print("MISMATCH:", p)
     if problems:
         raise EnhanceError(f"{len(problems)} mismatch(es) between node_specs.json and {args.comfy_src}")
-    print(f"node_specs.json matches {args.comfy_src} ({len(load_specs())} node classes checked)")
+    print(f"node_specs.json matches {args.comfy_src} ({len(load_specs()) - skipped} node classes checked, {skipped} custom skipped)")
 
 
 def cmd_sheet(args):

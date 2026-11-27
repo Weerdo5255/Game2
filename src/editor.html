@@ -142,12 +142,12 @@ label { color: var(--dim); }
 .empty { color: var(--dim); padding: 30px 10px; text-align: center; }
 
 #storySel { max-width: 230px; font-weight: 600; }
-#art { grid-area: 2 / 2 / 3 / 4; background: var(--bg); z-index: 10; overflow: auto; padding: 14px 18px 40px; display: none; }
-#art.show { display: block; }
-#art h2 { font-size: 15px; margin: 22px 0 8px; color: var(--gold); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-#art h2 label { font-size: 12px; font-weight: 400; }
-#art .bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
-#art .bar input[type=text] { width: 230px; }
+#art, #sound { grid-area: 2 / 2 / 3 / 4; background: var(--bg); z-index: 10; overflow: auto; padding: 14px 18px 40px; display: none; }
+#art.show, #sound.show { display: block; }
+#art h2, #sound h2 { font-size: 15px; margin: 22px 0 8px; color: var(--gold); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#art h2 label, #sound h2 label { font-size: 12px; font-weight: 400; }
+#art .bar, #sound .bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+#art .bar input[type=text], #sound .bar input[type=text] { width: 230px; }
 .lamp { width: 10px; height: 10px; border-radius: 50%; background: #666; flex: none; } .lamp.ok { background: var(--good); } .lamp.down { background: var(--bad); }
 .agrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
 .acard { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
@@ -163,6 +163,12 @@ label { color: var(--dim); }
 .face img { width: 104px; height: 141px; object-fit: contain; border-radius: 5px; background: linear-gradient(#2a3060, #14162a); cursor: zoom-in; display: block; }
 .jrow { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid #2a2f58; font-size: 12px; }
 .jrow .msg { color: var(--dim); flex: 1; } .jrow.failed .msg { color: var(--bad); }
+.vcard { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+.vcard .brow { margin-top: 6px; } .vcard .brow:first-child { margin-top: 0; }
+.vcard audio { height: 30px; max-width: 260px; }
+.lrow { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px solid #2a2f58; font-size: 12px; }
+.lrow .ltext { flex: 1; min-width: 0; }
+.blk.music { border-left-color: #e0a0ff; }
 #compare { position: absolute; inset: 0; background: #000d; z-index: 50; display: none; place-items: center; cursor: zoom-out; }
 #compare.show { display: grid; }
 #compare div { display: flex; gap: 14px; max-width: 96vw; }
@@ -190,6 +196,7 @@ label { color: var(--dim); }
   <span id="status"></span>
   <span class="spacer"></span>
   <button id="artBtn" title="Send backgrounds and characters through ComfyUI">Art</button>
+  <button id="soundBtn" title="Voices for the dialogue and music for the scenes, through ComfyUI">Sound</button>
   <button id="addSceneBtn">+ Scene</button>
   <button id="layoutBtn" title="Arrange every scene automatically">Tidy layout</button>
   <button id="playBtn" title="Save, then run the game from the start">&#9654; Play</button>
@@ -210,6 +217,7 @@ label { color: var(--dim); }
 </main>
 <aside id="insp"></aside>
 <section id="art"></section>
+<section id="sound"></section>
 <div id="compare"></div>
 <div id="probs"></div>
 <div id="toast"></div>
@@ -224,6 +232,7 @@ label { color: var(--dim); }
     <li><b>Cast</b> holds each character's name, colour, portrait and look, and the properties that belong to them. <b>Properties</b> lists every property and where it changes.</li>
     <li>The story menu at the top switches between stories, and makes, copies or removes them. Each story has its own file, cast and art.</li>
     <li><b>Art</b> sends this story's backgrounds and characters through ComfyUI, with a choice of workflows, and shows the results beside the game's own paintings.</li>
+    <li><b>Sound</b> gives each speaker a voice (a stock voice, or one cloned from a sample recording) and has their lines read out through ComfyUI; it also generates the music tracks that scenes start with a Music block.</li>
     <li><kbd>Ctrl</kbd>+<kbd>S</kbd> saves to the story file. <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> undo and redo. Play saves first, then starts the game.</li>
   </ul>
   <button id="helpClose" class="primary">Close</button>
@@ -234,7 +243,7 @@ label { color: var(--dim); }
 const $ = (s, root = document) => root.querySelector(s);
 const SPRITE_NAMES = { p: "Young gentleman", v: "Elder lord", s: "Bewigged lord", q: "Steward", t: "Footman", c: "Cook", a: "Swan" };
 const KIND_NAMES = { say: "Line", bg: "Background", show: "Show character", hide: "Hide character", add: "Consequence: change", set: "Consequence: set",
-  if: "Condition", goto: "Jump", card: "Chapter card", end: "Ending", choice: "Choice", comment: "Note" };
+  if: "Condition", goto: "Jump", card: "Chapter card", end: "Ending", choice: "Choice", comment: "Note", music: "Music" };
 const OP_SYM = { "==": "=", "!=": "≠", ">=": "≥", "<=": "≤", ">": ">", "<": "<" };
 
 let doc = null, meta = null, problems = [], parseErrors = [];
@@ -379,7 +388,7 @@ function num(text) { return Math.max(-9999, Math.min(9999, parseInt(text, 10) ||
 function markDirty() { dirty = true; updateBar(); scheduleValidate(); }
 function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); doc = JSON.parse(undoStack.pop()); afterHistory(); }
 function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); doc = JSON.parse(redoStack.pop()); afterHistory(); }
-function afterHistory() { doc.chapters = doc.chapters || []; if (sel >= doc.scenes.length) sel = doc.scenes.length - 1; if (sel >= 0 && chapterOf(sel) !== curChapter) sel = -1; selItem = -1; markDirty(); renderAll(); }
+function afterHistory() { doc.chapters = doc.chapters || []; doc.tracks = doc.tracks || []; if (sel >= doc.scenes.length) sel = doc.scenes.length - 1; if (sel >= 0 && chapterOf(sel) !== curChapter) sel = -1; selItem = -1; markDirty(); renderAll(); }
 function updateBar() {
   $("#saveBtn").disabled = !dirty; $("#undoBtn").disabled = !undoStack.length; $("#redoBtn").disabled = !redoStack.length;
   const st = $("#status"); st.textContent = dirty ? "Unsaved changes" : "Saved to " + meta.path; st.title = meta.path; st.className = dirty ? "dirty" : "";
@@ -525,7 +534,9 @@ function sceneNode(s, si) {
         el("div", { class: "cast" }, cast.map(ch => avatar(ch)))),
       card && el("div", { class: "snip", style: "color:#c9a0ff", text: card.title + (card.sub ? " — " + card.sub : "") }),
       firstSay && el("div", { class: "snip", text: firstSay.text }),
-      el("div", { style: "margin-top:4px" }, el("span", { class: "chip", text: `${lines} line${lines === 1 ? "" : "s"}` }), fx.map(e => effectChip(e)))),
+      el("div", { style: "margin-top:4px" }, el("span", { class: "chip", text: `${lines} line${lines === 1 ? "" : "s"}` }),
+        s.items.filter(it => it.t === "music").map(it => el("span", { class: "chip", style: "background:#4a2f66", text: "\u266A " + (it.track ? ((doc.tracks || []).find(t => t.id === it.track) || { title: it.track }).title || it.track : "silence") })),
+        fx.map(e => effectChip(e)))),
     el("div", { class: "outs" }, outs.map(o => outRow(o))));
 }
 function chapterNode(c) {
@@ -937,6 +948,9 @@ function blockBody(s, it, i) {
     case "bg": return el("div", { class: "brow" },
       el("select", { onchange: ev => set(() => it.name = ev.target.value) }, opts(meta.bgs, it.name)),
       meta.bgs.includes(it.name) && el("img", { class: "minibg", src: bgUrl(it.name) }));
+    case "music": return el("div", { class: "brow" },
+      el("select", { onchange: ev => set(() => it.track = ev.target.value) }, opts([{ value: "", label: "Silence (stop the music)" }, ...(doc.tracks || []).map(t => ({ value: t.id, label: t.title || t.id }))], it.track)),
+      el("span", { class: "sub", style: "color:var(--dim)", text: "plays on until another Music block" }));
     case "show": {
       const ch = charById(it.who);
       return el("div", { class: "brow" },
@@ -1080,6 +1094,7 @@ function renderInspector() {
     add("Condition", () => ({ t: "if", var: firstVar, op: ">=", val: 1, target: s.label }), "property"),
     add("Jump", () => ({ t: "goto", target: (doc.scenes[sel + 1] || doc.scenes[0]).label })),
     add("Background", () => ({ t: "bg", name: meta.bgs[0] })),
+    add("Music", () => ({ t: "music", track: ((doc.tracks || [])[0] || { id: "" }).id })),
     add("Show", () => ({ t: "show", who: firstShown, expr: "neutral", slot: "center" }), "portrait"),
     add("Hide", () => ({ t: "hide", slot: "all" })),
     add("Card", () => ({ t: "card", title: "Chapter", sub: "" })),
@@ -1281,13 +1296,14 @@ async function loadStory(id) {
   doc = data.doc; meta = data.meta; problems = data.problems; parseErrors = data.parse_errors;
   undoStack = []; redoStack = []; dirty = false; selItem = -1; openChar = null; sceneFilter = ""; view = { x: 40, y: 40, k: 1 };
   renderStoryMenu(); applyView();
-  doc.chapters = doc.chapters || []; curChapter = ""; selChapter = null;
+  doc.chapters = doc.chapters || []; doc.tracks = doc.tracks || []; curChapter = ""; selChapter = null;
   // open on the main graph; if the story has no chapters, on its first scene
   sel = doc.scenes.length && !doc.chapters.length ? Math.max(0, sceneIndex("start")) : -1;
   renderAll(); renderProblems(); fit(); if (sel >= 0) centerOn(sel);
   document.title = (doc.title || "Untitled story") + " - Story Editor";
   if (parseErrors.length) { toast(`${parseErrors.length} line(s) of the story file could not be understood; they are kept as notes.`, true); $("#probs").classList.add("show"); }
-  if (art.open) openArt();
+  adoptPrefs(null);
+  if (art.open) openArt(); else if (sound.open) openSound();
   return true;
 }
 const NEW_STORY = "\u0000new", COPY_STORY = "\u0000copy", REMOVE_STORY = "\u0000remove";
@@ -1323,10 +1339,13 @@ async function storyMenuChanged() {
 
 // ------------------------------------------------------------- art view
 const art = { open: false, data: null, server: null, jobs: [], denoise: null, timer: 0 };
+let prefs = { prompts: {}, workflows: {}, voices: {} }; // this story's art and sound choices (art.json), shared by both views
+function adoptPrefs(p) { prefs = p || {}; prefs.prompts = prefs.prompts || {}; prefs.workflows = prefs.workflows || {}; prefs.voices = prefs.voices || {}; }
 /** Is the user in the middle of typing in the Art view? (Then do not rebuild it under them.) */
 function artTyping() { const a = document.activeElement; return $("#art").contains(a) && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && a.type === "text")); }
-const KIND_LABEL = { background: "backgrounds", sprite: "neutral portraits", expression: "expressions" };
+const KIND_LABEL = { background: "backgrounds", sprite: "neutral portraits", expression: "expressions", voice: "voices", music: "music" };
 async function openArt() {
+  closeSound();
   art.open = true; $("#art").classList.add("show"); $("#artBtn").classList.add("primary");
   $("#art").textContent = ""; $("#art").append(el("div", { class: "empty", text: "Loading\u2026" }));
   await refreshArt();
@@ -1336,6 +1355,7 @@ async function openArt() {
 function closeArt() { art.open = false; $("#art").classList.remove("show"); $("#artBtn").classList.remove("primary"); }
 async function refreshArt() {
   try { art.data = await api("GET", forStory("/api/art")); } catch (e) { toast(e.message, true); return; }
+  adoptPrefs(art.data.prefs);
   renderArt();
 }
 async function checkServer() {
@@ -1355,23 +1375,28 @@ async function pollJobs() {
     art.jobs = r.jobs;
     if (r.version !== artVersion) {
       const first = artVersion === 0; artVersion = r.version;
-      if (!first) { renderGraph(); if (art.open && !artTyping()) await refreshArt(); else if (art.open) art.stale = true; }
+      if (!first) {
+        renderGraph();
+        if (art.open && !artTyping()) await refreshArt(); else if (art.open) art.stale = true;
+        if (sound.open && !soundTyping()) await refreshSound(); else if (sound.open) sound.stale = true;
+      }
     }
     renderJobs();
   } catch (e) { /* the editor server is gone; keep quiet */ }
   const busy = art.jobs.some(j => j.state === "queued" || j.state === "running");
-  if (art.open || busy) art.timer = setTimeout(pollJobs, busy ? 900 : 2500);
+  if (art.open || sound.open || busy) art.timer = setTimeout(pollJobs, busy ? 900 : 2500);
 }
 async function savePrefs() {
-  try { await api("PUT", forStory("/api/art/prefs"), art.data.prefs); } catch (e) { toast(e.message, true); }
+  try { await api("PUT", forStory("/api/art/prefs"), prefs); } catch (e) { toast(e.message, true); }
 }
 async function sendArt(ids, workflow) {
   if (!ids.length) { toast("Nothing to send."); return; }
   if (dirty && !(await save())) return;   // jobs read the saved story
-  const settings = art.denoise == null ? {} : { denoise: art.denoise, refine_denoise: Math.min(art.denoise, 0.5) };
+  const audio = ids.every(id => /^(voice|music)_/.test(id));
+  const settings = audio || art.denoise == null ? {} : { denoise: art.denoise, refine_denoise: Math.min(art.denoise, 0.5) };
   try {
     const r = await api("POST", "/api/art/run", { story: storyId, assets: ids, workflow: workflow || "", settings });
-    toast(`Queued ${r.queued} image${r.queued === 1 ? "" : "s"}`); pollJobs();
+    toast(`Queued ${r.queued} ${audio ? "recording" : "image"}${r.queued === 1 ? "" : "s"}`); pollJobs();
   } catch (e) { toast(e.message, true); }
 }
 async function revertArt(ids) {
@@ -1399,18 +1424,16 @@ function compare(asset) {
   host.classList.add("show");
 }
 function promptBox(key, fallback, label) {
-  const prefs = art.data.prefs; prefs.prompts = prefs.prompts || {};
   const t = el("textarea", { rows: 2, placeholder: fallback, title: label + " Leave empty to use the built-in description shown in grey." });
   t.value = prefs.prompts[key] || "";
   t.addEventListener("input", () => grow(t));
   t.addEventListener("change", () => { if (t.value.trim()) prefs.prompts[key] = t.value.trim(); else delete prefs.prompts[key]; savePrefs(); });
   return t;
 }
-function workflowSelect(kind) {
-  const prefs = art.data.prefs; prefs.workflows = prefs.workflows || {};
-  const list = art.data.workflows.filter(w => w.kind === kind);
+function workflowSelect(kind, source, redraw) {
+  const list = (source || art.data.workflows).filter(w => w.kind === kind);
   const current = prefs.workflows[kind] || "";
-  const sel = el("select", { title: "Workflow used for " + KIND_LABEL[kind], onchange: ev => { if (ev.target.value) prefs.workflows[kind] = ev.target.value; else delete prefs.workflows[kind]; savePrefs(); renderArt(); } },
+  const sel = el("select", { title: "Workflow used for " + KIND_LABEL[kind], onchange: ev => { if (ev.target.value) prefs.workflows[kind] = ev.target.value; else delete prefs.workflows[kind]; savePrefs(); (redraw || renderArt)(); } },
     el("option", { value: "", text: "Default (from config.json)", selected: !current }),
     list.map(w => el("option", { value: w.file, text: w.title, selected: w.file === current, title: w.description })));
   const chosen = list.find(w => w.file === current);
@@ -1440,7 +1463,7 @@ function renderArt() {
       el("span", { style: "flex:1" }),
       el("button", { class: "primary", text: `Send everything not yet enhanced (${missing.length})`, disabled: !missing.length, onclick: () => sendArt(missing) }),
       el("button", { text: "Cancel jobs", onclick: () => api("POST", "/api/art/cancel", {}).then(pollJobs) })),
-    el("div", { id: "jobs" }),
+    el("div", { class: "jobshost" }),
     el("h2", {}, "Backgrounds", el("label", { text: "workflow" }), workflowSelect("background"),
       el("button", { text: "Send all", onclick: () => sendArt(bgs.map(a => a.id)) })),
     el("div", { class: "agrid" }, bgs.map(a => el("div", { class: "acard" },
@@ -1448,7 +1471,7 @@ function renderArt() {
       el("div", { class: "t" }, el("b", { text: a.name }), badgeFor(a)),
       el("div", { class: "brow" },
         el("button", { text: "Send", onclick: () => sendArt([a.id]) }),
-        d.workflows.filter(w => w.kind === "background" && w.file !== (d.prefs.workflows || {}).background).length > 0 &&
+        d.workflows.filter(w => w.kind === "background" && w.file !== prefs.workflows.background).length > 0 &&
           el("select", { title: "Send through a different workflow, just this once", style: "flex:1", onchange: ev => { const w = ev.target.value; ev.target.value = ""; if (w) sendArt([a.id], w); } },
             el("option", { value: "", text: "Send through\u2026" }), d.workflows.filter(w => w.kind === "background").map(w => el("option", { value: w.file, text: w.title }))),
         el("button", { class: "ghost", text: "Revert", disabled: !a.enhanced, onclick: () => revertArt([a.id]) })),
@@ -1473,20 +1496,165 @@ function renderArt() {
   host.scrollTop = scroll;
   renderServerLamp(); renderJobs();
 }
+// ----------------------------------------------------------- sound view
+const sound = { open: false, data: null, lines: {}, openSpeaker: null, options: {}, stale: false };
+function soundTyping() { const a = document.activeElement; return $("#sound").contains(a) && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && (a.type === "text" || a.type === "number"))); }
+function audioUrl(file) { return forStory("/audio?file=" + encodeURIComponent(file), true); }
+async function openSound() {
+  closeArt();
+  sound.open = true; $("#sound").classList.add("show"); $("#soundBtn").classList.add("primary");
+  $("#sound").textContent = ""; $("#sound").append(el("div", { class: "empty", text: "Loading…" }));
+  await refreshSound();
+  pollJobs();
+}
+function closeSound() { sound.open = false; $("#sound").classList.remove("show"); $("#soundBtn").classList.remove("primary"); }
+async function refreshSound() {
+  try {
+    sound.data = await api("GET", forStory("/api/sound"));
+    adoptPrefs(sound.data.prefs);
+    if (sound.openSpeaker) sound.lines[sound.openSpeaker] = (await api("GET", forStory("/api/sound/lines?who=" + encodeURIComponent(sound.openSpeaker)))).lines;
+  } catch (e) { toast(e.message, true); return; }
+  renderSound();
+}
+/** Line ids of one speaker, fetched from the saved story. */
+async function linesOf(who) {
+  if (dirty && !(await save())) return [];
+  const r = await api("GET", forStory("/api/sound/lines?who=" + encodeURIComponent(who)));
+  sound.lines[who] = r.lines;
+  return r.lines;
+}
+function voiceOf(id) { if (!prefs.voices[id]) prefs.voices[id] = { workflow: "", voice: "", sample: "", sample_text: "", speed: 1 }; return prefs.voices[id]; }
+function voiceWorkflow(id) {
+  const file = (prefs.voices[id] && prefs.voices[id].workflow) || prefs.workflows.voice || sound.data.defaults.voice;
+  return sound.data.workflows.find(w => w.file === file) || null;
+}
+async function loadVoiceOptions(file) {
+  if (sound.options[file]) return;
+  sound.options[file] = { options: [] };
+  try { sound.options[file] = await api("GET", "/api/sound/options?workflow=" + encodeURIComponent(file)); } catch (e) { sound.options[file] = { options: [], error: e.message }; }
+  if (sound.open && !soundTyping()) renderSound();
+}
+function uploadSample(id, file) {
+  if (!file) return;
+  if (file.size > 5 * 1024 * 1024) { toast("A voice sample should be a short clip (under 5 MB).", true); return; }
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const r = await api("POST", "/api/sound/sample", { story: storyId, who: id, name: file.name, data: String(reader.result).split(",")[1] || "" });
+      voiceOf(id).sample = r.sample; await savePrefs(); artVersion++; renderSound(); toast("Sample saved");
+    } catch (e) { toast(e.message, true); }
+  };
+  reader.readAsDataURL(file);
+}
+function soundBadge(assetId, file) {
+  const j = jobFor(assetId);
+  if (j && j.state === "running") return el("span", { class: "badge run", text: "working…" });
+  if (j && j.state === "queued") return el("span", { class: "badge run", text: "queued" });
+  if (j && j.state === "failed") return el("span", { class: "badge fail", text: "failed", title: j.message });
+  return el("span", { class: "badge" + (file ? " enh" : ""), text: file ? "recorded" : "silent" });
+}
+function speakerCard(sp) {
+  const v = voiceOf(sp.id), wf = voiceWorkflow(sp.id), open = sound.openSpeaker === sp.id;
+  const commit = fn => { fn(); savePrefs(); renderSound(); };
+  const voiceList = wf && wf.voice_options ? (sound.options[wf.file] || (loadVoiceOptions(wf.file), { options: [] })) : null;
+  const missing = sp.lines - sp.voiced;
+  return el("div", { class: "vcard", "data-speaker": sp.id },
+    el("div", { class: "brow" },
+      el("b", { style: `color:${sp.color};font-size:14px`, text: sp.name }),
+      el("span", { class: "chip" + (missing ? "" : " good"), text: `${sp.voiced} of ${sp.lines} lines recorded` }),
+      el("span", { style: "flex:1" }),
+      el("button", { class: "primary", text: `Record missing lines (${missing})`, disabled: !missing, onclick: async () => { const ls = await linesOf(sp.id); sendArt(ls.filter(l => !l.file).map(l => l.id)); } }),
+      el("button", { text: "Redo all", onclick: async () => { const ls = await linesOf(sp.id); if (confirm(`Record all ${ls.length} of ${sp.name}'s lines again?`)) sendArt(ls.map(l => l.id)); } }),
+      el("button", { class: "ghost", text: open ? "Hide lines" : "Show lines", onclick: async () => { sound.openSpeaker = open ? null : sp.id; if (!open) await linesOf(sp.id); renderSound(); } })),
+    el("div", { class: "brow" }, el("label", { text: "Voice from" }),
+      el("select", { style: "flex:0 1 320px", onchange: ev => commit(() => { v.workflow = ev.target.value; }) },
+        el("option", { value: "", text: "Default (set under Voices above)", selected: !v.workflow }),
+        sound.data.workflows.filter(w => w.kind === "voice").map(w => el("option", { value: w.file, text: w.title, selected: w.file === v.workflow }))),
+      wf && el("span", { class: "sub", style: "color:var(--dim);flex:1;min-width:200px", text: wf.description })),
+    voiceList && el("div", { class: "brow" }, el("label", { text: "Stock voice" }),
+      voiceList.options.length
+        ? el("select", { style: "flex:0 1 320px", onchange: ev => commit(() => { v.voice = ev.target.value; }) }, el("option", { value: "", text: "The workflow's default", selected: !v.voice }), opts(voiceList.options, v.voice || null))
+        : el("input", { type: "text", style: "flex:0 1 320px", placeholder: "Name of a voice (the list could not be read from ComfyUI)", value: v.voice, onchange: ev => commit(() => { v.voice = ev.target.value.trim(); }) })),
+    wf && wf.needs_sample && el("div", { class: "brow" }, el("label", { text: "Sample recording" }),
+      v.sample ? el("audio", { controls: true, preload: "none", src: audioUrl("samples/" + v.sample) }) : el("span", { class: "chip bad", text: "none yet" }),
+      el("input", { type: "file", accept: "audio/*,.wav,.mp3,.flac,.ogg,.m4a", title: "5 to 15 seconds of this person speaking clearly", onchange: ev => uploadSample(sp.id, ev.target.files[0]) })),
+    wf && wf.needs_sample_text && el("div", { class: "brow" }, el("label", { text: "Words in the sample" }),
+      el("input", { type: "text", style: "flex:1", placeholder: "Exactly what is said in the recording", value: v.sample_text, onchange: ev => { v.sample_text = ev.target.value.trim(); savePrefs(); } })),
+    el("div", { class: "brow" }, el("label", { text: "Pace" }),
+      el("input", { type: "range", min: 0.7, max: 1.2, step: 0.05, value: v.speed || 1, style: "max-width:200px", onchange: ev => { v.speed = +ev.target.value; savePrefs(); ev.target.nextSibling.textContent = v.speed.toFixed(2); } }), el("span", { class: "chip", text: (v.speed || 1).toFixed(2) })),
+    open && el("div", { style: "margin-top:8px" }, (sound.lines[sp.id] || []).map(l => el("div", { class: "lrow" },
+      soundBadge(l.id, l.file),
+      el("span", { class: "ltext", text: l.text }),
+      l.scene && el("span", { class: "chip link", text: l.scene, onclick: () => { closeSound(); select(sceneIndex(l.scene), -1, true); } }),
+      l.file && el("audio", { controls: true, preload: "none", src: audioUrl(l.file) }),
+      el("button", { class: "ghost", text: l.file ? "Redo" : "Record", onclick: () => sendArt([l.id]) }),
+      l.file && el("button", { class: "ghost danger", title: "Remove this recording", text: "✕", onclick: async () => { await api("POST", "/api/art/revert", { story: storyId, assets: [l.id] }); refreshSound(); } })))));
+}
+function trackCard(t, ti) {
+  const info = sound.data.tracks.find(x => x.id === t.id), asset = "music_" + t.id, file = info && info.file;
+  const used = doc.scenes.reduce((n, s) => n + s.items.filter(it => it.t === "music" && it.track === t.id).length, 0);
+  return el("div", { class: "vcard", "data-track": t.id },
+    el("div", { class: "brow" },
+      bindText(el("input", { type: "text", placeholder: "Title", style: "flex:0 1 240px;font-weight:600" }), t, "title"),
+      el("label", { text: "id" }), el("input", { type: "text", style: "width:110px", value: t.id, onchange: ev => {
+        const to = ev.target.value.trim().replace(/[^A-Za-z0-9_]/g, "_");
+        if (!to || to === t.id) { ev.target.value = t.id; return; }
+        if (to === "off" || doc.tracks.some(x => x.id === to)) { toast(`The id '${to}' is taken`, true); ev.target.value = t.id; return; }
+        change(() => { doc.scenes.forEach(s => s.items.forEach(it => { if (it.t === "music" && it.track === t.id) it.track = to; })); t.id = to; }); renderSound();
+      } }),
+      el("label", { text: "seconds" }), el("input", { type: "number", min: 5, max: 600, value: t.seconds || 30, onchange: ev => { change(() => t.seconds = Math.max(5, Math.min(600, num(ev.target.value)))); } }),
+      soundBadge(asset, file), el("span", { class: "chip", text: used ? `used in ${used} place${used === 1 ? "" : "s"}` : "not used yet" }),
+      el("span", { style: "flex:1" }),
+      el("button", { class: "primary", text: file ? "Generate again" : "Generate", onclick: () => sendArt([asset]) }),
+      el("button", { class: "ghost danger", title: "Delete this track", text: "✕", onclick: () => {
+        if (used) { toast(`'${t.title || t.id}' is still started by ${used} Music block(s).`, true); return; }
+        change(() => doc.tracks.splice(ti, 1)); renderSound();
+      } })),
+    bindText(el("textarea", { rows: 2, placeholder: "What it should sound like: instruments, mood, tempo…", style: "margin-top:6px" }), t, "prompt"),
+    file && el("div", { class: "brow" }, el("audio", { controls: true, loop: true, preload: "none", src: audioUrl(file) }),
+      el("button", { class: "ghost", text: "Remove the recording", onclick: async () => { await api("POST", "/api/art/revert", { story: storyId, assets: [asset] }); refreshSound(); } })));
+}
+function renderSound() {
+  const host = $("#sound"), d = sound.data; if (!d) return;
+  const scroll = host.scrollTop; host.textContent = ""; sound.stale = false;
+  const redraw = () => renderSound();
+  appendAll(host,
+    el("div", { class: "bar" },
+      el("span", { class: "lamp" + (d.api_key ? " ok" : "") }),
+      el("span", { text: d.api_key ? "A Comfy account key is set: partner voices (ElevenLabs) can be used." : "Partner voices (ElevenLabs) are a paid service: start the editor with COMFY_ORG_API_KEY set. Local workflows need no key." }),
+      !d.playback && el("span", { class: "chip bad", text: "this build of the game has no sound" }),
+      el("span", { style: "flex:1" }),
+      el("button", { text: "Tidy up old recordings", title: "Set aside recordings of lines that were reworded or cut, and of deleted tracks", onclick: async () => { const r = await api("POST", "/api/sound/prune", { story: storyId }); toast(r.removed ? `Set aside ${r.removed} recording(s) no longer in the story` : "Nothing to tidy"); refreshSound(); } }),
+      el("button", { text: "Cancel jobs", onclick: () => api("POST", "/api/art/cancel", {}).then(pollJobs) })),
+    dirty && el("div", { class: "pmsg warning", style: "margin-top:8px", text: "The story has unsaved changes. The lists below show the saved story; recording saves first." }),
+    el("div", { class: "jobshost" }),
+    el("h2", {}, "Music", el("label", { text: "workflow" }), workflowSelect("music", d.workflows, redraw),
+      el("button", { text: "+ Track", onclick: () => { change(() => doc.tracks.push({ id: uniqueId("track", ["off", ...doc.tracks.map(t => t.id)]), title: "New track", seconds: 30, prompt: "" })); renderSound(); } })),
+    doc.tracks.length ? doc.tracks.map(trackCard) : el("div", { class: "empty", style: "padding:14px", text: "No music yet. Add a track, describe it, generate it, then start it in a scene with a Music block." }),
+    el("h2", {}, "Voices", el("label", { text: "default workflow" }), workflowSelect("voice", d.workflows, redraw)),
+    d.speakers.length ? d.speakers.map(speakerCard) : el("div", { class: "empty", style: "padding:14px", text: "Nobody says anything in the saved story yet." }),
+    el("div", { style: "margin-top:18px;color:var(--dim);font-size:12px", text: `Recordings are saved in ${d.folder}. A line is recorded once and keyed by its words: reword it and it needs recording again.` }));
+  host.querySelectorAll("textarea").forEach(grow);
+  host.scrollTop = scroll;
+  renderJobs();
+}
+
 function renderJobs() {
-  const host = $("#jobs"); if (!host) return;
-  host.textContent = "";
   const mine = art.jobs.filter(j => j.story === storyId).slice(-12).reverse();
-  if (!mine.length) return;
-  appendAll(host, el("h2", { text: "Jobs" }), mine.map(j => el("div", { class: "jrow " + j.state },
-    el("span", { class: "badge " + (j.state === "done" ? "enh" : j.state === "failed" ? "fail" : j.state === "cancelled" ? "" : "run"), text: j.state }),
-    el("b", { text: j.label }), el("span", { text: j.workflow.replace(".json", "") }),
-    el("span", { class: "msg", text: j.state === "failed" ? j.message : j.state === "done" ? `${j.seconds}s` : "" }))));
+  document.querySelectorAll(".jobshost").forEach(host => {
+    host.textContent = "";
+    if (!mine.length) return;
+    appendAll(host, el("h2", { text: "Jobs" }), mine.map(j => el("div", { class: "jrow " + j.state },
+      el("span", { class: "badge " + (j.state === "done" ? "enh" : j.state === "failed" ? "fail" : j.state === "cancelled" ? "" : "run"), text: j.state }),
+      el("b", { text: j.label }), el("span", { text: j.workflow.replace(".json", "") }),
+      el("span", { class: "msg", text: j.state === "failed" ? j.message : j.state === "done" ? `${j.seconds}s` : "" }))));
+  });
   // badges on the cards follow the jobs
-  if (art.data && !artTyping()) {
-    const sig = mine.map(j => j.id + j.state).join();
-    if (sig !== art.sig) { art.sig = sig; renderArt(); }
-  }
+  const sig = mine.map(j => j.id + j.state).join();
+  if (sig === art.sig) return;
+  art.sig = sig;
+  if (art.open && art.data && !artTyping()) renderArt();
+  if (sound.open && sound.data && !soundTyping()) renderSound();
 }
 
 function wire() {
@@ -1494,6 +1662,8 @@ function wire() {
   $("#saveBtn").onclick = save; $("#undoBtn").onclick = undo; $("#redoBtn").onclick = redo;
   $("#storySel").onchange = storyMenuChanged;
   $("#artBtn").onclick = () => art.open ? closeArt() : openArt();
+  $("#soundBtn").onclick = () => sound.open ? closeSound() : openSound();
+  $("#sound").addEventListener("focusout", () => setTimeout(() => { if (sound.stale && sound.open && !soundTyping()) refreshSound(); }, 50));
   $("#compare").onclick = () => $("#compare").classList.remove("show");
   $("#art").addEventListener("focusout", () => setTimeout(() => { if (art.stale && art.open && !artTyping()) refreshArt(); }, 50));
   pollJobs();

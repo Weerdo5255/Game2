@@ -1,0 +1,13 @@
+{
+  "title": "ElevenLabs: a stock voice",
+  "kind": "voice",
+  "description": "Ordinary text to speech in one of ElevenLabs' stock voices, through ComfyUI's partner node. A paid service: ComfyUI must be signed in, or the editor started with COMFY_ORG_API_KEY set.",
+  "voice_options": {"node": "ElevenLabsVoiceSelector", "input": "voice"},
+  "defaults": {"voice": "Roger (male, american)"},
+  "output_node": "3",
+  "prompt": {
+    "1": {"class_type": "ElevenLabsVoiceSelector", "_meta": {"title": "Which voice"}, "inputs": {"voice": "$voice"}},
+    "2": {"class_type": "ElevenLabsTextToSpeech", "_meta": {"title": "Speak the line"}, "inputs": {"voice": ["1", 0], "text": "$text", "stability": 0.5, "apply_text_normalization": "auto", "model": "eleven_multilingual_v2", "model.speed": "$speed", "model.similarity_boost": 0.75, "model.use_speaker_boost": false, "model.style": 0.0, "language_code": "", "seed": "$seed", "output_format": "mp3_44100_192"}},
+    "3": {"class_type": "SaveAudioMP3", "_meta": {"title": "Save (MP3)"}, "inputs": {"audio": ["2", 0], "filename_prefix": "$prefix", "quality": "V0"}}
+  }
+}

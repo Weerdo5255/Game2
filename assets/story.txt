@@ -39,6 +39,11 @@ var canvas | Quince knows the fleet is canvas | 0 | good character=q hidden
 var water | Knows Meridian is short of water | 0 | good hidden
 var ally | Peregrine has offered to help | 0 | good character=p hidden
 
+track estate | Thistlemere Morning | 40 | elegant chamber music, harpsichord and string quartet, unhurried, wry, a faint warm synthesizer pad underneath
+track intrigue | Below Stairs | 40 | quiet pizzicato strings and soft clarinet, tiptoeing, conspiratorial, light percussion
+track gala | The Gala Waltz | 45 | grand ballroom waltz, full string orchestra, sparkling, slightly too proud of itself
+track summit | Sixty Hulls | 40 | slow tense low strings and distant brass, a ticking pulse, held breath
+
 chapter Prologue
 chapter One: A Breakfast at the Axis
 chapter Two: Forty Trunks and a Grievance
@@ -52,6 +57,7 @@ chapter Six: The Summit
 # @chapter Prologue
 card Prologue | Thistlemere, Halcyon Reach
 bg pantry
+music estate
 n: Morning on Halcyon Reach arrives the way everything arrives here: on schedule, by committee, and three minutes late so that His Lordship may feel he was waited for.
 n: The sunline brightens along the axis. Eight kilometres overhead, somebody else's lake catches the light. I stopped looking up years ago. Looking up is for tourists and theologians.
 n: My name is Marlowe. I am Head of Household to the Honourable Peregrine Varrow, who turns twenty tomorrow and has never once in his life opened a door.
@@ -226,6 +232,7 @@ goto ch3
 # @chapter Three: Below Stairs
 card Chapter Three | Below Stairs
 bg pantry
+music intrigue
 n: Eleven at night. Above us the lords are being civil over the fish, which is the most dangerous course. Below: the long table, the good teapot, and the only honest conversation on Halcyon Reach.
 show c neutral center
 c: Sit. Eat. Nobody's master is in this room.
@@ -323,6 +330,7 @@ goto ch4
 # @chapter Four: An Affair of Honour
 card Chapter Four | An Affair of Honour
 bg vista
+music estate
 n: The birthday dawns in perfect, rescheduled sunshine. Overhead the far fields hang like a quilt on a line. I have been awake since four, ironing a cravat for a swan.
 show p angry center
 p: Marlowe! My sabres. The good ones. Great-grandfather's.
@@ -405,6 +413,7 @@ goto ch5
 # @chapter Five: The Gala
 card Chapter Five | The Gala
 bg ballroom
+music gala
 n: Nine in the evening. Four hundred guests, two orchestras, one swan in a cravat. The soup, in the end, was served in bowls. I have let the Young Master believe it was a triumph of geometry.
 n: Beyond the tall windows sixty hulls keep station in the dark. Thirty-one of them are flapping slightly.
 if canvas >= 1 goto gala_tobe
@@ -529,6 +538,7 @@ goto summit
 # @chapter Interlude: A Word in the Study
 card Interlude | A Word in the Study
 bg study
+music summit
 show v angry left
 v: Stand there, Marlowe. No. There. In the light.
 v: My dockmaster tells me that my son's valet takes a remarkable interest in fleets, and keeps remarkably close company with foreign stewards.
@@ -557,6 +567,7 @@ goto summit
 # @chapter Six: The Summit
 card Chapter Six | The Summit
 bg study
+music summit
 n: Midnight. Lord Varrow's study. The war table glows between them: two little cylinders of light and, hanging in the middle, a mote labelled THE VEIL.
 n: I am here to pour. Quince is here to pour. We are furniture, and we are loaded.
 show v neutral left

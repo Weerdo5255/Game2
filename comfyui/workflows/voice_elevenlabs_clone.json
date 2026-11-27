@@ -1,0 +1,12 @@
+{
+  "title": "ElevenLabs: clone from a sample",
+  "kind": "voice",
+  "description": "Speaks in a voice cloned from the character's sample recording, through ComfyUI's ElevenLabs partner nodes. A paid service; the voice is cloned afresh for every line, which costs accordingly.",
+  "output_node": "4",
+  "prompt": {
+    "1": {"class_type": "LoadAudio", "_meta": {"title": "Voice sample"}, "inputs": {"audio": "$sample"}},
+    "2": {"class_type": "ElevenLabsInstantVoiceClone", "_meta": {"title": "Clone the voice"}, "inputs": {"files.audio0": ["1", 0], "remove_background_noise": false}},
+    "3": {"class_type": "ElevenLabsTextToSpeech", "_meta": {"title": "Speak the line"}, "inputs": {"voice": ["2", 0], "text": "$text", "stability": 0.5, "apply_text_normalization": "auto", "model": "eleven_multilingual_v2", "model.speed": "$speed", "model.similarity_boost": 0.75, "model.use_speaker_boost": false, "model.style": 0.0, "language_code": "", "seed": "$seed", "output_format": "mp3_44100_192"}},
+    "4": {"class_type": "SaveAudioMP3", "_meta": {"title": "Save (MP3)"}, "inputs": {"audio": ["3", 0], "filename_prefix": "$prefix", "quality": "V0"}}
+  }
+}

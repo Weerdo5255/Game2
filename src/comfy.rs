@@ -10,6 +10,7 @@
 //! story's `enhanced` folder, where the game picks it up.
 
 use crate::art;
+use crate::audio;
 use crate::gfx::{rgb, Canvas, BLACK, H, W};
 use crate::script::{CharDef, Doc};
 use serde::Serialize;
@@ -30,6 +31,11 @@ const BUILT_IN_WORKFLOWS: &[(&str, &str)] = &[
     ("sprite_base.json", include_str!("../comfyui/workflows/sprite_base.json")),
     ("sprite_reimagine.json", include_str!("../comfyui/workflows/sprite_reimagine.json")),
     ("sprite_expression.json", include_str!("../comfyui/workflows/sprite_expression.json")),
+    ("voice_elevenlabs.json", include_str!("../comfyui/workflows/voice_elevenlabs.json")),
+    ("voice_elevenlabs_clone.json", include_str!("../comfyui/workflows/voice_elevenlabs_clone.json")),
+    ("voice_f5_clone.json", include_str!("../comfyui/workflows/voice_f5_clone.json")),
+    ("music_stable_audio.json", include_str!("../comfyui/workflows/music_stable_audio.json")),
+    ("music_ace_step.json", include_str!("../comfyui/workflows/music_ace_step.json")),
 ];
 const PNG_MAGIC: &[u8] = b"\x89PNG\r\n\x1a\n";
 
@@ -47,9 +53,15 @@ pub struct Suite {
 pub struct WorkflowInfo {
     pub file: String,
     pub title: String,
-    /// background, sprite (neutral portrait) or expression.
+    /// background, sprite (neutral portrait), expression, voice or music.
     pub kind: String,
     pub description: String,
+    /// For a voice workflow that speaks from a recording: it needs a sample.
+    pub needs_sample: bool,
+    /// ... and the words spoken in that sample.
+    pub needs_sample_text: bool,
+    /// Where the list of stock voices can be read on the server: [node, input].
+    pub voice_options: Option<(String, String)>,
 }
 
 impl Suite {
@@ -111,9 +123,13 @@ impl Suite {
             .filter_map(|file| {
                 let t = self.template(&file).ok()?;
                 let kind = t["kind"].as_str()?.to_string();
+                let raw = t["prompt"].to_string();
                 Some(WorkflowInfo {
                     title: t["title"].as_str().unwrap_or(&file).to_string(),
                     description: t["description"].as_str().unwrap_or("").to_string(),
+                    needs_sample: raw.contains("\"$sample\""),
+                    needs_sample_text: raw.contains("\"$sample_text\""),
+                    voice_options: t["voice_options"]["node"].as_str().zip(t["voice_options"]["input"].as_str()).map(|(n, i)| (n.to_string(), i.to_string())),
                     kind,
                     file,
                 })
@@ -137,12 +153,64 @@ pub struct Asset {
     pub prompt: String,
     /// Key under which a story stores its own prompt for this subject.
     pub prompt_key: String,
+    /// For a voice line: who says it ("n" for the narrator) and the words.
+    pub who: String,
+    pub text: String,
+    /// For music: how long, in seconds (0 = the workflow's default).
+    pub seconds: i32,
 }
 
 impl Asset {
+    pub fn is_audio(&self) -> bool {
+        self.kind == "voice" || self.kind == "music"
+    }
+
+    /// File name of an image asset. (Sound takes its extension from what ComfyUI returns.)
     pub fn output(&self) -> String {
         format!("{}.png", self.id)
     }
+}
+
+/// Everything a story can be heard to do: its music tracks, and every
+/// distinct line of dialogue (a line said twice is recorded once).
+pub fn audio_assets(doc: &Doc) -> Vec<Asset> {
+    let blank = |id: String, kind: &'static str| Asset {
+        id,
+        kind,
+        name: String::new(),
+        character: None,
+        expr: String::new(),
+        prompt: String::new(),
+        prompt_key: String::new(),
+        who: String::new(),
+        text: String::new(),
+        seconds: 0,
+    };
+    let mut out = Vec::new();
+    for t in doc.tracks.iter().filter(|t| crate::script::valid_id(&t.id)) {
+        out.push(Asset { name: if t.title.is_empty() { t.id.clone() } else { t.title.clone() }, prompt: t.prompt.clone(), seconds: t.seconds, ..blank(audio::music_stem(&t.id), "music") });
+    }
+    let mut seen = std::collections::HashSet::new();
+    for scene in &doc.scenes {
+        for item in &scene.items {
+            let crate::script::Item::Say { who, text } = item else { continue };
+            let who_ok = who == crate::script::NARRATOR || doc.characters.iter().any(|c| &c.id == who && crate::script::valid_id(&c.id));
+            let stem = audio::voice_stem(who, text);
+            if !who_ok || text.trim().is_empty() || !seen.insert(stem.clone()) {
+                continue;
+            }
+            let name = doc.characters.iter().find(|c| &c.id == who).map_or("Narration".to_string(), |c| if c.name.is_empty() { c.id.clone() } else { c.name.clone() });
+            out.push(Asset { name, who: who.clone(), text: text.trim().to_string(), ..blank(stem, "voice") });
+        }
+    }
+    out
+}
+
+/// Pictures and sound together.
+pub fn all_assets(doc: &Doc) -> Vec<Asset> {
+    let mut all = assets_for(doc);
+    all.extend(audio_assets(doc));
+    all
 }
 
 /// Every asset a story can show: all backgrounds, and six expressions of
@@ -158,6 +226,9 @@ pub fn assets_for(doc: &Doc) -> Vec<Asset> {
             expr: String::new(),
             prompt: art::bg_prompt(name).to_string(),
             prompt_key: format!("bg_{}", name),
+            who: String::new(),
+            text: String::new(),
+            seconds: 0,
         });
     }
     for ch in doc.characters.iter().filter(|c| art::SPRITES.contains(&c.sprite.as_str()) && crate::script::valid_id(&c.id)) {
@@ -170,6 +241,9 @@ pub fn assets_for(doc: &Doc) -> Vec<Asset> {
                 expr: expr.to_string(),
                 prompt: art::sprite_prompt(&ch.sprite).to_string(),
                 prompt_key: format!("spr_{}", ch.id),
+                who: String::new(),
+                text: String::new(),
+                seconds: 0,
             });
         }
     }
@@ -268,6 +342,8 @@ fn drop_canny(prompt: &mut Map<String, Value>) {
 /// A workflow ready to queue.
 #[derive(Debug)]
 pub struct Built {
+    /// Node packs or services the workflow relies on beyond plain ComfyUI.
+    pub requires: Vec<(String, String)>,
     pub prompt: Value,
     pub output_node: String,
     /// (name in ComfyUI's input folder, role) for each image to upload.
@@ -285,6 +361,27 @@ pub struct Overrides {
     pub prompts: BTreeMap<String, String>,
     /// The story's preferred workflow per kind.
     pub workflows: BTreeMap<String, String>,
+    /// How each speaker sounds, by character id ("n" for the narrator).
+    pub voices: BTreeMap<String, Voice>,
+}
+
+/// One speaker's voice: a stock voice for ordinary text to speech, or a
+/// sample recording to clone, depending on the workflow.
+#[derive(Clone, Default, Debug, serde::Deserialize, Serialize)]
+pub struct Voice {
+    #[serde(default)]
+    pub workflow: String,
+    /// Name of a stock voice, for workflows that take one.
+    #[serde(default)]
+    pub voice: String,
+    /// File name of the sample recording, in the story's audio/samples folder.
+    #[serde(default)]
+    pub sample: String,
+    /// The words spoken in the sample (some cloning models need them).
+    #[serde(default)]
+    pub sample_text: String,
+    #[serde(default)]
+    pub speed: f64,
 }
 
 /// Fill in the workflow for an asset. `tag` keeps uploads and outputs of
@@ -318,9 +415,11 @@ pub fn build(suite: &Suite, asset: &Asset, tag: &str, ov: &Overrides) -> Result<
     }
     // most specific wins: this send, then the story's choice, then a per-asset
     // override in config.json, then the kind's default
+    let voice = ov.voices.get(&asset.who).cloned().unwrap_or_default();
     let workflow = ov
         .workflow
         .clone()
+        .or_else(|| Some(voice.workflow.clone()).filter(|w| asset.kind == "voice" && !w.is_empty()))
         .or_else(|| ov.workflows.get(asset.kind).cloned())
         .or_else(|| explicit.get("workflow").and_then(Value::as_str).map(str::to_string))
         .or_else(|| s.get("workflow").and_then(Value::as_str).map(str::to_string));
@@ -334,14 +433,29 @@ pub fn build(suite: &Suite, asset: &Asset, tag: &str, ov: &Overrides) -> Result<
     merge(&mut s, &Value::Object(ov.settings.clone()));
 
     let text = |key: &str| s.get(key).and_then(Value::as_str).unwrap_or("").to_string();
+    let (style_prefix, style_suffix) = (text("style_prefix"), text("style_suffix"));
     let mut subject = ov.prompts.get(&asset.prompt_key).filter(|p| !p.trim().is_empty()).cloned().unwrap_or_else(|| asset.prompt.clone());
     if asset.character.is_some() {
         subject = format!("{}, {}", subject, art::expr_prompt(&asset.expr));
     }
-    // one seed per character, so every expression shares its neutral's noise
-    let seed_key = asset.character.as_ref().map_or(asset.id.as_str(), |c| c.id.as_str());
+    if asset.kind == "voice" {
+        // the line itself, and how this speaker sounds
+        s.insert("text".into(), json!(asset.text));
+        if !voice.voice.is_empty() {
+            s.insert("voice".into(), json!(voice.voice));
+        }
+        if voice.speed > 0.0 {
+            s.insert("speed".into(), json!(voice.speed));
+        }
+        s.insert("sample_text".into(), json!(voice.sample_text));
+    }
+    if asset.kind == "music" && asset.seconds > 0 {
+        s.insert("seconds".into(), json!(asset.seconds));
+    }
+    // one seed per character, so every expression shares its neutral's noise (and every line its voice)
+    let seed_key = if asset.kind == "voice" { asset.who.as_str() } else { asset.character.as_ref().map_or(asset.id.as_str(), |c| c.id.as_str()) };
     let seed = (s.get("seed").and_then(Value::as_u64).unwrap_or(0) + (crc32(seed_key.as_bytes()) % 100_000) as u64) % (1 << 63);
-    s.insert("positive".into(), json!(format!("{}{}{}", text("style_prefix"), subject, text("style_suffix"))));
+    s.insert("positive".into(), json!(format!("{}{}{}", style_prefix, subject, style_suffix)));
     s.insert("seed".into(), json!(seed));
     s.insert("prefix".into(), json!(format!("below_stairs/{}/{}", tag, asset.id)));
 
@@ -350,11 +464,27 @@ pub fn build(suite: &Suite, asset: &Asset, tag: &str, ov: &Overrides) -> Result<
     let roles: &[&str] = match asset.kind {
         "background" => &["guide"],
         "sprite" => &["guide", "silhouette"],
+        "voice" => &["sample"],
+        "music" => &[],
         _ => &["guide", "silhouette", "face", "base"],
     };
     for role in roles {
         if !raw.contains(&format!("\"${}\"", role)) {
-            continue; // this workflow does not use that image
+            continue; // this workflow does not use that file
+        }
+        if *role == "sample" {
+            // a recording of the speaker, uploaded once per speaker under its own name
+            if voice.sample.is_empty() {
+                return Err(format!("'{}' speaks from a sample recording: add one for {} first", workflow, asset.name));
+            }
+            if raw.contains("\"$sample_text\"") && voice.sample_text.trim().is_empty() {
+                return Err(format!("'{}' also needs the words spoken in {}'s sample", workflow, asset.name));
+            }
+            let ext = voice.sample.rsplit('.').next().unwrap_or("wav");
+            let name = format!("bsas_{}_sample_{}.{}", tag, asset.who, ext);
+            s.insert("sample".into(), json!(name));
+            uploads.push((name, "sample".to_string()));
+            continue;
         }
         let role = if *role == "guide" && template["guide"] == "enhanced" { "current" } else { role };
         let name = format!("bsas_{}_{}_{}.png", tag, asset.id, role);
@@ -368,14 +498,26 @@ pub fn build(suite: &Suite, asset: &Asset, tag: &str, ov: &Overrides) -> Result<
         other => return Err(format!("control_preprocess must be 'canny' or 'none', not '{}'", other)),
     }
     let output_node = template["output_node"].as_str().ok_or("workflow has no output_node")?.to_string();
-    if prompt[&output_node]["class_type"] != "SaveImage" {
-        return Err(format!("{}: output_node '{}' must be the id of its SaveImage node", workflow, output_node));
+    let out_class = prompt[&output_node]["class_type"].as_str().unwrap_or("");
+    let savers: &[&str] = if asset.is_audio() { &["SaveAudio", "SaveAudioMP3", "SaveAudioOpus"] } else { &["SaveImage"] };
+    if !savers.contains(&out_class) {
+        return Err(format!("{}: output_node '{}' must be the id of its {} node", workflow, output_node, savers[0]));
     }
-    let errors = validate_graph(&prompt, &suite.specs()?);
+    let specs = suite.specs()?;
+    let errors = validate_graph(&prompt, &specs);
     if !errors.is_empty() {
         return Err(format!("{}: {}", workflow, errors.join("; ")));
     }
-    Ok(Built { prompt, output_node, uploads, workflow })
+    let mut requires: Vec<(String, String)> = Vec::new();
+    for node in prompt.as_object().into_iter().flat_map(|o| o.values()) {
+        let cls = node["class_type"].as_str().unwrap_or("");
+        if let Some(what) = specs[cls]["requires"].as_str() {
+            if !requires.iter().any(|(c, _)| c == cls) {
+                requires.push((cls.to_string(), what.to_string()));
+            }
+        }
+    }
+    Ok(Built { requires, prompt, output_node, uploads, workflow })
 }
 
 /// Check a prompt graph against the node signatures; returns error strings.
@@ -520,8 +662,26 @@ impl Client {
         Ok(())
     }
 
+    /// Whether the server has a node class (for workflows that need extras).
+    fn has_node(&self, class: &str) -> Result<bool, String> {
+        Ok(self.get(&format!("/object_info/{}", class))?.get(class).is_some())
+    }
+
+    /// The choices a combo input offers on this server (stock voices, say).
+    pub fn options(&self, node: &str, input: &str) -> Result<Vec<String>, String> {
+        self.model_list(node, input)
+    }
+
     fn queue(&self, prompt: &Value, client_id: &str) -> Result<String, String> {
-        let resp = self.agent.post(&format!("{}/prompt", self.server)).send_json(json!({ "prompt": prompt, "client_id": client_id })).map_err(|e| explain(e, &self.server))?;
+        let mut payload = json!({ "prompt": prompt, "client_id": client_id });
+        // partner nodes (paid services) are billed to a Comfy account; the key is read
+        // from the environment only and never written anywhere
+        if let Ok(key) = std::env::var("COMFY_ORG_API_KEY") {
+            if !key.trim().is_empty() {
+                payload["extra_data"] = json!({ "api_key_comfy_org": key.trim() });
+            }
+        }
+        let resp = self.agent.post(&format!("{}/prompt", self.server)).send_json(payload).map_err(|e| explain(e, &self.server))?;
         let answer: Value = resp.into_json().map_err(|e| e.to_string())?;
         if answer["node_errors"].as_object().map_or(false, |o| !o.is_empty()) {
             return Err(format!("ComfyUI rejected the workflow: {}", describe_error(&answer.to_string())));
@@ -556,11 +716,12 @@ impl Client {
                         .unwrap_or_else(|| "no details given".into());
                     return Err(format!("ComfyUI failed while running the workflow: {}", detail));
                 }
-                if let Some(image) = entry["outputs"][output_node]["images"].get(0) {
-                    return Ok(image.clone());
+                let produced = &entry["outputs"][output_node];
+                if let Some(file) = produced["images"].get(0).or_else(|| produced["audio"].get(0)) {
+                    return Ok(file.clone());
                 }
                 if status["completed"] == json!(true) {
-                    return Err(format!("the workflow finished without an image from node {}", output_node));
+                    return Err(format!("the workflow finished without a result from node {}", output_node));
                 }
             }
             if Instant::now() > deadline {
@@ -611,6 +772,9 @@ pub struct Job {
     overrides: Overrides,
 }
 
+/// Every kind of asset, in the order jobs run.
+const KINDS: [&str; 5] = ["background", "sprite", "expression", "music", "voice"];
+
 /// A queue of enhancement jobs, worked through one at a time.
 pub struct Jobs {
     pub suite: Suite,
@@ -652,7 +816,7 @@ impl Jobs {
     /// Queue assets of one story. Neutral portraits go ahead of the
     /// expressions built from them.
     pub fn enqueue(&self, story: &str, story_path: &Path, doc: &Doc, ids: &[String], ov: &Overrides) -> Result<usize, String> {
-        let all = assets_for(doc);
+        let all = all_assets(doc);
         let mut chosen: Vec<&Asset> = Vec::new();
         for id in ids {
             chosen.push(all.iter().find(|a| &a.id == id).ok_or_else(|| format!("this story has no asset called '{}'", id))?);
@@ -660,7 +824,7 @@ impl Jobs {
         if chosen.is_empty() {
             return Err("nothing was selected".into());
         }
-        chosen.sort_by_key(|a| ["background", "sprite", "expression"].iter().position(|k| *k == a.kind));
+        chosen.sort_by_key(|a| KINDS.iter().position(|k| *k == a.kind));
         // fail now, not an hour into the queue, if a workflow cannot be built
         let mut built = Vec::new();
         for a in &chosen {
@@ -678,9 +842,11 @@ impl Jobs {
         // a new request for an asset replaces its finished entries and any still waiting
         list.retain(|j| j.state == "running" || !(j.story == story && chosen.iter().any(|a| a.id == j.asset)));
         for (a, (this, workflow)) in chosen.iter().zip(built) {
-            let label = match &a.character {
-                Some(c) => format!("{} ({})", if c.name.is_empty() { &c.id } else { &c.name }, a.expr),
-                None => format!("{} (background)", a.name),
+            let label = match (a.kind, &a.character) {
+                ("voice", _) => format!("{}: \u{201c}{}\u{201d}", a.name, a.text.chars().take(48).collect::<String>()),
+                ("music", _) => format!("{} (music)", a.name),
+                (_, Some(c)) => format!("{} ({})", if c.name.is_empty() { &c.id } else { &c.name }, a.expr),
+                (_, None) => format!("{} (background)", a.name),
             };
             list.push(Job {
                 id: self.next_id.fetch_add(1, Ordering::Relaxed),
@@ -703,7 +869,7 @@ impl Jobs {
             list.retain(|j| j.state == "queued" || j.state == "running" || { dropped += 1; dropped > extra });
         }
         // whatever order requests came in, a neutral portrait runs before the expressions built from it
-        let rank = |j: &Job| ["background", "sprite", "expression"].iter().position(|k| *k == j.kind).unwrap_or(3);
+        let rank = |j: &Job| KINDS.iter().position(|k| *k == j.kind).unwrap_or(KINDS.len());
         let mut waiting: Vec<Job> = list.iter().filter(|j| j.state == "queued").cloned().collect();
         waiting.sort_by_key(rank);
         let mut waiting = waiting.into_iter();
@@ -763,18 +929,28 @@ impl Jobs {
     fn run(&self, job: &Job) -> Result<PathBuf, String> {
         let text = std::fs::read_to_string(&job.story_path).map_err(|e| format!("{}: {}", job.story_path.display(), e))?;
         let (doc, _) = Doc::parse(&text);
-        let asset = assets_for(&doc).into_iter().find(|a| a.id == job.asset).ok_or("this asset is no longer in the story")?;
+        let asset = all_assets(&doc).into_iter().find(|a| a.id == job.asset).ok_or("this is no longer in the story (was the line reworded?)")?;
         let built = build(&self.suite, &asset, &job.story, &job.overrides)?;
-        let out_dir = enhanced_dir(&job.story_path);
+        let out_dir = if asset.is_audio() { audio::audio_dir(&job.story_path) } else { enhanced_dir(&job.story_path) };
         let target = out_dir.join(asset.output());
         let cfg = self.suite.config()?;
         let client = Client::new(cfg["server"].as_str().unwrap_or("http://127.0.0.1:8188"), Duration::from_secs(120));
         let cancelled = || self.generation.load(Ordering::Relaxed) != job.generation;
+        // a workflow that relies on extra nodes: say so plainly if this server lacks them
+        for (class, what) in &built.requires {
+            if !client.has_node(class)? {
+                return Err(format!("this ComfyUI has no '{}' node; the workflow needs {}", class, what));
+            }
+        }
         for (name, role) in &built.uploads {
             if cancelled() {
                 return Err("cancelled".into());
             }
             let png = match role.as_str() {
+                "sample" => {
+                    let file = job.overrides.voices.get(&asset.who).map(|v| v.sample.clone()).unwrap_or_default();
+                    std::fs::read(audio::audio_dir(&job.story_path).join("samples").join(&file)).map_err(|_| format!("the voice sample '{}' is missing", file))?
+                }
                 "base" => {
                     let neutral = out_dir.join(format!("spr_{}_neutral.png", asset.character.as_ref().map_or("", |c| c.id.as_str())));
                     std::fs::read(&neutral).map_err(|_| "needs this character's enhanced neutral portrait first; send the neutral, then this".to_string())?
@@ -788,6 +964,29 @@ impl Jobs {
         let prompt_id = client.queue(&built.prompt, &format!("below-stairs-editor-{}", job.id))?;
         let image = client.wait(&prompt_id, &built.output_node, self.timeout, &cancelled)?;
         let bytes = client.download(&image)?;
+        if asset.is_audio() {
+            // keep whatever format the workflow saved, if the game can play it
+            let produced = image["filename"].as_str().unwrap_or("");
+            let ext = produced.rsplit('.').next().unwrap_or("").to_lowercase();
+            if !audio::EXTENSIONS.contains(&ext.as_str()) {
+                return Err(format!("the workflow saved '{}', which the game cannot play; save as FLAC, MP3, OGG or WAV", produced));
+            }
+            if bytes.len() < 64 {
+                return Err("ComfyUI returned an empty audio file".into());
+            }
+            if !job.story_path.is_file() {
+                return Err("the story was removed while this was being made; nothing was saved".into());
+            }
+            std::fs::create_dir_all(&out_dir).map_err(|e| format!("{}: {}", out_dir.display(), e))?;
+            let target = out_dir.join(format!("{}.{}", asset.id, ext));
+            let tmp = out_dir.join(format!("{}.part", asset.id));
+            std::fs::write(&tmp, &bytes).and_then(|_| std::fs::rename(&tmp, &target)).map_err(|e| format!("{}: {}", target.display(), e))?;
+            // an older take in another format must not win the lookup
+            for other in audio::EXTENSIONS.iter().filter(|e| **e != ext) {
+                let _ = std::fs::remove_file(out_dir.join(format!("{}.{}", asset.id, other)));
+            }
+            return Ok(target);
+        }
         if !bytes.starts_with(PNG_MAGIC) || bytes.len() < 33 {
             return Err("ComfyUI returned something that is not a PNG".into());
         }
@@ -821,8 +1020,8 @@ mod tests {
         let (suite, assets) = (suite(), assets_for(&story()));
         assert_eq!(assets.len(), 7 + 7 * 6);
         let workflows = suite.workflows();
-        assert_eq!(workflows.len(), 6);
-        for w in &workflows {
+        assert_eq!(workflows.len(), 11);
+        for w in workflows.iter().filter(|w| w.kind != "voice" && w.kind != "music") {
             let ov = Overrides { workflow: Some(w.file.clone()), ..Default::default() };
             let mut used = 0;
             for a in assets.iter().filter(|a| a.kind == w.kind) {
@@ -839,7 +1038,7 @@ mod tests {
     fn built_in_copies_match_the_files() {
         assert_eq!(BUILT_IN_WORKFLOWS.len(), suite().workflows().len());
         let nowhere = Suite { dir: PathBuf::from("/nonexistent/comfy") };
-        assert_eq!(nowhere.workflows().len(), 6);
+        assert_eq!(nowhere.workflows().len(), 11);
         assert!(build(&nowhere, &assets_for(&story())[0], "main", &Overrides::default()).is_ok());
     }
 
@@ -945,6 +1144,54 @@ mod tests {
         let ov = Overrides { workflow: Some("bad.json".into()), ..Default::default() };
         assert!(build(&s, &assets[0], "main", &ov).unwrap_err().contains("SaveImage"));
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn every_line_and_track_is_an_audio_asset() {
+        let (mut doc, _) = Doc::parse("character p | Perry | #fff | p\ntrack calm | Calm | 20 | harp\n*start\nmusic calm\np: Hello.\nn: He says hello.\np: Hello.\np:\nx: Nobody.\nend E | .\n");
+        doc.sanitize();
+        let a = audio_assets(&doc);
+        assert_eq!(a.iter().map(|x| x.kind).collect::<Vec<_>>(), ["music", "voice", "voice"]);
+        assert_eq!((a[0].id.as_str(), a[0].seconds, a[0].prompt.as_str()), ("music_calm", 20, "harp"));
+        assert_eq!((a[1].who.as_str(), a[1].name.as_str(), a[2].who.as_str(), a[2].name.as_str()), ("p", "Perry", "n", "Narration"));
+        assert_eq!(a[1].id, audio::voice_stem("p", "Hello."));
+        assert_eq!(all_assets(&doc).len(), 7 + 6 + 3);
+    }
+
+    #[test]
+    fn audio_workflows_build_with_the_right_voice_and_length() {
+        let (mut doc, _) = Doc::parse("character p | Perry | #fff | p\ntrack calm | Calm | 20 | harp and strings\n*start\np: Hello there.\nend E | .\n");
+        doc.sanitize();
+        let assets = audio_assets(&doc);
+        let (music, line) = (&assets[0], &assets[1]);
+        // music: both local workflows, with the track's own length and description
+        for file in ["music_stable_audio.json", "music_ace_step.json"] {
+            let b = build(&suite(), music, "tale", &Overrides { workflow: Some(file.into()), ..Default::default() }).unwrap_or_else(|e| panic!("{}: {}", file, e));
+            let text = b.prompt.to_string();
+            assert!(text.contains("harp and strings") && text.contains("\"seconds\":20") && text.contains("below_stairs/tale/music_calm"), "{}", file);
+            assert!(b.uploads.is_empty() && b.requires.is_empty());
+        }
+        // a stock voice
+        let mut ov = Overrides::default();
+        ov.voices.insert("p".into(), Voice { voice: "Sarah (female, american)".into(), speed: 1.1, ..Default::default() });
+        let b = build(&suite(), line, "tale", &ov).unwrap();
+        let text = b.prompt.to_string();
+        assert_eq!(b.workflow, "voice_elevenlabs.json");
+        assert!(text.contains("Hello there.") && text.contains("Sarah (female, american)") && text.contains("\"model.speed\":1.1"));
+        assert!(b.requires.iter().any(|(c, w)| c == "ElevenLabsTextToSpeech" && w.contains("API key")));
+        // cloning needs a sample, and F5 the words in it
+        ov.voices.get_mut("p").unwrap().workflow = "voice_f5_clone.json".into();
+        assert!(build(&suite(), line, "tale", &ov).unwrap_err().contains("add one for Perry"));
+        ov.voices.get_mut("p").unwrap().sample = "p.wav".into();
+        assert!(build(&suite(), line, "tale", &ov).unwrap_err().contains("words spoken"));
+        ov.voices.get_mut("p").unwrap().sample_text = "The quick brown fox.".into();
+        let b = build(&suite(), line, "tale", &ov).unwrap();
+        assert_eq!(b.uploads, vec![("bsas_tale_sample_p.wav".to_string(), "sample".to_string())]);
+        assert!(b.prompt.to_string().contains("The quick brown fox.") && b.requires[0].1.contains("F5-TTS"));
+        ov.voices.get_mut("p").unwrap().workflow = "voice_elevenlabs_clone.json".into();
+        assert!(build(&suite(), line, "tale", &ov).unwrap().prompt.to_string().contains("files.audio0"));
+        // an image workflow cannot be used for sound, nor the reverse
+        assert!(build(&suite(), line, "tale", &Overrides { workflow: Some("background.json".into()), ..Default::default() }).is_err());
     }
 
     #[test]

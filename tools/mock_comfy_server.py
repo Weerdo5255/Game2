@@ -25,7 +25,7 @@ try:
         if log and len(mock.prompts) != written:
             written = len(mock.prompts)
             with open(log + ".tmp", "w") as f:
-                json.dump({"prompts": mock.prompts, "files": sorted(mock.files)}, f)
+                json.dump({"prompts": mock.prompts, "files": sorted(mock.files), "extra": getattr(mock, "extra", [])}, f)
             os.replace(log + ".tmp", log)
         time.sleep(0.1)
 except KeyboardInterrupt:

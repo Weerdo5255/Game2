@@ -1,0 +1,11 @@
+{
+  "title": "F5-TTS: clone from a sample (local)",
+  "kind": "voice",
+  "description": "Speaks in a voice cloned from the character's sample recording with F5-TTS, running locally and free. Needs the ComfyUI-F5-TTS custom nodes, a 5 to 15 second sample, and the words spoken in it.",
+  "output_node": "3",
+  "prompt": {
+    "1": {"class_type": "LoadAudio", "_meta": {"title": "Voice sample"}, "inputs": {"audio": "$sample"}},
+    "2": {"class_type": "F5TTSAudioInputs", "_meta": {"title": "Speak the line in that voice"}, "inputs": {"sample_audio": ["1", 0], "sample_text": "$sample_text", "speech": "$text", "seed": "$seed", "model": "F5v1", "vocoder": "auto", "speed": "$speed", "model_type": "F5TTS_Base"}},
+    "3": {"class_type": "SaveAudio", "_meta": {"title": "Save (FLAC)"}, "inputs": {"audio": ["2", 0], "filename_prefix": "$prefix"}}
+  }
+}

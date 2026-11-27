@@ -1,0 +1,17 @@
+{
+  "title": "Stable Audio Open",
+  "kind": "music",
+  "description": "Instrumental music from a text description, with Stable Audio Open 1.0 (runs locally). Needs its checkpoint in models/checkpoints and the T5 text encoder in models/text_encoders.",
+  "defaults": {"music_checkpoint": "stable-audio-open-1.0.safetensors", "music_clip": "t5-base.safetensors", "music_steps": 50, "music_cfg": 5.0, "music_sampler": "dpmpp_3m_sde_gpu", "music_scheduler": "exponential"},
+  "output_node": "8",
+  "prompt": {
+    "1": {"class_type": "CheckpointLoaderSimple", "_meta": {"title": "Stable Audio checkpoint"}, "inputs": {"ckpt_name": "$music_checkpoint"}},
+    "2": {"class_type": "CLIPLoader", "_meta": {"title": "T5 text encoder"}, "inputs": {"clip_name": "$music_clip", "type": "stable_audio"}},
+    "3": {"class_type": "CLIPTextEncode", "_meta": {"title": "What it should sound like"}, "inputs": {"text": "$positive", "clip": ["2", 0]}},
+    "4": {"class_type": "CLIPTextEncode", "_meta": {"title": "What to avoid"}, "inputs": {"text": "$music_negative", "clip": ["2", 0]}},
+    "5": {"class_type": "EmptyLatentAudio", "_meta": {"title": "Length"}, "inputs": {"seconds": "$seconds", "batch_size": 1}},
+    "6": {"class_type": "KSampler", "_meta": {"title": "Generate"}, "inputs": {"model": ["1", 0], "seed": "$seed", "steps": "$music_steps", "cfg": "$music_cfg", "sampler_name": "$music_sampler", "scheduler": "$music_scheduler", "positive": ["3", 0], "negative": ["4", 0], "latent_image": ["5", 0], "denoise": 1.0}},
+    "7": {"class_type": "VAEDecodeAudio", "_meta": {"title": "Decode"}, "inputs": {"samples": ["6", 0], "vae": ["1", 2]}},
+    "8": {"class_type": "SaveAudio", "_meta": {"title": "Save (FLAC)"}, "inputs": {"audio": ["7", 0], "filename_prefix": "$prefix"}}
+  }
+}
