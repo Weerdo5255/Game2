@@ -310,7 +310,7 @@ fn fill(node: &Value, values: &Map<String, Value>) -> Result<Value, String> {
 }
 
 /// CRC-32 as zlib computes it, so seeds match comfyui/enhance.py.
-fn crc32(data: &[u8]) -> u32 {
+pub(crate) fn crc32(data: &[u8]) -> u32 {
     let mut crc = 0xFFFF_FFFFu32;
     for &byte in data {
         crc ^= byte as u32;

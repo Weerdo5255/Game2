@@ -163,8 +163,12 @@ let browser = null;
   assert(st === 200 && r.written > 60 && fs.existsSync(path.join(gd, 'project.godot')) && fs.existsSync(path.join(gd, 'places', 'pantry.tscn')) && fs.existsSync(path.join(gd, 'art', 'portraits', 'p_neutral.png')) && JSON.parse(fs.readFileSync(path.join(gd, 'story', 'story.json'), 'utf8')).scenes.length === 47, 'the story can be written as a Godot project: ' + r.written + ' files');
   fs.writeFileSync(path.join(gd, 'places', 'pantry.tscn'), 'edited in Godot');
   [st, r] = await post('/api/godot', { story: 'main', force: false });
-  assert(r.written === 1 && fs.readFileSync(path.join(gd, 'places', 'pantry.tscn'), 'utf8') === 'edited in Godot', 'writing it again keeps what was changed in Godot and refreshes only the story');
-  assert(await p.locator('#godotBtn').count() === 1, 'and Manage has the button for it');
+  assert(r.written === 2 && fs.readFileSync(path.join(gd, 'places', 'pantry.tscn'), 'utf8') === 'edited in Godot' && fs.existsSync(path.join(gd, 'README.txt')), 'writing it again keeps what was changed in Godot and refreshes only the story (and its README)');
+  [st, r] = await post('/api/godot', { story: 'main', force: false, mode: '3d' });
+  const asked3d = JSON.parse(fs.readFileSync(path.join(gd, 'story', 'story.json'), 'utf8'));
+  [st] = await post('/api/godot', { story: 'main', mode: '4d' });
+  assert(asked3d.render === '3d' && st === 400, 'it can be written as all 3D (or all 2D), and nothing else');
+  assert(await p.locator('#godotBtn').count() === 1 && await p.locator('#godotMode option').count() === 3, 'and Manage has the button for it, with the choice of 2D or 3D');
 
   answer = 'Side Story';
   await p.locator('#admin [data-story="main"] button', { hasText: 'Duplicate' }).click();

@@ -77,12 +77,7 @@ impl Library {
 
     /// A folder name for a new story with this title, not yet taken.
     fn new_id(&self, title: &str) -> String {
-        let mut slug: String = title.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
-        slug = slug.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
-        slug.truncate(40);
-        if slug.is_empty() || slug == "main" {
-            slug = "story".into();
-        }
+        let slug = slug(title);
         let mut id = slug.clone();
         let mut n = 1;
         while self.dir.join(&id).exists() {
@@ -328,6 +323,17 @@ fn snapshots(story: &Path) -> Vec<(u64, String, String, String)> {
     all.sort();
     all.reverse();
     all
+}
+
+/// A title as a plain name for a folder or a file: lower case, letters, digits and dashes.
+fn slug(title: &str) -> String {
+    let mut slug: String = title.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+    slug = slug.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
+    slug.truncate(40);
+    if slug.is_empty() || slug == "main" {
+        slug = "story".into();
+    }
+    slug
 }
 
 /// Move a file into a `.removed` folder beside it, under a name not yet taken.
@@ -1087,12 +1093,33 @@ impl State {
                         }
                         Ok((bytes, "application/json", if format == "bundle" { "bundle.json" } else { "story.json" }))
                     }),
-                    _ => Err("export as json, bundle or txt".into()),
+                    "godot" | "godot2d" | "godot3d" => self.load(&story).and_then(|(mut doc, _)| {
+                        // the whole game, as a Godot project in one zip: built in a folder of its own, then packed
+                        doc.sanitize();
+                        let mode = match format {
+                            "godot2d" => crate::godot::Mode::Flat,
+                            "godot3d" => crate::godot::Mode::Full,
+                            _ => crate::godot::Mode::Story,
+                        };
+                        static N: AtomicUsize = AtomicUsize::new(0);
+                        let work = std::env::temp_dir().join(format!("below-stairs-godot-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+                        let _ = std::fs::remove_dir_all(&work);
+                        let built = crate::godot::export(&work, &doc, Some(&story), self.art_dir(&story).as_deref(), true, mode).and_then(|_| {
+                            crate::godot::zip_dir(&work, &slug(&doc.title))
+                        });
+                        let _ = std::fs::remove_dir_all(&work);
+                        built.map(|bytes| (bytes, "application/zip", match mode {
+                            crate::godot::Mode::Flat => "godot-2d.zip",
+                            crate::godot::Mode::Full => "godot-3d.zip",
+                            crate::godot::Mode::Story => "godot.zip",
+                        }))
+                    }),
+                    _ => Err("export as json, bundle, txt, godot, godot2d or godot3d".into()),
                 };
                 match made {
                     Ok((bytes, kind, ending)) => {
                         // a download, named after the story
-                        let name = if story_id.is_empty() || story_id == "main" { self.load(&story).map(|(d, _)| self.library.new_id(&d.title)).unwrap_or_else(|_| "story".into()) } else { story_id.clone() };
+                        let name = if story_id.is_empty() || story_id == "main" { self.load(&story).map(|(d, _)| slug(&d.title)).unwrap_or_else(|_| "story".into()) } else { story_id.clone() };
                         let name: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
                         let head = format!(
                             "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nContent-Disposition: attachment; filename=\"{}.{}\"\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n",
@@ -1143,7 +1170,8 @@ impl State {
                 let dir = if story_id == "main" || story_id.is_empty() { folder.parent().unwrap_or(Path::new(".")).join("godot") } else { folder.join("godot") };
                 let done = self.load(&story).and_then(|(mut doc, _)| {
                     doc.sanitize();
-                    crate::godot::export(&dir, &doc, Some(&story), self.art_dir(&story).as_deref(), body["force"].as_bool().unwrap_or(false))
+                    let mode = crate::godot::Mode::parse(body["mode"].as_str().unwrap_or("")).ok_or("the mode is 2d, 3d or story")?;
+                    crate::godot::export(&dir, &doc, Some(&story), self.art_dir(&story).as_deref(), body["force"].as_bool().unwrap_or(false), mode)
                 });
                 answer(stream, done.map(|r| json!({ "folder": dir.display().to_string(), "written": r.written.len(), "kept": r.kept.len(), "notes": r.notes })))
             }

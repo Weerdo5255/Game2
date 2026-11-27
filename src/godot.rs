@@ -47,6 +47,36 @@ const TEMPLATE: &[(&str, &str)] = &[
     ("tests/run_story.gd", include_str!("../godot/tests/run_story.gd")),
 ];
 
+/// How the exported game shows its places.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Mode {
+    /// As the story sets them: some places paintings, some 3D worlds.
+    Story,
+    /// Everything as paintings: no 3D at all.
+    Flat,
+    /// Everything as 3D worlds, and the cast as 3D figures where they have no model of their own.
+    Full,
+}
+
+impl Mode {
+    pub fn parse(text: &str) -> Option<Mode> {
+        match text {
+            "" | "story" => Some(Mode::Story),
+            "2d" | "flat" => Some(Mode::Flat),
+            "3d" | "full" => Some(Mode::Full),
+            _ => None,
+        }
+    }
+
+    fn describe(self) -> &'static str {
+        match self {
+            Mode::Story => "places as the story sets them (some paintings, some 3D)",
+            Mode::Flat => "everything 2D: every place a painting, every character a portrait",
+            Mode::Full => "everything 3D: every place a 3D world, the cast as 3D figures (or their own models)",
+        }
+    }
+}
+
 /// What an export did, for telling the user.
 #[derive(Default, Debug)]
 pub struct Report {
@@ -275,8 +305,26 @@ pub fn place_scene(name: &str, place: &PlaceData, models_there: &[String]) -> St
 
 /// The story as the Godot game reads it: the editor's own document, with
 /// each character's look filled in (their portrait's colours and their own changes).
-pub fn story_json(doc: &Doc) -> Value {
+pub fn story_json(doc: &Doc, mode: Mode) -> Value {
     let mut v = serde_json::to_value(doc).unwrap_or_else(|_| json!({}));
+    match mode {
+        Mode::Story => {}
+        Mode::Flat => {
+            v["render"] = json!("");
+            v["locales"] = json!({});
+        }
+        Mode::Full => {
+            v["render"] = json!("3d");
+            v["locales"] = json!({});
+            // a cut-out is a picture: in a game that is all 3D, whoever has a portrait and no model stands as a figure
+            for c in v["characters"].as_array_mut().into_iter().flatten() {
+                if c["model"].as_str().unwrap_or("").is_empty() && !c["sprite"].as_str().unwrap_or("").is_empty() {
+                    c["model"] = json!("figure");
+                    c["model_scale"] = json!(0.0);
+                }
+            }
+        }
+    }
     if let Some(list) = v["characters"].as_array_mut() {
         for (c, def) in list.iter_mut().zip(&doc.characters) {
             let mut look = art::look_defaults(&def.sprite);
@@ -301,13 +349,13 @@ fn put(path: &Path, bytes: &[u8], force: bool, always: bool, report: &mut Report
 }
 
 /// Write (or refresh) a Godot project for a story.
-pub fn export(dir: &Path, doc: &Doc, story: Option<&Path>, art_dir: Option<&Path>, force: bool) -> Result<Report, String> {
+pub fn export(dir: &Path, doc: &Doc, story: Option<&Path>, art_dir: Option<&Path>, force: bool, mode: Mode) -> Result<Report, String> {
     let mut report = Report::default();
     for (name, text) in TEMPLATE {
         put(&dir.join(name), text.as_bytes(), force, false, &mut report, name)?;
     }
     // the story: always as it now stands
-    let story_text = serde_json::to_string_pretty(&story_json(doc)).map_err(|e| e.to_string())? + "\n";
+    let story_text = serde_json::to_string_pretty(&story_json(doc, mode)).map_err(|e| e.to_string())? + "\n";
     put(&dir.join("story/story.json"), story_text.as_bytes(), force, true, &mut report, "story/story.json")?;
 
     // pictures: every place the game paints, and every expression of everyone with a portrait
@@ -333,13 +381,13 @@ pub fn export(dir: &Path, doc: &Doc, story: Option<&Path>, art_dir: Option<&Path
         }
     }
 
-    // places: the story's own where it has one, else the game's
-    let world = story.map(places::world_dir).filter(|d| d.is_dir());
+    // places: the story's own where it has one, else the game's (none at all for a game that is all 2D)
+    let world = story.map(places::world_dir).filter(|d| d.is_dir() && mode != Mode::Flat);
     // the models the project will have: the story's, and any already put there by hand
     let listed = |d: PathBuf| -> Vec<String> { std::fs::read_dir(d).into_iter().flatten().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).filter(|f| places::model_file(f)).collect() };
     let mut models_there = world.as_ref().map_or(Vec::new(), |w| listed(w.join("models")));
     models_there.extend(listed(dir.join("models")));
-    for name in art::BACKGROUNDS {
+    for name in art::BACKGROUNDS.iter().filter(|_| mode != Mode::Flat) {
         if let Some(place) = places::load(world.as_deref(), name) {
             let label = format!("places/{}.tscn", name);
             let missing: Vec<&str> = place.parts.iter().filter(|p| p.shape == "model" && !models_there.contains(&p.file)).map(|p| p.file.as_str()).collect();
@@ -383,17 +431,157 @@ pub fn export(dir: &Path, doc: &Doc, story: Option<&Path>, art_dir: Option<&Path
                 flac += 1;
             }
         }
-        if flac > 0 {
-            report.notes.push(format!("{} recording(s) are FLAC, which Godot does not play: convert them to Ogg Vorbis, MP3 or WAV (the names stay the same)", flac));
+        // Godot does not play FLAC (what ComfyUI's audio savers write): such recordings go in as WAV, under the same names
+        let mut unconverted = 0;
+        for e in std::fs::read_dir(&sounds).into_iter().flatten().filter_map(|e| e.ok()) {
+            let file = e.file_name().to_string_lossy().to_string();
+            let Some(stem) = file.strip_suffix(".flac").or_else(|| file.strip_suffix(".FLAC")) else { continue };
+            let label = format!("audio/{}.wav", stem);
+            let path = dir.join(&label);
+            if path.exists() && !force {
+                report.kept.push(label);
+                continue;
+            }
+            match to_wav(&e.path()) {
+                Ok(bytes) => put(&path, &bytes, true, true, &mut report, &label)?,
+                Err(_) => unconverted += 1,
+            }
+        }
+        let _ = flac;
+        if unconverted > 0 {
+            report.notes.push(format!("{} FLAC recording(s) could not be converted for Godot (which does not play FLAC): convert them to Ogg Vorbis, MP3 or WAV under the same names", unconverted));
         }
     }
     // a character's model that is not there shows as a cut-out
-    for c in doc.characters.iter().filter(|c| places::model_file(&c.model)) {
+    for c in doc.characters.iter().filter(|c| mode != Mode::Flat && places::model_file(&c.model)) {
         if !dir.join("models").join(&c.model).is_file() {
             report.notes.push(format!("{}'s model '{}' is not in the story's world/models folder: they will appear as a cut-out", c.id, c.model));
         }
     }
+    // a note on what this is and how to open it, with anything worth knowing about this export
+    let mut readme = format!(
+        "{title}\n\nA Godot 4 project, exported from the story editor.\n\nShows: {how}.\n\nOpen it with Godot 4.3 or later: start Godot, choose Import, and pick project.godot\nin this folder (or: godot --path . --editor). Press F5 to play.\n\nThe story is story/story.json, with every scene and choice. Pictures are in art/,\n3D places are scenes in places/, sound in audio/, model files in models/.\nEdit the pictures and places here in Godot; edit the story in the story editor\nand export again (pictures and places changed here are kept unless you ask\nfor them to be written again).\n",
+        title = if doc.title.is_empty() { "Untitled story" } else { &doc.title },
+        how = mode.describe()
+    );
+    if !report.notes.is_empty() {
+        readme.push_str("\nNotes from this export:\n");
+        for n in &report.notes {
+            readme.push_str(&format!("- {}\n", n));
+        }
+    }
+    put(&dir.join("README.txt"), readme.as_bytes(), true, true, &mut report, "README.txt")?;
     Ok(report)
+}
+
+/// A recording as 16-bit PCM WAV, for an engine that does not read its format.
+#[cfg(feature = "audio")]
+pub fn to_wav(path: &Path) -> Result<Vec<u8>, String> {
+    use rodio::Source;
+    let file = std::fs::File::open(path).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let decoder = rodio::Decoder::new(std::io::BufReader::new(file)).map_err(|e| format!("{}: {}", path.display(), e))?;
+    let (channels, rate) = (decoder.channels(), decoder.sample_rate());
+    let samples: Vec<i16> = decoder.collect();
+    let data_len = (samples.len() * 2) as u32;
+    let mut out = Vec::with_capacity(44 + samples.len() * 2);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_len).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&channels.to_le_bytes());
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * channels as u32 * 2).to_le_bytes());
+    out.extend_from_slice(&(channels * 2).to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_len.to_le_bytes());
+    for s in samples {
+        out.extend_from_slice(&s.to_le_bytes());
+    }
+    Ok(out)
+}
+
+#[cfg(not(feature = "audio"))]
+pub fn to_wav(_path: &Path) -> Result<Vec<u8>, String> {
+    Err("this build has no audio decoder (it was built without the 'audio' feature)".into())
+}
+
+/// Everything in a folder as one zip file (stored, not compressed: the
+/// pictures and recordings are compressed already), under `prefix/`.
+/// Godot's own cache folder (.godot) is left out.
+pub fn zip_dir(dir: &Path, prefix: &str) -> Result<Vec<u8>, String> {
+    let mut files = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let mut entries: Vec<_> = std::fs::read_dir(&d).map_err(|e| format!("{}: {}", d.display(), e))?.filter_map(|e| e.ok()).collect();
+        entries.sort_by_key(|e| e.file_name());
+        for e in entries {
+            let path = e.path();
+            if e.file_name() == ".godot" {
+                continue;
+            }
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.is_file() {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    let (time, date) = (0u16, (0 << 9) | (1 << 5) | 1u16);   // 1980-01-01, the earliest a zip can say
+    for path in &files {
+        let rel = path.strip_prefix(dir).map_err(|e| e.to_string())?.to_string_lossy().replace('\\', "/");
+        let name = format!("{}/{}", prefix, rel);
+        let data = std::fs::read(path).map_err(|e| format!("{}: {}", path.display(), e))?;
+        if data.len() > u32::MAX as usize || out.len() > u32::MAX as usize {
+            return Err("the game is too large for one zip file (4 GB)".into());
+        }
+        let crc = crate::comfy::crc32(&data);
+        let offset = out.len() as u32;
+        let fixed = |buf: &mut Vec<u8>, sig: u32, central_entry: bool| {
+            buf.extend_from_slice(&sig.to_le_bytes());
+            if central_entry {
+                buf.extend_from_slice(&20u16.to_le_bytes());   // made by
+            }
+            buf.extend_from_slice(&20u16.to_le_bytes());   // needed to extract
+            buf.extend_from_slice(&0x0800u16.to_le_bytes());   // names in UTF-8
+            buf.extend_from_slice(&0u16.to_le_bytes());   // stored
+            buf.extend_from_slice(&time.to_le_bytes());
+            buf.extend_from_slice(&date.to_le_bytes());
+            buf.extend_from_slice(&crc.to_le_bytes());
+            buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            buf.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            buf.extend_from_slice(&0u16.to_le_bytes());   // extra
+        };
+        fixed(&mut out, 0x0403_4b50, false);
+        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(&data);
+        fixed(&mut central, 0x0201_4b50, true);
+        central.extend_from_slice(&0u16.to_le_bytes());   // comment
+        central.extend_from_slice(&0u16.to_le_bytes());   // disk
+        central.extend_from_slice(&0u16.to_le_bytes());   // internal attributes
+        central.extend_from_slice(&0u32.to_le_bytes());   // external attributes
+        central.extend_from_slice(&offset.to_le_bytes());
+        central.extend_from_slice(name.as_bytes());
+    }
+    if files.len() > u16::MAX as usize {
+        return Err("too many files for one zip file".into());
+    }
+    let start = out.len() as u32;
+    out.extend_from_slice(&central);
+    out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&(files.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(files.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(central.len() as u32).to_le_bytes());
+    out.extend_from_slice(&start.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -479,7 +667,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("below-stairs-godot-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let (doc, _) = Doc::parse(crate::BUILT_IN_STORY);
-        let report = export(&dir, &doc, None, None, false).unwrap();
+        let report = export(&dir, &doc, None, None, false, Mode::Story).unwrap();
         for file in ["project.godot", "main.tscn", "scripts/story_vm.gd", "story/story.json", "art/bg/pantry.png", "art/portraits/p_smile.png", "places/study.tscn"] {
             assert!(dir.join(file).is_file(), "{} was not written", file);
         }
@@ -495,13 +683,96 @@ mod tests {
         // what is there is the user's: a second export leaves a changed scene and picture alone, and refreshes the story
         std::fs::write(dir.join("places/study.tscn"), "mine").unwrap();
         std::fs::write(dir.join("story/story.json"), "old").unwrap();
-        let again = export(&dir, &doc, None, None, false).unwrap();
+        let again = export(&dir, &doc, None, None, false, Mode::Story).unwrap();
         assert_eq!(std::fs::read_to_string(dir.join("places/study.tscn")).unwrap(), "mine");
         assert!(std::fs::read_to_string(dir.join("story/story.json")).unwrap().len() > 1000);
-        assert_eq!(again.written, vec!["story/story.json".to_string()]);
+        assert_eq!(again.written, vec!["story/story.json".to_string(), "README.txt".to_string()]);
         // ... unless told to
-        export(&dir, &doc, None, None, true).unwrap();
+        export(&dir, &doc, None, None, true, Mode::Story).unwrap();
         assert!(std::fs::read_to_string(dir.join("places/study.tscn")).unwrap().starts_with("[gd_scene"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_game_can_be_all_2d_or_all_3d() {
+        let (doc, _) = Doc::parse(crate::BUILT_IN_STORY);
+        // all 2D: nothing is 3D, and no places are written
+        let flat = story_json(&doc, Mode::Flat);
+        assert_eq!((flat["render"].as_str(), flat["locales"].as_object().map(|m| m.len())), (Some(""), Some(0)));
+        // all 3D: every place, and a figure for everyone with a portrait who has no model
+        let mut with_model = doc.clone();
+        with_model.characters[1].model = "own.glb".into();
+        let full = story_json(&with_model, Mode::Full);
+        assert_eq!(full["render"].as_str(), Some("3d"));
+        for (c, def) in full["characters"].as_array().unwrap().iter().zip(&with_model.characters) {
+            let want = if def.sprite.is_empty() { "" } else if def.model.is_empty() { "figure" } else { def.model.as_str() };
+            assert_eq!(c["model"].as_str(), Some(want), "{}", def.id);
+        }
+        // as the story says: left as it is
+        assert_eq!(story_json(&doc, Mode::Story)["render"], serde_json::to_value(&doc).unwrap()["render"]);
+        let dir = std::env::temp_dir().join(format!("below-stairs-godot-2d-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        export(&dir, &doc, None, None, true, Mode::Flat).unwrap();
+        assert!(!dir.join("places").exists() && dir.join("art/bg/pantry.png").is_file());
+        assert!(std::fs::read_to_string(dir.join("README.txt")).unwrap().contains("everything 2D"));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!((Mode::parse("2d"), Mode::parse("3d"), Mode::parse(""), Mode::parse("4d")), (Some(Mode::Flat), Some(Mode::Full), Some(Mode::Story), None));
+    }
+
+    #[test]
+    fn a_folder_zips_into_something_a_zip_reader_takes() {
+        let dir = std::env::temp_dir().join(format!("below-stairs-zip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("art/bg")).unwrap();
+        std::fs::create_dir_all(dir.join(".godot")).unwrap();
+        std::fs::write(dir.join("project.godot"), "config_version=5\n").unwrap();
+        std::fs::write(dir.join("art/bg/x.png"), [0u8, 1, 2, 3, 255]).unwrap();
+        std::fs::write(dir.join(".godot/cache"), "not this").unwrap();
+        let zip = zip_dir(&dir, "tale").unwrap();
+        // read it back by its own directory: two entries, under the prefix, data where it says
+        let end = zip.len() - 22;
+        assert_eq!(&zip[end..end + 4], &0x0605_4b50u32.to_le_bytes());
+        let count = u16::from_le_bytes([zip[end + 10], zip[end + 11]]);
+        assert_eq!(count, 2);
+        let mut at = u32::from_le_bytes(zip[end + 16..end + 20].try_into().unwrap()) as usize;
+        let mut names = Vec::new();
+        for _ in 0..count {
+            assert_eq!(&zip[at..at + 4], &0x0201_4b50u32.to_le_bytes());
+            let size = u32::from_le_bytes(zip[at + 24..at + 28].try_into().unwrap()) as usize;
+            let len = u16::from_le_bytes([zip[at + 28], zip[at + 29]]) as usize;
+            let local = u32::from_le_bytes(zip[at + 42..at + 46].try_into().unwrap()) as usize;
+            let name = String::from_utf8(zip[at + 46..at + 46 + len].to_vec()).unwrap();
+            let data = &zip[local + 30 + len..local + 30 + len + size];
+            assert_eq!(crate::comfy::crc32(data), u32::from_le_bytes(zip[at + 16..at + 20].try_into().unwrap()));
+            names.push(name);
+            at += 46 + len;
+        }
+        assert_eq!(names, vec!["tale/art/bg/x.png".to_string(), "tale/project.godot".to_string()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(feature = "audio")]
+    #[test]
+    fn recordings_godot_cannot_play_are_converted() {
+        // (any recording the decoder reads: here a short WAV, as the converter cannot tell)
+        let dir = std::env::temp_dir().join(format!("below-stairs-wav-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut wav = b"RIFF".to_vec();
+        let pcm: Vec<u8> = (0..800i16).flat_map(|i| ((i % 50) * 400).to_le_bytes()).collect();
+        wav.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&[16, 0, 0, 0, 1, 0, 1, 0]);
+        wav.extend_from_slice(&8000u32.to_le_bytes());
+        wav.extend_from_slice(&16000u32.to_le_bytes());
+        wav.extend_from_slice(&[2, 0, 16, 0]);
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
+        wav.extend_from_slice(&pcm);
+        std::fs::write(dir.join("in.wav"), &wav).unwrap();
+        let out = to_wav(&dir.join("in.wav")).unwrap();
+        assert_eq!(&out[..4], b"RIFF");
+        assert_eq!(u32::from_le_bytes(out[24..28].try_into().unwrap()), 8000);
+        assert_eq!(out.len(), wav.len());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

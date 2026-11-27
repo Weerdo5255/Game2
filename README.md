@@ -86,7 +86,7 @@ cargo run --release -- --export-godot godot
 cargo run --release -- --story stories/my-tale/story.txt --export-godot stories/my-tale/godot
 ```
 
-or **Manage > Export to Godot** in the story editor. The story file is
+or **Manage > Write the Godot project** in the story editor. The story file is
 rewritten every time. Scenes and pictures that are already there are left
 alone, since you may have changed them in Godot; `--force` writes them
 again from the story's own places (the World view's, or the game's) and
@@ -120,6 +120,33 @@ cargo build && tools/godot_check.sh /path/to/godot
 The Rust game (its window, the Bevy 3D view, VR) remains as it was and
 plays the same stories; the story editor's World view still edits the place
 descriptions that the Godot scenes are first made from.
+
+### Exporting a story as a Godot game
+
+From the story editor, the story menu's **Godot game** entries download the
+whole game as one zip: a Godot 4 project with every scene and choice of the
+story, every painting and portrait (enhanced art where the story has it),
+its 3D places as scenes, its sound and its model files. Unzip it and open
+`project.godot` in Godot 4.3 or later. Three ways to have it:
+
+| Entry | The game shows |
+|---|---|
+| Godot game: places as the story sets them | paintings where the story has 2D places, 3D worlds where it has 3D ones |
+| Godot game: all 2D | every place as its painting and everyone as their portrait; no 3D places are included |
+| Godot game: all 3D | every place as a 3D world, and the cast as 3D figures built from their look (or as their own model where they have one) |
+
+The story itself is not changed by any of these. Recordings in FLAC (what
+ComfyUI's audio workflows write) are converted to WAV on the way, since
+Godot does not play FLAC. A `README.txt` in the project says which way it
+was exported and lists anything worth knowing (a model file that is
+missing, say). The same from the command line:
+
+```bash
+cargo run --release -- --export-godot out/my-game --godot-mode 2d    # or 3d, or story
+```
+
+Manage's **Write the Godot project** does the same into the story's own
+`godot` folder instead of a download, keeping changes made there in Godot.
 
 ## Story editor
 

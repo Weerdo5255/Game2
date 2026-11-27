@@ -260,6 +260,7 @@ label { color: var(--dim); }
     <li>The story menu at the top switches between stories, and makes, copies or removes them. Each story has its own file, cast and art.</li>
     <li><b>Art</b> sends this story's backgrounds and characters through ComfyUI, with a choice of workflows, and shows the results beside the game's own paintings.</li>
     <li><b>Sound</b> gives each speaker a voice (a stock voice, or one cloned from a sample recording) and has their lines read out through ComfyUI; it also generates the music tracks that scenes start with a Music block.</li>
+    <li>The story menu can also export the story as a <b>Godot game</b> (.zip): every scene and choice, the pictures, the 3D places and the sound, as a project for Godot 4.3 or later. Choose places as the story sets them, all 2D, or all 3D.</li>
     <li>The story menu's <b>Files</b> group exports the open story as one file (the story alone, or with its pictures and recordings) and imports such a file, or a story text file, as a new story.</li>
     <li><b>Manage</b> lists every story with its size and word count, keeps earlier versions of the open story (a snapshot is taken automatically as you save, and you can take named ones), locks a story against changes, and brings removed stories back.</li>
     <li><b>Find</b> (<kbd>Ctrl</kbd>+<kbd>F</kbd>) searches all dialogue, choices, cards and notes, and can replace across the story in one undoable step.</li>
@@ -1705,21 +1706,26 @@ function renderStoryMenu() {
       el("option", { value: IMPORT_STORY, text: "\u21E7 Import a story from a file\u2026" }),
       el("option", { value: EXPORT_STORY + "json", text: "\u21E9 Export this story (.json)" }),
       el("option", { value: EXPORT_STORY + "bundle", text: "\u21E9 Export with its art and sound (.json)" }),
-      el("option", { value: EXPORT_STORY + "txt", text: "\u21E9 Export as a story text file (.txt)" })));
+      el("option", { value: EXPORT_STORY + "txt", text: "\u21E9 Export as a story text file (.txt)" })),
+    el("optgroup", { label: "Godot game (.zip): every scene, choice, picture and sound" },
+      el("option", { value: EXPORT_STORY + "godot", text: "\u21E9 Godot game: places as the story sets them" }),
+      el("option", { value: EXPORT_STORY + "godot2d", text: "\u21E9 Godot game: all 2D (paintings and portraits)" }),
+      el("option", { value: EXPORT_STORY + "godot3d", text: "\u21E9 Godot game: all 3D (places and figures)" })));
 }
 /** Download the open story as a file. What is exported is the saved story. */
 async function exportStory(format) {
   if (dirty && !(await save())) return;
   if (format === "bundle") toast("Gathering the story's pictures and recordings\u2026");
+  if (format.startsWith("godot")) toast("Building the Godot game: painting every picture and place\u2026 (a few seconds)");
   try {
     const r = await fetch(forStory("/api/export?format=" + format));
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "the story could not be exported");
-    const name = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [])[1] || "story." + (format === "txt" ? "txt" : "json");
+    const name = (/filename="([^"]+)"/.exec(r.headers.get("Content-Disposition") || "") || [])[1] || "story." + (format === "txt" ? "txt" : format.startsWith("godot") ? "zip" : "json");
     const url = URL.createObjectURL(await r.blob());
     const a = el("a", { href: url, download: name });
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 60000);
-    toast("Exported " + name);
+    toast(format.startsWith("godot") ? `Exported ${name}: unzip it and open project.godot in Godot 4.3 or later` : "Exported " + name);
   } catch (e) { toast(e.message, true); }
 }
 /** Ask for a file: resolves to null if the user backs out. Only one request is open at a time. */
@@ -2409,10 +2415,13 @@ function renderAdmin() {
       el("span", { style: "flex:1" }),
       el("button", { text: "Refresh", onclick: refreshAdmin })),
     el("h2", {}, "This story: " + (me.title || "Untitled story"),
-      el("button", { id: "godotBtn", text: "Export to Godot", title: "Write this story as a Godot 4 project: its pictures as textures, its 3D places as scenes, the story as data", onclick: async () => {
+      el("select", { id: "godotMode", title: "How the Godot game shows its places", onchange: ev => { admin.godotMode = ev.target.value; } },
+        opts([{ value: "story", label: "Godot: as the story sets places" }, { value: "2d", label: "Godot: all 2D" }, { value: "3d", label: "Godot: all 3D" }], admin.godotMode || "story")),
+      el("button", { id: "godotBtn", text: "Write the Godot project", title: "Write (or bring up to date) this story's Godot 4 project folder: its pictures as textures, its 3D places as scenes, the story as data. To download it instead, use the story menu's Godot game entries.", onclick: async () => {
         if (dirty && !(await save())) return;
+        const mode = admin.godotMode || "story";
         const force = confirm("Write the Godot project for this story.\n\nOK: also write its scenes and pictures again, replacing any changes made to them in Godot.\nCancel: only bring the story up to date and add what is missing (changes made in Godot are kept).");
-        adminDo(() => api("POST", "/api/godot", { story: storyId, force }), r => `Godot project in ${r.folder}: ${r.written} file(s) written, ${r.kept} kept` + (r.notes.length ? ". " + r.notes.join("; ") : ""));
+        adminDo(() => api("POST", "/api/godot", { story: storyId, force, mode }), r => `Godot project in ${r.folder}: ${r.written} file(s) written, ${r.kept} kept` + (r.notes.length ? ". " + r.notes.join("; ") : ""));
       } }),
       el("button", { id: "lockBtn", text: locked ? "🔓 Unlock" : "🔒 Lock", title: "A locked story cannot be saved over or removed until it is unlocked", onclick: () => adminDo(() => api("POST", "/api/admin/lock", { story: storyId, locked: !locked }), r => r.locked ? "Locked: this story cannot be changed" : "Unlocked") })),
     el("div", { class: "stats" }, stat(st.scenes, "scenes"), stat(st.lines, "lines"), stat(st.words.toLocaleString(), "words"), stat("~" + st.minutes + " min", "to read through"), stat(st.choices, "choices"), stat(st.endings, "endings"), stat(doc.characters.length, "characters")),

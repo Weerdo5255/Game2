@@ -144,6 +144,42 @@ const tree = dir => fs.existsSync(dir) ? fs.readdirSync(dir, { recursive: true }
   const cross = await p.evaluate(() => fetch('/api/import', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{"text":"*start\\nend X"}' }).then(r => r.status));
   assert(cross === 403, 'imports are only accepted from the editor page itself');
 
+  // ---- the story as a Godot game, from the story menu: as the story sets places, all 2D, all 3D
+  await p.selectOption('#storySel', 'main');
+  await p.waitForFunction(() => storyId === 'main' && doc.scenes.length === 47);
+  // a FLAC recording (what ComfyUI writes): Godot cannot play FLAC, so it should arrive as WAV
+  const flac = path.join(tmp, 'assets', 'audio', 'voice_n_000000000001.flac');
+  const madeFlac = spawnSync('ffmpeg', ['-v', 'quiet', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.4', '-y', flac]).status === 0;
+  const zipInfo = file => JSON.parse(spawnSync('python3', ['-c', `
+import zipfile, json, sys
+z = zipfile.ZipFile(sys.argv[1]); bad = z.testzip(); names = z.namelist(); root = names[0].split('/')[0]
+story = json.loads(z.read(root + '/story/story.json'))
+wav = [n for n in names if n.endswith('voice_n_000000000001.wav')]
+print(json.dumps({'bad': bad, 'root': root, 'names': [n[len(root) + 1:] for n in names], 'render': story.get('render'), 'locales': story.get('locales'),
+  'scenes': len(story['scenes']), 'options': sum(len(i.get('options', [])) for sc in story['scenes'] for i in sc['items'] if i['t'] == 'choice'),
+  'models': {c['id']: c.get('model', '') for c in story['characters']}, 'readme': z.read(root + '/README.txt').decode(),
+  'flac_as_wav': z.read(wav[0])[:4].decode() if wav else None}))`, file], { encoding: 'utf8' }).stdout);
+  const choicesInStory = await p.evaluate(() => doc.scenes.reduce((n, sc) => n + sc.items.filter(i => i.t === 'choice').reduce((m, i) => m + i.options.length, 0), 0));
+  const portraits = await p.evaluate(() => doc.characters.filter(c => c.sprite).map(c => c.id));
+  const games = {};
+  for (const [label, key] of [['⇩ Godot game: places as the story sets them', 'story'], ['⇩ Godot game: all 2D (paintings and portraits)', '2d'], ['⇩ Godot game: all 3D (places and figures)', '3d']]) {
+    const [got] = await Promise.all([p.waitForEvent('download', { timeout: 60000 }), p.selectOption('#storySel', { label })]);
+    const file = path.join(tmp, key + '.zip');
+    await got.saveAs(file);
+    games[key] = { ...zipInfo(file), filename: got.suggestedFilename() };
+  }
+  const g = games.story, has = (game, n) => game.names.includes(n);
+  assert(g.bad === null && g.root === 'below-stairs-above-stars' && has(g, 'project.godot') && has(g, 'main.tscn') && has(g, 'scripts/story_vm.gd') && games.story.filename === 'below-stairs-above-stars.godot.zip', 'the story downloads as a Godot project in one zip: ' + games.story.filename);
+  assert(g.scenes === 47 && g.options === choicesInStory, `with every scene and every choice (${g.scenes} scenes, ${g.options} options)`);
+  assert(portraits.every(id => ['neutral', 'smile', 'worried', 'angry', 'smug', 'shock'].every(e => has(g, `art/portraits/${id}_${e}.png`))) && g.names.filter(n => n.startsWith('art/bg/')).length === 7, 'every picture: each portrait in each expression, and every painting');
+  assert(has(g, 'audio/music_estate.wav') && (!madeFlac || g.flac_as_wav === 'RIFF'), 'and its sound' + (madeFlac ? ', a FLAC recording converted to WAV for Godot' : ' (no ffmpeg here to make a FLAC recording)'));
+  assert(g.names.filter(n => n.startsWith('places/')).length === 7 && !g.names.some(n => n.startsWith('.godot')), 'with the 3D places as scenes, as the story sets them');
+  const d2 = games['2d'], d3 = games['3d'];
+  assert(d2.bad === null && d2.render === '' && Object.keys(d2.locales).length === 0 && !d2.names.some(n => n.startsWith('places/')) && d2.readme.includes('everything 2D') && d2.filename.endsWith('.godot-2d.zip'), 'all 2D: no place is 3D, and no 3D places are included');
+  assert(d3.bad === null && d3.render === '3d' && d3.names.filter(n => n.startsWith('places/')).length === 7 && portraits.every(id => d3.models[id] === 'figure') && d3.readme.includes('everything 3D') && d3.filename.endsWith('.godot-3d.zip'), 'all 3D: every place a 3D world, and the cast as 3D figures');
+  assert(d2.scenes === 47 && d3.scenes === 47 && d2.options === choicesInStory && d3.options === choicesInStory, 'both with the whole story');
+  assert(fs.readFileSync(main, 'utf8').indexOf('render 3d') < 0 && !fs.existsSync(path.join(tmp, 'godot')), 'exporting changes nothing in the story, and leaves no project folder behind');
+
   console.log('page errors:', JSON.stringify(errs));
   if (errs.length) process.exitCode = 1;
   await b.close();

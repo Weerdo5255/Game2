@@ -6,7 +6,8 @@
 //!   cargo run --release -- --story FILE    use another story file
 //!   cargo run --release -- --start LABEL   begin at a scene
 //!   cargo run --release -- --silent        no music or voices
-//!   cargo run --release -- --export-godot godot   write the game as a Godot 4 project (--force to overwrite scenes and pictures)
+//!   cargo run --release -- --export-godot godot   write the game as a Godot 4 project (--force to overwrite scenes and pictures;
+//!                                                 --godot-mode 2d or 3d for a game that is all paintings, or all 3D)
 //!   cargo run --release --features world3d   places marked 3D become a world to walk through
 //!   cargo run --release -- --2d            show paintings even where the story asks for 3D
 //!   cargo run --release --features vr -- --vr   the same world in a VR headset (OpenXR)
@@ -141,7 +142,11 @@ fn main() {
     if let Some(dir) = arg("--export-godot") {
         // the game as a Godot project: its engine for showing the story, its editor for the pictures and places
         let story_file = arg("--story").map(PathBuf::from).or_else(|| Some(PathBuf::from("assets/story.txt")).filter(|p| p.is_file()));
-        match godot::export(Path::new(&dir), &doc, story_file.as_deref(), art_dir.as_deref(), flag("--force")) {
+        let Some(mode) = godot::Mode::parse(arg("--godot-mode").as_deref().unwrap_or("")) else {
+            eprintln!("--godot-mode is 2d, 3d or story");
+            std::process::exit(2);
+        };
+        match godot::export(Path::new(&dir), &doc, story_file.as_deref(), art_dir.as_deref(), flag("--force"), mode) {
             Ok(report) => {
                 println!("{}: {} file(s) written, {} already there and left alone", dir, report.written.len(), report.kept.len());
                 if !report.kept.is_empty() {
