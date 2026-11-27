@@ -1,0 +1,28 @@
+#!/bin/bash
+# Smoke test of the 3D world, and the pictures for the README: plays the
+# built-in story with every place in 3D (one, the study, left as a painting)
+# and takes a picture in each place.
+#
+#   cargo build --features world3d && tools/world3d_shots.sh [output-dir]
+#
+# Needs a display and a GPU, or stand-ins for both: under xvfb-run with
+# Mesa's software Vulkan (lavapipe) it runs anywhere, slowly.
+set -e
+root="$(cd "$(dirname "$0")/.." && pwd)"
+out="${1:-$root/docs}"
+exe="$root/target/debug/below-stairs"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$out"
+out="$(cd "$out" && pwd)"
+{ echo "render 3d"; echo "render study 2d"; cat "$root/assets/story.txt"; } > "$tmp/story.txt"
+run() { if [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; then "$@"; else xvfb-run -a -s "-screen 0 1280x800x24" "$@"; fi; }
+fail=0
+# scene to start from, name of the picture, lines to show first
+for shot in "start pantry 3" "ch1 axis 6" "ch2 dock 8" "ch4 vista 5" "ch5 ballroom 6" "summit study 5"; do
+  set -- $shot
+  rm -f "$out/world_$2.png"
+  (cd "$tmp" && run "$exe" --story "$tmp/story.txt" --start "$1" --world-shot "$out/world_$2.png" --world-shot-lines "$3" --silent > "$tmp/$2.log" 2>&1) || true
+  if [ -s "$out/world_$2.png" ]; then echo "ok: $2"; else echo "FAIL: $2"; tail -5 "$tmp/$2.log"; fail=1; fi
+done
+exit $fail

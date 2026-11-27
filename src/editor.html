@@ -256,6 +256,7 @@ label { color: var(--dim); }
     <li><b>Manage</b> lists every story with its size and word count, keeps earlier versions of the open story (a snapshot is taken automatically as you save, and you can take named ones), locks a story against changes, and brings removed stories back.</li>
     <li><b>Find</b> (<kbd>Ctrl</kbd>+<kbd>F</kbd>) searches all dialogue, choices, cards and notes, and can replace across the story in one undoable step.</li>
     <li>Unsaved work is kept in this browser as you go: if the page is closed or crashes, the editor offers it back.</li>
+    <li>Places can be shown as paintings or as <b>a 3D world to walk through</b>: choose for the whole story under Scenes &rarr; This story, or place by place there or on any Background block. (The game needs to be built with its 3D engine: <code>--features world3d</code>.)</li>
     <li><kbd>Ctrl</kbd>+<kbd>S</kbd> saves to the story file. <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> undo and redo. Play saves first, then starts the game.</li>
   </ul>
   <button id="helpClose" class="primary">Close</button>
@@ -310,6 +311,14 @@ async function api(method, path, body) {
   const data = await r.json().catch(() => ({ error: "the editor server gave an unreadable answer" }));
   if (!r.ok) { const err = new Error(data.error || r.statusText); err.conflict = !!data.conflict; throw err; }
   return data;
+}
+let placeModesOpen = false; // the place-by-place list stays as the user left it
+/** Is this place shown as a 3D world (by its own setting, or the story's)? */
+const is3d = place => (doc.locales[place] || (doc.render === "3d" ? "3d" : "2d")) === "3d";
+/** A choice of how one place is shown; "" follows the story. */
+function placeModeSelect(place) {
+  return el("select", { "data-place-mode": place, title: "How this place is shown, wherever the story goes there", onchange: ev => change(() => { if (ev.target.value) doc.locales[place] = ev.target.value; else delete doc.locales[place]; }) },
+    opts([{ value: "", label: `As the story (${doc.render === "3d" ? "3D" : "painting"})` }, { value: "2d", label: "A painting" }, { value: "3d", label: "A 3D world" }], doc.locales[place] || ""));
 }
 const charById = id => doc.characters.find(c => c.id === id);
 const varById = id => doc.vars.find(v => v.id === id);
@@ -445,7 +454,7 @@ function offerDraft() {
 }
 function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); doc = JSON.parse(undoStack.pop()); afterHistory(); }
 function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); doc = JSON.parse(redoStack.pop()); afterHistory(); }
-function afterHistory() { doc.chapters = doc.chapters || []; doc.tracks = doc.tracks || []; if (sel >= doc.scenes.length) sel = doc.scenes.length - 1; if (sel >= 0 && chapterOf(sel) !== curChapter) sel = -1; selItem = -1; markDirty(); renderAll(); if (sound.open) renderSound(); }
+function afterHistory() { doc.chapters = doc.chapters || []; doc.tracks = doc.tracks || []; doc.locales = doc.locales || {}; doc.render = doc.render || ""; if (sel >= doc.scenes.length) sel = doc.scenes.length - 1; if (sel >= 0 && chapterOf(sel) !== curChapter) sel = -1; selItem = -1; markDirty(); renderAll(); if (sound.open) renderSound(); }
 function updateBar() {
   $("#saveBtn").disabled = !dirty; $("#undoBtn").disabled = !undoStack.length; $("#redoBtn").disabled = !redoStack.length;
   const st = $("#status"); st.textContent = locked ? "\uD83D\uDD12 Locked" + (dirty ? " \u2014 changes cannot be saved" : "") : dirty ? "Unsaved changes" : "Saved to " + meta.path;
@@ -594,6 +603,7 @@ function sceneNode(s, si) {
       card && el("div", { class: "snip", style: "color:#c9a0ff", text: card.title + (card.sub ? " — " + card.sub : "") }),
       firstSay && el("div", { class: "snip", text: firstSay.text }),
       el("div", { style: "margin-top:4px" }, el("span", { class: "chip", text: `${lines} line${lines === 1 ? "" : "s"}` }),
+        s.items.some(it => it.t === "bg" && is3d(it.name)) && el("span", { class: "chip", style: "background:#245a6a", title: "A place here is shown as a 3D world", text: "3D" }),
         s.items.filter(it => it.t === "music").map(it => el("span", { class: "chip", style: "background:#4a2f66", text: "\u266A " + (it.track ? ((doc.tracks || []).find(t => t.id === it.track) || { title: it.track }).title || it.track : "silence") })),
         fx.map(e => effectChip(e)))),
     el("div", { class: "outs" }, outs.map(o => outRow(o))));
@@ -1006,7 +1016,8 @@ function blockBody(s, it, i) {
     }
     case "bg": return el("div", { class: "brow" },
       el("select", { onchange: ev => set(() => it.name = ev.target.value) }, opts(meta.bgs, it.name)),
-      meta.bgs.includes(it.name) && el("img", { class: "minibg", src: bgUrl(it.name) }));
+      meta.bgs.includes(it.name) && el("img", { class: "minibg", src: bgUrl(it.name) }),
+      meta.bgs.includes(it.name) && el("label", { text: "shown as" }), meta.bgs.includes(it.name) && placeModeSelect(it.name));
     case "music": return el("div", { class: "brow" },
       el("select", { onchange: ev => set(() => it.track = ev.target.value) }, opts([{ value: "", label: "Silence (stop the music)" }, ...(doc.tracks || []).map(t => ({ value: t.id, label: t.title || t.id }))], it.track)),
       el("span", { class: "sub", style: "color:var(--dim)", text: "plays on until another Music block" }));
@@ -1295,7 +1306,14 @@ function renderScenes(host) {
   host.append(el("div", { class: "card" },
     el("div", { class: "sect", style: "margin-top:0", text: "This story" }),
     bindText(el("input", { type: "text", placeholder: "Title (shown on the title screen)", style: "width:100%;font-weight:600" }), doc, "title", () => { const o = $("#storySel").selectedOptions[0]; if (o) o.textContent = doc.title || "Untitled story"; }),
-    bindText(el("input", { type: "text", placeholder: "Subtitle", style: "width:100%;margin-top:6px" }), doc, "subtitle")));
+    bindText(el("input", { type: "text", placeholder: "Subtitle", style: "width:100%;margin-top:6px" }), doc, "subtitle"),
+    el("div", { class: "sect", text: "Places are shown as" }),
+    el("select", { id: "renderSel", style: "width:100%", onchange: ev => change(() => doc.render = ev.target.value) },
+      opts([{ value: "", label: "Paintings (2D)" }, { value: "3d", label: "A 3D world to walk through" }], doc.render === "3d" ? "3d" : "")),
+    el("details", { id: "placeModes", open: placeModesOpen || Object.keys(doc.locales).length > 0, style: "margin-top:6px", ontoggle: ev => { placeModesOpen = ev.target.open; } },
+      el("summary", { style: "cursor:pointer;color:var(--dim);font-size:12px", text: "Or place by place\u2026" }),
+      meta.bgs.map(b => el("div", { class: "brow", style: "margin-top:4px" }, el("span", { style: "flex:1", text: b + (doc.scenes.some(sc => sc.items.some(it => it.t === "bg" && it.name === b)) ? "" : " (not used)") }), placeModeSelect(b)))),
+    (doc.render === "3d" || Object.values(doc.locales).includes("3d")) && !meta.world3d && el("div", { class: "pmsg warning", style: "margin-top:8px", text: "This build of the game has no 3D engine, so it shows paintings for these places too. Build it with: cargo build --features world3d" })));
   host.append(el("input", { type: "text", class: "filter", placeholder: "Filter scenes…", value: sceneFilter, style: "width:100%;margin-bottom:8px", oninput: ev => { sceneFilter = ev.target.value; const pos = ev.target.selectionStart; renderLeft(); const f = $("#leftBody input.filter"); f.focus(); f.setSelectionRange(pos, pos); } }),
     el("div", { class: "sub", style: "color:var(--dim);margin-bottom:6px", text: "The order matters only where a scene continues into the next one. Drag to reorder, or drag a scene on to a chapter in the main graph to move it there." }));
   if (doc.chapters.length) host.append(el("div", { class: "card" }, el("div", { class: "sect", style: "margin-top:0", text: "Chapters" }),
@@ -1357,7 +1375,7 @@ async function loadStory(id) {
   doc = data.doc; meta = data.meta; problems = data.problems; parseErrors = data.parse_errors;
   undoStack = []; redoStack = []; dirty = false; selItem = -1; openChar = null; sceneFilter = ""; view = { x: 40, y: 40, k: 1 };
   renderStoryMenu(); applyView();
-  doc.chapters = doc.chapters || []; doc.tracks = doc.tracks || []; curChapter = ""; selChapter = null;
+  doc.chapters = doc.chapters || []; doc.tracks = doc.tracks || []; doc.locales = doc.locales || {}; doc.render = doc.render || ""; curChapter = ""; selChapter = null;
   // open on the main graph; if the story has no chapters, on its first scene
   sel = doc.scenes.length && !doc.chapters.length ? Math.max(0, sceneIndex("start")) : -1;
   renderAll(); renderProblems(); fit(); if (sel >= 0) centerOn(sel);

@@ -170,6 +170,68 @@ Options: `--port N`, `--no-browser`, `--story FILE` (the main story),
 `--stories DIR`, `--comfy-dir DIR`. The editor listens on your own machine
 only and refuses requests from other web pages.
 
+## Walking through the story in 3D
+
+A story's places can be shown as paintings, or as a 3D world you walk
+through, drawn by the [Bevy](https://bevyengine.org) engine. The story is
+the same either way: the same lines, choices and properties, and the same
+text and meters on screen. In a 3D place the painting gives way to a built
+room, the cast stand in it as upright cut-outs of their portraits that turn
+to face you, and you are free to wander about while they talk.
+
+| | |
+|---|---|
+| ![The servants' hall](docs/world_pantry.png) | ![Breakfast at the axis](docs/world_axis.png) |
+| ![The arrivals dock](docs/world_dock.png) | ![The terrace, and the world overhead](docs/world_vista.png) |
+| ![The ballroom](docs/world_ballroom.png) | ![A place left as a painting in the same story](docs/world_study.png) |
+
+The choice is made per story, and can be overridden per place:
+
+```
+render 3d            every place is a 3D world ...
+render study 2d      ... except the study, which stays a painting
+```
+
+or, the other way round, a painted story with `render vista 3d` for a
+single place. In the editor it is under **Scenes > This story > Places are
+shown as**, with a place-by-place list below it, and on every Background
+block ("shown as"). Scenes in 3D places carry a "3D" mark on the graph.
+(The last picture above is the study left as a painting while the rest of
+that story is in 3D: both are shown in the one window.)
+
+The engine is a large dependency (several minutes to build the first time),
+so it is an opt-in feature:
+
+```bash
+cargo run --release --features world3d
+```
+
+| Key | In a 3D place |
+|---|---|
+| W A S D | walk (Shift to hurry) |
+| Left / Right, or Q / E | turn |
+| hold the right mouse button | look around |
+| Up / Down | pick a choice |
+| Tab | hide the text to look around |
+
+Everything else is as in the table under Controls. A build without the
+feature plays the same stories and shows the paintings instead, saying so
+once; `--2d` asks for that on purpose. All seven places the game paints
+have a 3D build (`src/world3d.rs`): each is put together in code from simple
+shapes, lights and fog, in keeping with the rest of the game having no art
+files. Enhanced portraits from ComfyUI are used for the cast in 3D too.
+
+To check a build on a machine with no screen or graphics card:
+
+```bash
+cargo build --features world3d && tools/world3d_shots.sh /tmp/shots
+```
+
+takes a picture in each place (under `xvfb-run` with Mesa's software Vulkan,
+`mesa-vulkan-drivers`; that is how the pictures above were made). It has
+only been run that way: on a software renderer, not yet on a real graphics
+card.
+
 ## Managing the library
 
 **Manage** in the editor's top bar is the place to look after stories:
@@ -359,6 +421,13 @@ cargo build && node tools/editor_io_e2e.js
 ```bash
 cargo build && node tools/editor_manage_e2e.js
 ```
+
+```bash
+cargo build && node tools/editor_world_e2e.js
+```
+
+The 3D world has its own unit tests (`cargo test --features world3d`) and
+the picture script described above.
 
 ```bash
 cargo build && node tools/editor_art_e2e.js

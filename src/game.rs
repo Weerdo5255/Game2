@@ -64,6 +64,19 @@ pub struct Game {
     pub audio: Audio,
     cur_pc: usize,
     pub quit: bool,
+    /// Set by a 3D presenter: where the place is a 3D world, `render` leaves
+    /// out the painting and the portraits and fills with this colour
+    /// instead, so that only what lies over the world is drawn.
+    pub overlay: Option<u32>,
+}
+
+/// What a 3D presenter shows at this moment of the story.
+#[cfg_attr(not(feature = "world3d"), allow(dead_code))]
+pub struct WorldView {
+    pub place: String,
+    /// Left, centre, right: who stands there, their expression, how far
+    /// they have faded in (0..1) and whether someone else is speaking.
+    pub cast: [Option<(String, String, f32, bool)>; 3],
 }
 
 fn wrap(text: &str, cols: usize) -> Vec<String> {
@@ -123,6 +136,7 @@ impl Game {
             bg_cache: None,
             art_dir,
             audio,
+            overlay: None,
             cur_pc: 0,
             quit: false,
         }
@@ -168,6 +182,39 @@ impl Game {
     }
 
     /// What the game is currently showing; used by the headless driver.
+    /// Does the story show any of its places as a 3D world?
+    pub fn has_world(&self) -> bool {
+        !self.script.world.is_empty()
+    }
+
+    /// The place and cast to show in 3D now, if this place is a 3D world
+    /// (and the story is not on its title screen or a chapter card).
+    #[cfg_attr(not(feature = "world3d"), allow(dead_code))]
+    pub fn world_view(&self) -> Option<WorldView> {
+        if matches!(self.mode, Mode::Title { .. } | Mode::Card { .. }) || !self.script.world.contains(&self.bg) {
+            return None;
+        }
+        let speaking = self.speaking();
+        let cast = [0, 1, 2].map(|i| self.slots[i].as_ref().map(|s| (s.who.clone(), s.expr.clone(), s.appear, speaking.as_ref().map_or(false, |w| w != &s.who))));
+        Some(WorldView { place: self.bg.clone(), cast })
+    }
+
+    /// Whoever of the cast on stage is speaking.
+    fn speaking(&self) -> Option<String> {
+        match &self.mode {
+            Mode::Say { who, .. } if self.slots.iter().flatten().any(|s| &s.who == who) => Some(who.clone()),
+            _ => None,
+        }
+    }
+
+    /// A character's portrait, painted (or loaded) once.
+    #[cfg_attr(not(feature = "world3d"), allow(dead_code))]
+    pub fn portrait(&mut self, who: &str, expr: &str) -> Option<&Canvas> {
+        let def = self.script.character(who)?;
+        let dir = self.art_dir.as_deref();
+        Some(self.sprites.entry((who.to_string(), expr.to_string())).or_insert_with(|| art::sprite(def, expr, dir)))
+    }
+
     pub fn kind(&self) -> &'static str {
         match self.mode {
             Mode::Title { .. } => "title",
@@ -553,14 +600,15 @@ impl Game {
 
     fn render_scene(&mut self, c: &mut Canvas) {
         let bg = self.bg.clone();
-        self.draw_bg(c, &bg);
+        let world = self.overlay.filter(|_| self.script.world.contains(&bg));
+        match world {
+            Some(backdrop) => c.clear(backdrop),
+            None => self.draw_bg(c, &bg),
+        }
 
-        // cast; whoever is not speaking is dimmed
-        let speaking = match &self.mode {
-            Mode::Say { who, .. } if self.slots.iter().flatten().any(|s| &s.who == who) => Some(who.clone()),
-            _ => None,
-        };
-        for (i, slot) in self.slots.iter().enumerate() {
+        // cast; whoever is not speaking is dimmed (in a 3D world they stand in it instead)
+        let speaking = self.speaking();
+        for (i, slot) in self.slots.iter().enumerate().filter(|_| world.is_none()) {
             let Some(s) = slot else { continue };
             let key = (s.who.clone(), s.expr.clone());
             let dir = self.art_dir.as_deref();

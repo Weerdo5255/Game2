@@ -146,6 +146,13 @@ pub struct Doc {
     pub vars: Vec<VarDef>,
     #[serde(default)]
     pub tracks: Vec<TrackDef>,
+    /// How the story's places are shown unless a place says otherwise:
+    /// "3d" (a world to walk through) or "" / "2d" (paintings).
+    #[serde(default)]
+    pub render: String,
+    /// Places that differ from the story's choice: background name -> "2d" or "3d".
+    #[serde(default)]
+    pub locales: BTreeMap<String, String>,
     #[serde(default)]
     pub chapters: Vec<ChapterDef>,
     #[serde(default)]
@@ -204,6 +211,8 @@ enum Line {
     Character(CharDef),
     Var(VarDef),
     Track(TrackDef),
+    /// `render 3d` for the whole story, `render <place> 3d` for one place.
+    Render(Option<String>, String),
     Chapter(ChapterDef),
     InChapter(String),
     Label(String),
@@ -301,6 +310,19 @@ fn parse_line(line: &str) -> Result<Line, String> {
             };
             return Ok(Line::Chapter(ChapterDef { name: parts[0].to_string(), pos: if is_pos { Some((xy[0], xy[1])) } else { None }, note }));
         }
+        "render" => {
+            // render 2d|3d            - the whole story
+            // render <place> 2d|3d    - one place
+            let (place, mode) = match toks.as_slice() {
+                [_, mode] => (None, *mode),
+                [_, place, mode] => (Some(place.to_string()), *mode),
+                _ => return Err("render needs: 2d or 3d, optionally after a place (render ballroom 3d)".into()),
+            };
+            if mode != "2d" && mode != "3d" {
+                return Err(format!("render is 2d or 3d, not '{}'", mode));
+            }
+            return Ok(Line::Render(place, mode.to_string()));
+        }
         "track" => {
             // track id | Title | seconds | prompt
             let parts: Vec<&str> = rest.splitn(4, '|').map(str::trim).collect();
@@ -365,6 +387,10 @@ impl Doc {
                 Line::Character(c) => doc.characters.push(c),
                 Line::Var(v) => doc.vars.push(v),
                 Line::Track(t) => doc.tracks.push(t),
+                Line::Render(None, mode) => doc.render = mode,
+                Line::Render(Some(place), mode) => {
+                    doc.locales.insert(place, mode);
+                }
                 Line::Chapter(c) => doc.chapters.push(c),
                 Line::InChapter(name) => match doc.scenes.last_mut() {
                     // like the position marker, it sits straight under the label
@@ -446,6 +472,8 @@ impl Doc {
             pipe_free(&mut v.label);
             id(&mut v.character);
         }
+        self.render = if self.render.trim() == "3d" { "3d".into() } else { String::new() };
+        self.locales = std::mem::take(&mut self.locales).into_iter().map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).filter(|(k, v)| valid_id(k) && (v == "2d" || v == "3d")).collect();
         for t in &mut self.tracks {
             id(&mut t.id);
             pipe_free(&mut t.title);
@@ -573,6 +601,15 @@ impl Doc {
         for t in &self.tracks {
             out.push_str(format!("track {} | {} | {} | {}", t.id, t.title, t.seconds, t.prompt).trim_end());
             out.push('\n');
+        }
+        if self.render == "3d" || !self.locales.is_empty() {
+            out.push('\n');
+        }
+        if self.render == "3d" {
+            out.push_str("render 3d\n");
+        }
+        for (place, mode) in &self.locales {
+            out.push_str(&format!("render {} {}\n", place, mode));
         }
         if !self.chapters.is_empty() {
             out.push('\n');
@@ -734,6 +771,9 @@ impl Doc {
             if !seen.insert(t.id.as_str()) {
                 push("error", "", None, format!("two music tracks share the id '{}'", t.id));
             }
+        }
+        for place in self.locales.keys().filter(|p| !bgs.contains(&p.as_str())) {
+            push("warning", "", None, format!("'render {} ...' names a place that does not exist", place));
         }
         seen.clear();
         if !labels.contains("start") {
@@ -918,6 +958,15 @@ pub struct Script {
     pub labels: HashMap<String, usize>,
     pub characters: Vec<CharDef>,
     pub vars: Vec<VarDef>,
+    /// Places shown as a 3D world; the rest are paintings.
+    pub world: HashSet<String>,
+}
+
+impl Doc {
+    /// Is this place shown as a 3D world to walk through?
+    pub fn is_3d(&self, place: &str) -> bool {
+        self.locales.get(place).map_or(self.render == "3d", |mode| mode == "3d")
+    }
 }
 
 impl Script {
@@ -950,7 +999,8 @@ impl Script {
                 });
             }
         }
-        Script { title: doc.title.clone(), subtitle: doc.subtitle.clone(), cmds, labels, characters: doc.characters.clone(), vars: doc.vars.clone() }
+        let world = doc.scenes.iter().flat_map(|s| &s.items).filter_map(|i| if let Item::Bg { name } = i { Some(name.clone()) } else { None }).filter(|p| doc.is_3d(p)).collect();
+        Script { title: doc.title.clone(), subtitle: doc.subtitle.clone(), cmds, labels, characters: doc.characters.clone(), vars: doc.vars.clone(), world }
     }
 
     pub fn character(&self, id: &str) -> Option<&CharDef> {
@@ -1201,6 +1251,32 @@ mod tests {
         doc.sanitize();
         assert!(doc.survives_text().is_ok(), "{:?}", doc.survives_text());
         assert_eq!(doc.subtitle, "What now");
+    }
+
+    #[test]
+    fn rendering_is_chosen_for_the_story_and_for_single_places() {
+        let src = "render 3d\nrender study 2d\n*start\nbg pantry\nn: a\nbg study\nn: b\nend Done\n";
+        let (doc, errors) = Doc::parse(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(doc.is_3d("pantry") && !doc.is_3d("study") && doc.is_3d("ballroom"));
+        let script = Script::compile(&doc);
+        assert!(script.world.contains("pantry") && !script.world.contains("study"));
+        // survives the text format, and the other way round: one place in 3D in a painted story
+        let (again, _) = Doc::parse(&doc.to_text());
+        assert_eq!(again, doc);
+        let (mixed, _) = Doc::parse("render vista 3d\n*start\nbg vista\nend Done\n");
+        assert!(mixed.is_3d("vista") && !mixed.is_3d("pantry") && mixed.to_text().contains("render vista 3d") && !mixed.to_text().contains("render 3d"));
+        assert!(Doc::parse("render sideways\n*start\nend Done\n").1.len() == 1);
+        // a place that does not exist is pointed out
+        let (odd, _) = Doc::parse("render nowhere 3d\n*start\nend Done\n");
+        assert!(problems(&odd).iter().any(|p| p.msg.contains("nowhere")));
+        // and odd values from a hand-made file are dropped
+        let mut loose = doc.clone();
+        loose.render = "4d".into();
+        loose.locales.insert("x y".into(), "3d".into());
+        loose.locales.insert("dock".into(), "maybe".into());
+        loose.sanitize();
+        assert!(loose.render.is_empty() && loose.locales.len() == 1);
     }
 
     #[test]

@@ -962,6 +962,8 @@ impl State {
         json!({
             "exprs": art::EXPRS, "bgs": art::BACKGROUNDS, "sprites": art::SPRITES,
             "ops": OPS, "slots": SLOTS, "looks": looks,
+            // whether this build can show places as a 3D world
+            "world3d": cfg!(feature = "world3d"),
         })
     }
 
