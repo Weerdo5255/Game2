@@ -142,11 +142,11 @@ label { color: var(--dim); }
 .empty { color: var(--dim); padding: 30px 10px; text-align: center; }
 
 #storySel { max-width: 230px; font-weight: 600; }
-#art, #sound { grid-area: 2 / 2 / 3 / 4; background: var(--bg); z-index: 10; overflow: auto; padding: 14px 18px 40px; display: none; }
-#art.show, #sound.show { display: block; }
-#art h2, #sound h2 { font-size: 15px; margin: 22px 0 8px; color: var(--gold); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#art, #sound, #admin { grid-area: 2 / 2 / 3 / 4; background: var(--bg); z-index: 10; overflow: auto; padding: 14px 18px 40px; display: none; }
+#art.show, #sound.show, #admin.show { display: block; }
+#art h2, #sound h2, #admin h2 { font-size: 15px; margin: 22px 0 8px; color: var(--gold); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 #art h2 label, #sound h2 label { font-size: 12px; font-weight: 400; }
-#art .bar, #sound .bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+#art .bar, #sound .bar, #admin .bar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
 #art .bar input[type=text], #sound .bar input[type=text] { width: 230px; }
 .lamp { width: 10px; height: 10px; border-radius: 50%; background: #666; flex: none; } .lamp.ok { background: var(--good); } .lamp.down { background: var(--bad); }
 .agrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
@@ -163,6 +163,21 @@ label { color: var(--dim); }
 .face img { width: 104px; height: 141px; object-fit: contain; border-radius: 5px; background: linear-gradient(#2a3060, #14162a); cursor: zoom-in; display: block; }
 .jrow { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid #2a2f58; font-size: 12px; }
 .jrow .msg { color: var(--dim); flex: 1; } .jrow.failed .msg { color: var(--bad); }
+#admin table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+#admin th { text-align: left; color: var(--dim); font-weight: 500; padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+#admin td { padding: 6px 8px; border-bottom: 1px solid #2a2f58; vertical-align: middle; }
+#admin td.num, #admin th.num { text-align: right; font-variant-numeric: tabular-nums; }
+#admin tr.cur td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
+#admin .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; min-width: 96px; }
+.stat b { display: block; font-size: 18px; } .stat span { color: var(--dim); font-size: 11.5px; }
+#find { position: fixed; top: 52px; right: 16px; width: 420px; max-height: 70vh; display: none; flex-direction: column; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; z-index: 40; box-shadow: 0 12px 40px #000a; }
+#find.show { display: flex; }
+#find .hits { overflow: auto; display: flex; flex-direction: column; gap: 4px; }
+#find .hit { padding: 6px 8px; border-radius: 6px; background: #1c2044; cursor: pointer; font-size: 12.5px; }
+#find .hit:hover { background: #262b5c; } #find .hit b { color: var(--gold); } #find .hit mark { background: #e0c060; color: #111; border-radius: 2px; }
+#status.locked { color: #ffb070; }
 .vcard { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
 .vcard .brow { margin-top: 6px; } .vcard .brow:first-child { margin-top: 0; }
 .vcard audio { height: 30px; max-width: 260px; }
@@ -197,6 +212,8 @@ label { color: var(--dim); }
   <span class="spacer"></span>
   <button id="artBtn" title="Send backgrounds and characters through ComfyUI">Art</button>
   <button id="soundBtn" title="Voices for the dialogue and music for the scenes, through ComfyUI">Sound</button>
+  <button id="adminBtn" title="The library: every story, its size, earlier versions, locking, removed stories">Manage</button>
+  <button id="findBtn" title="Find and replace text across the story (Ctrl+F)">Find</button>
   <button id="addSceneBtn">+ Scene</button>
   <button id="layoutBtn" title="Arrange every scene automatically">Tidy layout</button>
   <button id="playBtn" title="Save, then run the game from the start">&#9654; Play</button>
@@ -218,6 +235,8 @@ label { color: var(--dim); }
 <aside id="insp"></aside>
 <section id="art"></section>
 <section id="sound"></section>
+<section id="admin"></section>
+<div id="find"></div>
 <div id="compare"></div>
 <div id="probs"></div>
 <div id="toast"></div>
@@ -234,6 +253,9 @@ label { color: var(--dim); }
     <li><b>Art</b> sends this story's backgrounds and characters through ComfyUI, with a choice of workflows, and shows the results beside the game's own paintings.</li>
     <li><b>Sound</b> gives each speaker a voice (a stock voice, or one cloned from a sample recording) and has their lines read out through ComfyUI; it also generates the music tracks that scenes start with a Music block.</li>
     <li>The story menu's <b>Files</b> group exports the open story as one file (the story alone, or with its pictures and recordings) and imports such a file, or a story text file, as a new story.</li>
+    <li><b>Manage</b> lists every story with its size and word count, keeps earlier versions of the open story (a snapshot is taken automatically as you save, and you can take named ones), locks a story against changes, and brings removed stories back.</li>
+    <li><b>Find</b> (<kbd>Ctrl</kbd>+<kbd>F</kbd>) searches all dialogue, choices, cards and notes, and can replace across the story in one undoable step.</li>
+    <li>Unsaved work is kept in this browser as you go: if the page is closed or crashes, the editor offers it back.</li>
     <li><kbd>Ctrl</kbd>+<kbd>S</kbd> saves to the story file. <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> undo and redo. Play saves first, then starts the game.</li>
   </ul>
   <button id="helpClose" class="primary">Close</button>
@@ -253,6 +275,7 @@ let view = { x: 40, y: 40, k: 1 };
 let undoStack = [], redoStack = [], dirty = false, typingSnapshot = null;
 let drag = null; // block or scene being dragged: {type, scene, item}
 let revision = null; // fingerprint of the story file as last loaded or saved
+let locked = false; // the open story may not be changed (set under Manage)
 let storyId = (location.hash.match(/story=([\w-]+)/) || [])[1] || "main", stories = [];
 let artVersion = 0; // bumped when images on disk change, so previews reload
 /** Add the current story (and art version, for images) to a URL. */
@@ -389,13 +412,35 @@ window.addEventListener("dragend", pointerReleased, true);
 window.addEventListener("drop", pointerReleased, true);
 /** A whole number from a field, kept within what a story can hold. */
 function num(text) { return Math.max(-9999, Math.min(9999, parseInt(text, 10) || 0)); }
-function markDirty() { dirty = true; updateBar(); scheduleValidate(); }
+function markDirty() { dirty = true; updateBar(); scheduleValidate(); scheduleDraft(); }
+// ---- drafts: unsaved work is kept in this browser, in case the page goes away
+const draftKey = id => "story-editor-draft:" + location.host + ":" + id;
+function scheduleDraft() { clearTimeout(scheduleDraft.timer); scheduleDraft.timer = setTimeout(writeDraft, 1200); }
+function writeDraft() {
+  clearTimeout(scheduleDraft.timer);
+  try { if (dirty) localStorage.setItem(draftKey(storyId), JSON.stringify({ base: revision, at: Date.now(), doc: snapshot() })); else localStorage.removeItem(draftKey(storyId)); } catch (e) { /* storage full or switched off: carry on without */ }
+}
+function dropDraft(id) { clearTimeout(scheduleDraft.timer); try { localStorage.removeItem(draftKey(id == null ? storyId : id)); } catch (e) { /* nothing to drop */ } }
+/** After a story has loaded: offer back work that was never saved. */
+function offerDraft() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(draftKey(storyId)) || "null"); } catch (e) { /* unreadable: ignore */ }
+  if (!d || !d.doc) return;
+  if (d.doc === snapshot()) return dropDraft();
+  const when = new Date(d.at).toLocaleString();
+  const stale = d.base !== revision ? "\n\nThe story file has changed since then, so restoring would replace those newer changes when you save." : "";
+  if (!confirm(`Unsaved changes to this story from ${when} were found in this browser.${stale}\n\nOK: restore them (you can still undo).\nCancel: discard them.`)) return dropDraft();
+  undoStack.push(snapshot()); redoStack = [];
+  try { doc = JSON.parse(d.doc); } catch (e) { doc = JSON.parse(undoStack.pop()); return dropDraft(); }
+  afterHistory(); toast("Restored your unsaved changes");
+}
 function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); doc = JSON.parse(undoStack.pop()); afterHistory(); }
 function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); doc = JSON.parse(redoStack.pop()); afterHistory(); }
 function afterHistory() { doc.chapters = doc.chapters || []; doc.tracks = doc.tracks || []; if (sel >= doc.scenes.length) sel = doc.scenes.length - 1; if (sel >= 0 && chapterOf(sel) !== curChapter) sel = -1; selItem = -1; markDirty(); renderAll(); if (sound.open) renderSound(); }
 function updateBar() {
   $("#saveBtn").disabled = !dirty; $("#undoBtn").disabled = !undoStack.length; $("#redoBtn").disabled = !redoStack.length;
-  const st = $("#status"); st.textContent = dirty ? "Unsaved changes" : "Saved to " + meta.path; st.title = meta.path; st.className = dirty ? "dirty" : "";
+  const st = $("#status"); st.textContent = locked ? "\uD83D\uDD12 Locked" + (dirty ? " \u2014 changes cannot be saved" : "") : dirty ? "Unsaved changes" : "Saved to " + meta.path;
+  st.title = locked ? "This story is locked. Unlock it under Manage to change it." : meta.path; st.className = locked ? "locked" : dirty ? "dirty" : "";
   const errs = problems.filter(p => p.level === "error").length + parseErrors.length, warns = problems.length - problems.filter(p => p.level === "error").length;
   const b = $("#probBtn");
   b.textContent = errs + warns ? [errs && `${errs} error${errs > 1 ? "s" : ""}`, warns && `${warns} warning${warns > 1 ? "s" : ""}`].filter(Boolean).join(", ") : "No problems";
@@ -410,6 +455,7 @@ function scheduleValidate() {
   }, 350);
 }
 async function save() {
+  if (locked) { toast("This story is locked. Unlock it under Manage to save changes.", true); return false; }
   try {
     const sent = snapshot();
     let r;
@@ -421,7 +467,7 @@ async function save() {
     }
     revision = r.revision;
     // anything typed while the request was on its way is still unsaved
-    problems = r.problems; parseErrors = []; dirty = snapshot() !== sent; updateBar(); markProblems(); renderProblems();
+    problems = r.problems; parseErrors = []; dirty = snapshot() !== sent; updateBar(); markProblems(); renderProblems(); writeDraft();
     toast("Saved");
     return true;
   } catch (e) { toast("Could not save: " + e.message, true); return false; }
@@ -1295,7 +1341,7 @@ async function loadStory(id) {
     if (!list.some(x => x.id === id)) id = "main";
     data = await api("GET", "/api/story?story=" + encodeURIComponent(id));
   } catch (e) { toast("Could not load the story: " + e.message, true); return false; }
-  stories = list; storyId = id; revision = data.revision;
+  stories = list; storyId = id; revision = data.revision; locked = !!data.locked;
   history.replaceState(null, "", "#story=" + storyId);
   doc = data.doc; meta = data.meta; problems = data.problems; parseErrors = data.parse_errors;
   undoStack = []; redoStack = []; dirty = false; selItem = -1; openChar = null; sceneFilter = ""; view = { x: 40, y: 40, k: 1 };
@@ -1307,7 +1353,8 @@ async function loadStory(id) {
   document.title = (doc.title || "Untitled story") + " - Story Editor";
   if (parseErrors.length) { toast(`${parseErrors.length} line(s) of the story file could not be understood; they are kept as notes.`, true); $("#probs").classList.add("show"); }
   adoptPrefs(null);
-  if (art.open) openArt(); else if (sound.open) openSound();
+  if (art.open) openArt(); else if (sound.open) openSound(); else if (admin.open) openAdmin();
+  offerDraft();
   return true;
 }
 const NEW_STORY = "\u0000new", COPY_STORY = "\u0000copy", REMOVE_STORY = "\u0000remove", IMPORT_STORY = "\u0000import", EXPORT_STORY = "\u0000export:";
@@ -1389,6 +1436,7 @@ async function storyMenuChanged() {
     return;
   }
   if (dirty && !confirm("This story has unsaved changes. Leave it without saving?")) return back();
+  if (dirty) dropDraft();
   // only forget the unsaved changes once the other story has really opened
   const open = async id => { const was = dirty; dirty = false; if (await loadStory(id)) return true; dirty = was; updateBar(); back(); return false; };
   try {
@@ -1415,7 +1463,7 @@ function adoptPrefs(p) { prefs = p || {}; prefs.prompts = prefs.prompts || {}; p
 function artTyping() { const a = document.activeElement; return $("#art").contains(a) && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && a.type === "text")); }
 const KIND_LABEL = { background: "backgrounds", sprite: "neutral portraits", expression: "expressions", voice: "voices", music: "music" };
 async function openArt() {
-  closeSound();
+  closeSound(); closeAdmin();
   art.open = true; $("#art").classList.add("show"); $("#artBtn").classList.add("primary");
   $("#art").textContent = ""; $("#art").append(el("div", { class: "empty", text: "Loading\u2026" }));
   await refreshArt();
@@ -1572,12 +1620,164 @@ function renderArt() {
   host.scrollTop = scroll;
   renderServerLamp(); renderJobs();
 }
+// ---------------------------------------------------------- manage view
+const admin = { open: false, data: null, history: [] };
+const fmtBytes = n => n >= 1 << 30 ? (n / (1 << 30)).toFixed(1) + " GB" : n >= 1 << 20 ? (n / (1 << 20)).toFixed(1) + " MB" : n >= 1024 ? Math.round(n / 1024) + " KB" : n + " B";
+const fmtTime = secs => secs ? new Date(secs * 1000).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
+async function openAdmin() {
+  closeArt(); closeSound();
+  admin.open = true; $("#admin").classList.add("show"); $("#adminBtn").classList.add("primary");
+  await refreshAdmin();
+}
+function closeAdmin() { admin.open = false; $("#admin").classList.remove("show"); $("#adminBtn").classList.remove("primary"); }
+async function refreshAdmin() {
+  try {
+    const [data, hist] = await Promise.all([api("GET", "/api/admin"), api("GET", forStory("/api/history"))]);
+    admin.data = data; admin.history = hist.snapshots;
+    const me = data.stories.find(x => x.id === storyId); if (me) { locked = me.locked; updateBar(); }
+  } catch (e) { toast(e.message, true); return; }
+  renderAdmin();
+}
+/** Run one management action, report trouble, and redraw. */
+async function adminDo(fn, done) { try { const r = await fn(); if (done) toast(typeof done === "function" ? done(r) : done); } catch (e) { toast(e.message, true); } if (admin.open) await refreshAdmin(); }
+/** Figures for the story being edited, as it is on screen. */
+function storyStats() {
+  const by = {}; let words = 0, lines = 0, choices = 0, endings = 0;
+  const count = t => (String(t || "").trim().match(/\S+/g) || []).length;
+  for (const sc of doc.scenes) for (const it of sc.items) {
+    if (it.t === "say") { lines++; words += count(it.text); by[it.who] = (by[it.who] || 0) + 1; }
+    else if (it.t === "choice") { choices++; for (const o of it.options) words += count(o.text); }
+    else if (it.t === "end") endings++;
+  }
+  const speakers = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([id, n]) => ({ name: id === "n" ? "Narrator" : (charById(id) || { name: id }).name || id, n }));
+  return { words, lines, choices, endings, scenes: doc.scenes.length, minutes: Math.max(1, Math.round(words / 200)), speakers };
+}
+async function restoreSnapshot(snap) {
+  if (locked) { toast("This story is locked. Unlock it first.", true); return; }
+  try {
+    const r = await api("GET", forStory("/api/history/get?name=" + encodeURIComponent(snap.name)));
+    undoStack.push(snapshot()); redoStack = [];
+    doc = r.doc; afterHistory(); closeAdmin(); fit();
+    toast(`Showing the version from ${fmtTime(snap.time)}. Save to keep it, or Undo to go back.`);
+  } catch (e) { toast(e.message, true); }
+}
+function renderAdmin() {
+  const host = $("#admin"), d = admin.data; if (!d) return;
+  const scroll = host.scrollTop; host.textContent = "";
+  const me = d.stories.find(x => x.id === storyId) || { bytes: { aside: 0 }, title: doc.title }, st = storyStats();
+  const stat = (n, label) => el("div", { class: "stat" }, el("b", { text: String(n) }), el("span", { text: label }));
+  const total = b => b.story + b.art + b.sound + b.aside + b.history;
+  appendAll(host,
+    el("div", { class: "bar" },
+      el("span", { text: `${d.stories.length} ${d.stories.length === 1 ? "story" : "stories"} · library folder: ${d.folder}` }),
+      el("span", { style: "flex:1" }),
+      el("button", { text: "Refresh", onclick: refreshAdmin })),
+    el("h2", {}, "This story: " + (me.title || "Untitled story"),
+      el("button", { id: "lockBtn", text: locked ? "🔓 Unlock" : "🔒 Lock", title: "A locked story cannot be saved over or removed until it is unlocked", onclick: () => adminDo(() => api("POST", "/api/admin/lock", { story: storyId, locked: !locked }), r => r.locked ? "Locked: this story cannot be changed" : "Unlocked") })),
+    el("div", { class: "stats" }, stat(st.scenes, "scenes"), stat(st.lines, "lines"), stat(st.words.toLocaleString(), "words"), stat("~" + st.minutes + " min", "to read through"), stat(st.choices, "choices"), stat(st.endings, "endings"), stat(doc.characters.length, "characters")),
+    st.speakers.length > 0 && el("div", { style: "margin-top:8px;display:flex;flex-wrap:wrap;gap:6px" }, st.speakers.map(sp => el("span", { class: "chip", text: `${sp.name}: ${sp.n}` }))),
+    dirty && el("div", { class: "pmsg warning", style: "margin-top:8px", text: "These figures include your unsaved changes; the table below shows what is saved." }),
+    el("h2", {}, "Earlier versions",
+      el("button", { text: "Take a snapshot now", onclick: async () => {
+        const label = prompt("A name for this snapshot (optional):", ""); if (label === null) return;
+        if (dirty && !(await save())) return;
+        adminDo(() => api("POST", "/api/history/snapshot", { story: storyId, label }), "Snapshot taken");
+      } }),
+      el("label", { text: "one is also kept automatically as you save, at most every five minutes" })),
+    admin.history.length
+      ? el("table", {}, el("tr", {}, el("th", { text: "When" }), el("th", { text: "Kind" }), el("th", { class: "num", text: "Scenes" }), el("th", { class: "num", text: "Size" }), el("th", {})),
+          admin.history.map(h => el("tr", { "data-snapshot": h.name }, el("td", { text: fmtTime(h.time) }), el("td", { text: h.kind === "named" ? (h.label || "named") : "automatic" }), el("td", { class: "num", text: String(h.scenes) }), el("td", { class: "num", text: fmtBytes(h.bytes) }),
+            el("td", {}, el("div", { class: "acts" },
+              el("button", { text: "Restore", title: "Show this version in the editor; nothing is saved until you save", onclick: () => restoreSnapshot(h) }),
+              el("button", { class: "ghost danger", text: "Delete", onclick: () => { if (confirm(`Delete the snapshot from ${fmtTime(h.time)}? This cannot be undone.`)) adminDo(() => api("POST", "/api/history/remove", { story: storyId, name: h.name }), "Snapshot deleted"); } }))))))
+      : el("div", { class: "empty", style: "padding:14px", text: "No earlier versions yet. The first is kept the next time you save a change." }),
+    el("h2", {}, "Stories"),
+    el("table", {}, el("tr", {}, el("th", { text: "Title" }), el("th", { class: "num", text: "Scenes" }), el("th", { class: "num", text: "Words" }), el("th", { class: "num", text: "Story" }), el("th", { class: "num", text: "Art" }), el("th", { class: "num", text: "Sound" }), el("th", { class: "num", text: "Set aside" }), el("th", { text: "Last saved" }), el("th", {})),
+      d.stories.map(x => el("tr", { class: x.id === storyId ? "cur" : "", "data-story": x.id },
+        el("td", {}, el("b", { text: (x.locked ? "🔒 " : "") + x.title }), el("div", { style: "color:var(--dim);font-size:11.5px", text: x.id === "main" ? "the main story" : x.id })),
+        el("td", { class: "num", text: String(x.scenes) }), el("td", { class: "num", text: x.words.toLocaleString() }),
+        el("td", { class: "num", text: fmtBytes(x.bytes.story + x.bytes.history) }), el("td", { class: "num", text: fmtBytes(x.bytes.art) }), el("td", { class: "num", text: fmtBytes(x.bytes.sound) }),
+        el("td", { class: "num", title: "Replaced pictures and recordings, and the backup copy from this session", text: x.bytes.aside ? fmtBytes(x.bytes.aside) : "—" }),
+        el("td", { text: fmtTime(x.modified) }),
+        el("td", {}, el("div", { class: "acts" },
+          x.id !== storyId && el("button", { text: "Open", onclick: async () => { if (dirty && !confirm("This story has unsaved changes. Leave it without saving?")) return; if (dirty) dropDraft(); dirty = false; await loadStory(x.id); } }),
+          el("button", { text: "Duplicate", onclick: () => { const title = prompt("Title of the copy:", x.title + " (copy)"); if (title && title.trim()) adminDo(async () => { const r = await api("POST", "/api/stories", { title, copy: x.id }); stories = r.stories; renderStoryMenu(); }, "Copied"); } }),
+          x.bytes.aside > 0 && el("button", { text: "Free " + fmtBytes(x.bytes.aside), title: "Delete the set-aside files for good", onclick: () => { if (confirm(`Delete ${fmtBytes(x.bytes.aside)} of set-aside pictures, recordings and backups of '${x.title}'? This cannot be undone.`)) adminDo(() => api("POST", "/api/admin/clean", { story: x.id }), r => "Freed " + fmtBytes(r.freed)); } }),
+          x.id !== "main" && el("button", { class: "ghost danger", text: "Remove", disabled: x.locked, title: x.locked ? "Unlock it first" : "Move it to Removed stories below", onclick: async () => {
+            if (x.id === storyId && dirty && !confirm("This story has unsaved changes, which will be lost. Remove it anyway?")) return;
+            if (!confirm(`Remove '${x.title}' from the library? It can be brought back from Removed stories.`)) return;
+            await adminDo(async () => { const r = await api("POST", "/api/stories/remove", { story: x.id }); stories = r.stories; if (x.id === storyId) { dropDraft(); dirty = false; await loadStory("main"); } else renderStoryMenu(); }, "Story removed");
+          } }))))),
+      el("tr", {}, el("td", { style: "color:var(--dim)", text: "All stories" }), el("td", {}), el("td", { class: "num", text: d.stories.reduce((n, x) => n + x.words, 0).toLocaleString() }), el("td", { class: "num", colspan: 4, text: fmtBytes(d.stories.reduce((n, x) => n + total(x.bytes), 0)) + " on disk" }), el("td", {}), el("td", {}))),
+    el("h2", {}, "Removed stories"),
+    d.trash.length
+      ? el("table", {}, el("tr", {}, el("th", { text: "Title" }), el("th", { class: "num", text: "Scenes" }), el("th", { class: "num", text: "Size" }), el("th", { text: "Removed" }), el("th", {})),
+          d.trash.map(t => el("tr", { "data-trash": t.name }, el("td", {}, el("b", { text: t.title }), el("div", { style: "color:var(--dim);font-size:11.5px", text: t.name })), el("td", { class: "num", text: String(t.scenes) }), el("td", { class: "num", text: fmtBytes(t.bytes) }), el("td", { text: fmtTime(t.removed) }),
+            el("td", {}, el("div", { class: "acts" },
+              el("button", { text: "Bring back", onclick: () => adminDo(async () => { const r = await api("POST", "/api/admin/restore", { name: t.name }); stories = r.stories; renderStoryMenu(); }, `'${t.title}' is back in the library`) }),
+              el("button", { class: "ghost danger", text: "Delete for good", onclick: () => { if (confirm(`Delete '${t.title}' with its pictures and recordings for good? This cannot be undone.`)) adminDo(() => api("POST", "/api/admin/purge", { name: t.name }), "Deleted"); } }))))))
+      : el("div", { class: "empty", style: "padding:14px", text: "Nothing has been removed." }));
+  host.scrollTop = scroll;
+}
+
+// ------------------------------------------------------- find and replace
+const finder = { q: "", to: "", cased: false };
+/** Every piece of story text: where it is, and how to change it. */
+function textFields() {
+  const out = [];
+  doc.scenes.forEach((sc, si) => sc.items.forEach((it, ii) => {
+    const add = (obj, key, what) => out.push({ si, ii, obj, key, what });
+    if (it.t === "say") add(it, "text", it.who === "n" ? "Narrator" : (charById(it.who) || { name: it.who }).name || it.who);
+    else if (it.t === "choice") it.options.forEach(o => add(o, "text", "Choice"));
+    else if (it.t === "card") { add(it, "title", "Card"); add(it, "sub", "Card"); }
+    else if (it.t === "end") { add(it, "title", "Ending"); add(it, "text", "Ending"); }
+    else if (it.t === "comment") add(it, "text", "Note");
+  }));
+  return out;
+}
+function findPattern() { return finder.q ? new RegExp(finder.q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), finder.cased ? "g" : "gi") : null; }
+function findHits() { const re = findPattern(); return re ? textFields().filter(f => { re.lastIndex = 0; return re.test(f.obj[f.key] || ""); }) : []; }
+function openFind() { $("#find").classList.add("show"); renderFind(); const i = $("#findQ"); i.focus(); i.select(); }
+function closeFind() { $("#find").classList.remove("show"); }
+function renderFindHits() {
+  const hits = findHits(), re = findPattern(), host = $("#find .hits"), count = $("#findCount");
+  if (!host) return;
+  host.textContent = "";
+  const n = hits.reduce((n, f) => n + (f.obj[f.key].match(re) || []).length, 0);
+  count.textContent = !finder.q ? "" : hits.length ? `${n} match${n === 1 ? "" : "es"} in ${hits.length} place${hits.length === 1 ? "" : "s"}` + (hits.length > 200 ? " (first 200 shown)" : "") : "No matches";
+  $("#replaceAll").disabled = !hits.length || locked;
+  appendAll(host, hits.slice(0, 200).map(f => {
+    const text = f.obj[f.key], row = el("div", { class: "hit", onclick: () => { closeArt(); closeSound(); closeAdmin(); select(f.si, f.ii, true); } }, el("b", { text: `${doc.scenes[f.si].label} · ${f.what}: ` }));
+    let last = 0; re.lastIndex = 0;
+    for (let m; (m = re.exec(text)) && m[0].length;) { row.append(text.slice(last, m.index), el("mark", { text: m[0] })); last = m.index + m[0].length; }
+    row.append(text.slice(last));
+    return row;
+  }));
+}
+function renderFind() {
+  const host = $("#find"); host.textContent = "";
+  appendAll(host,
+    el("div", { class: "brow" }, el("input", { id: "findQ", type: "text", placeholder: "Find in dialogue, choices, cards, notes…", style: "flex:1", value: finder.q, oninput: ev => { finder.q = ev.target.value; renderFindHits(); } }),
+      el("button", { class: "ghost", text: "✕", title: "Close (Esc)", onclick: closeFind })),
+    el("div", { class: "brow" }, el("input", { id: "findTo", type: "text", placeholder: "Replace with…", style: "flex:1", value: finder.to, oninput: ev => finder.to = ev.target.value }),
+      el("button", { id: "replaceAll", text: "Replace all", onclick: () => {
+        const hits = findHits(), re = findPattern(); if (!hits.length) return;
+        const n = hits.reduce((n, f) => n + (f.obj[f.key].match(re) || []).length, 0);
+        // found again inside the change, as the objects are the ones in the document now
+        change(() => findHits().forEach(f => { f.obj[f.key] = f.obj[f.key].replace(findPattern(), () => finder.to); }));
+        toast(`Replaced ${n} match${n === 1 ? "" : "es"}. Undo brings them back.`); renderFindHits();
+      } })),
+    el("div", { class: "brow" }, el("label", {}, el("input", { type: "checkbox", checked: finder.cased, onchange: ev => { finder.cased = ev.target.checked; renderFindHits(); } }), " Match case"), el("span", { style: "flex:1" }), el("span", { id: "findCount", style: "color:var(--dim);font-size:12px" })),
+    el("div", { class: "hits" }));
+  renderFindHits();
+}
+
 // ----------------------------------------------------------- sound view
 const sound = { open: false, data: null, lines: {}, openSpeaker: null, options: {}, stale: false };
 function soundTyping() { const a = document.activeElement; return $("#sound").contains(a) && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && (a.type === "text" || a.type === "number"))); }
 function audioUrl(file) { return forStory("/audio?file=" + encodeURIComponent(file), true); }
 async function openSound() {
-  closeArt();
+  closeArt(); closeAdmin();
   sound.open = true; $("#sound").classList.add("show"); $("#soundBtn").classList.add("primary");
   $("#sound").textContent = ""; $("#sound").append(el("div", { class: "empty", text: "Loading…" }));
   await refreshSound();
@@ -1743,6 +1943,9 @@ function wire() {
   $("#storySel").onchange = storyMenuChanged;
   $("#artBtn").onclick = () => art.open ? closeArt() : openArt();
   $("#soundBtn").onclick = () => sound.open ? closeSound() : openSound();
+  $("#adminBtn").onclick = () => admin.open ? closeAdmin() : openAdmin();
+  $("#findBtn").onclick = () => $("#find").classList.contains("show") ? closeFind() : openFind();
+  window.addEventListener("pagehide", writeDraft);
   $("#sound").addEventListener("focusout", () => setTimeout(() => { if (sound.stale && sound.open && !soundTyping()) refreshSound(); }, 50));
   $("#compare").onclick = () => $("#compare").classList.remove("show");
   $("#art").addEventListener("focusout", () => setTimeout(() => { if (art.stale && art.open && !artTyping()) refreshArt(); }, 50));
@@ -1755,7 +1958,8 @@ function wire() {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
     if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); if (dirty) save(); }
     else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z" && !typing) { ev.preventDefault(); ev.shiftKey ? redo() : undo(); }
-    else if (ev.key === "Escape") { $("#probs").classList.remove("show"); $("#help").classList.remove("show"); $("#compare").classList.remove("show"); }
+    else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "f") { ev.preventDefault(); openFind(); }
+    else if (ev.key === "Escape") { closeFind(); $("#probs").classList.remove("show"); $("#help").classList.remove("show"); $("#compare").classList.remove("show"); }
   });
   window.addEventListener("beforeunload", ev => { if (dirty) { ev.preventDefault(); ev.returnValue = ""; } });
   window.addEventListener("resize", drawEdges);

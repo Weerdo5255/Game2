@@ -176,6 +176,133 @@ impl Library {
     }
 }
 
+impl Library {
+    /// The stories that were removed and can still be brought back.
+    fn trash(&self) -> Vec<Value> {
+        let bin = self.dir.join(".removed");
+        let mut names: Vec<String> = std::fs::read_dir(&bin).into_iter().flatten().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).filter(|n| trash_name(n) && bin.join(n).join("story.txt").is_file()).collect();
+        names.sort();
+        names
+            .into_iter()
+            .map(|name| {
+                let folder = bin.join(&name);
+                let (doc, _) = Doc::parse(&std::fs::read_to_string(folder.join("story.txt")).unwrap_or_default());
+                json!({ "name": name, "title": if doc.title.is_empty() { "Untitled story".to_string() } else { doc.title }, "scenes": doc.scenes.len(), "removed": modified(&folder), "bytes": dir_bytes(&folder) })
+            })
+            .collect()
+    }
+
+    /// Bring a removed story back into the library, under a free name.
+    fn restore(&self, name: &str) -> Result<String, String> {
+        let from = self.dir.join(".removed").join(name);
+        if !trash_name(name) || !from.join("story.txt").is_file() {
+            return Err(format!("there is no removed story called '{}'", name));
+        }
+        let mut id = name.to_string();
+        let mut n = 1;
+        while id == "main" || self.dir.join(&id).exists() {
+            n += 1;
+            id = format!("{}-{}", name, n);
+        }
+        std::fs::rename(&from, self.dir.join(&id)).map_err(|e| format!("could not bring the story back: {}", e))?;
+        Ok(id)
+    }
+
+    /// Delete a removed story for good.
+    fn purge(&self, name: &str) -> Result<(), String> {
+        let folder = self.dir.join(".removed").join(name);
+        if !trash_name(name) || !folder.join("story.txt").is_file() {
+            return Err(format!("there is no removed story called '{}'", name));
+        }
+        std::fs::remove_dir_all(&folder).map_err(|e| format!("could not delete the story: {}", e))
+    }
+}
+
+/// A folder name the library itself would have made.
+fn trash_name(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 80 && !name.starts_with('.') && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Size of a file or of everything in a folder (links are not followed).
+fn dir_bytes(path: &Path) -> u64 {
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.is_file() => m.len(),
+        Ok(m) if m.is_dir() => std::fs::read_dir(path).into_iter().flatten().filter_map(|e| e.ok()).map(|e| dir_bytes(&e.path())).sum(),
+        _ => 0,
+    }
+}
+
+/// When a file or folder last changed, in seconds since 1970 (0 if unknown).
+fn modified(path: &Path) -> u64 {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs())
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+/// The marker beside a story that says it must not be changed.
+fn lock_file(story: &Path) -> PathBuf {
+    let mut p = story.to_path_buf().into_os_string();
+    p.push(".locked");
+    PathBuf::from(p)
+}
+
+/// Earlier versions of a story are kept beside it, in "history".
+fn history_dir(story: &Path) -> PathBuf {
+    story.parent().unwrap_or(Path::new(".")).join("history")
+}
+
+/// How many automatic snapshots are kept, and how far apart they are taken.
+const AUTO_SNAPSHOTS: usize = 30;
+const AUTO_SNAPSHOT_GAP: u64 = 300;
+
+/// A snapshot's file name: `<seconds>_<auto|named>[_<label>].txt`.
+fn snapshot_parts(name: &str) -> Option<(u64, &str, String)> {
+    if !comfy::plain_file(name, &["txt"]) {
+        return None;
+    }
+    let mut parts = name.strip_suffix(".txt")?.splitn(3, '_');
+    let time = parts.next()?.parse().ok()?;
+    let kind = parts.next().filter(|k| *k == "auto" || *k == "named")?;
+    Some((time, kind, parts.next().unwrap_or("").replace('-', " ")))
+}
+
+/// Keep the story file as it is now in its history. Returns the snapshot's name.
+fn take_snapshot(story: &Path, kind: &str, label: &str) -> Result<String, String> {
+    let dir = history_dir(story);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut slug: String = label.trim().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+    slug = slug.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
+    slug.truncate(40);
+    let mut time = now();
+    let name = loop {
+        let name = if slug.is_empty() { format!("{}_{}.txt", time, kind) } else { format!("{}_{}_{}.txt", time, kind, slug) };
+        if !dir.join(&name).exists() {
+            break name;
+        }
+        time += 1;
+    };
+    std::fs::copy(story, dir.join(&name)).map_err(|e| e.to_string())?;
+    Ok(name)
+}
+
+fn snapshots(story: &Path) -> Vec<(u64, String, String, String)> {
+    let mut all: Vec<(u64, String, String, String)> = std::fs::read_dir(history_dir(story))
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let (time, kind, label) = snapshot_parts(&name)?;
+            Some((time, kind.to_string(), label, name))
+        })
+        .collect();
+    all.sort();
+    all.reverse();
+    all
+}
+
 /// Move a file into a `.removed` folder beside it, under a name not yet taken.
 fn set_aside(file: &Path) -> bool {
     let Some(dir) = file.parent() else { return false };
@@ -463,10 +590,22 @@ impl State {
             std::fs::copy(story, PathBuf::from(bak)).map_err(err)?;
         }
         backed_up.insert(story.to_path_buf());
+        drop(backed_up);
+        // and keep how it was, now and then, so an earlier version can be brought back
+        let text = doc.to_text();
+        if std::fs::read_to_string(story).map_or(false, |old| old != text) {
+            let autos: Vec<_> = snapshots(story).into_iter().filter(|s| s.1 == "auto").collect();
+            if autos.first().map_or(true, |latest| now().saturating_sub(latest.0) >= AUTO_SNAPSHOT_GAP) {
+                let _ = take_snapshot(story, "auto", "");
+                for old in autos.iter().skip(AUTO_SNAPSHOTS - 1) {
+                    let _ = std::fs::remove_file(history_dir(story).join(&old.3));
+                }
+            }
+        }
         // write beside the file and rename, so a crash cannot leave half a story
         let mut tmp = story.to_path_buf().into_os_string();
         tmp.push(".tmp");
-        std::fs::write(&tmp, doc.to_text()).map_err(err)?;
+        std::fs::write(&tmp, text).map_err(err)?;
         std::fs::rename(&tmp, story).map_err(err)
     }
 
@@ -537,6 +676,60 @@ impl State {
             let _ = std::fs::write(story.with_file_name("art.json"), serde_json::to_string_pretty(&prefs).unwrap_or_default() + "\n");
         }
         self.jobs.version.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Everything the Manage view shows: each story with its size and state,
+    /// and the stories that were removed.
+    fn admin_overview(&self) -> Value {
+        let stories: Vec<Value> = self
+            .library
+            .list()
+            .into_iter()
+            .filter_map(|mut entry| {
+                let path = self.library.path(entry["id"].as_str()?).ok()?;
+                let folder = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+                let (doc, _) = self.load(&path).ok()?;
+                let (mut lines, mut words, mut endings, mut choices) = (0, 0, 0, 0);
+                for item in doc.scenes.iter().flat_map(|s| &s.items) {
+                    match item {
+                        Item::Say { text, .. } => {
+                            lines += 1;
+                            words += text.split_whitespace().count();
+                        }
+                        Item::Choice { options } => {
+                            choices += 1;
+                            words += options.iter().map(|o| o.text.split_whitespace().count()).sum::<usize>();
+                        }
+                        Item::End { .. } => endings += 1,
+                        _ => {}
+                    }
+                }
+                let aside = dir_bytes(&folder.join("enhanced").join(".removed")) + dir_bytes(&folder.join("audio").join(".removed")) + dir_bytes(&PathBuf::from(format!("{}.bak", path.display())));
+                let (art, sound) = (dir_bytes(&folder.join("enhanced")), dir_bytes(&folder.join("audio")));
+                entry["lines"] = json!(lines);
+                entry["words"] = json!(words);
+                entry["endings"] = json!(endings);
+                entry["choices"] = json!(choices);
+                entry["modified"] = json!(modified(&path));
+                entry["locked"] = json!(lock_file(&path).exists());
+                entry["snapshots"] = json!(snapshots(&path).len());
+                entry["bytes"] = json!({ "story": dir_bytes(&path), "art": art.saturating_sub(dir_bytes(&folder.join("enhanced").join(".removed"))), "sound": sound.saturating_sub(dir_bytes(&folder.join("audio").join(".removed"))), "aside": aside, "history": dir_bytes(&history_dir(&path)) });
+                Some(entry)
+            })
+            .collect();
+        json!({ "stories": stories, "trash": self.library.trash(), "folder": self.library.dir.display().to_string() })
+    }
+
+    fn history(&self, story: &Path) -> Value {
+        let list: Vec<Value> = snapshots(story)
+            .into_iter()
+            .map(|(time, kind, label, name)| {
+                let file = history_dir(story).join(&name);
+                let scenes = std::fs::read_to_string(&file).map_or(0, |t| Doc::parse(&t).0.scenes.len());
+                json!({ "name": name, "time": time, "kind": kind, "label": label, "scenes": scenes, "bytes": dir_bytes(&file) })
+            })
+            .collect();
+        json!({ "snapshots": list })
     }
 
     /// The art and sound choices of a story, with anything that is not one
@@ -828,7 +1021,51 @@ impl State {
                 }
             }
             ("POST", "/api/import") => answer(stream, self.import(&req.body)),
+            // ---- managing the library
+            ("GET", "/api/admin") => respond_json(stream, "200 OK", &self.admin_overview()),
+            ("POST", "/api/admin/restore") => {
+                let back = self.library.restore(body["name"].as_str().unwrap_or(""));
+                answer(stream, back.map(|id| json!({ "id": id, "stories": self.library.list() })))
+            }
+            ("POST", "/api/admin/purge") => answer(stream, self.library.purge(body["name"].as_str().unwrap_or("")).map(|_| json!({ "ok": true }))),
+            ("POST", "/api/admin/clean") => {
+                // delete what was only set aside: replaced pictures and recordings, and the session's backup copy
+                let folder = story.parent().unwrap_or(Path::new(".")).to_path_buf();
+                let targets = [folder.join("enhanced").join(".removed"), folder.join("audio").join(".removed"), PathBuf::from(format!("{}.bak", story.display()))];
+                let freed: u64 = targets.iter().map(|t| dir_bytes(t)).sum();
+                for t in &targets {
+                    let _ = if t.is_dir() { std::fs::remove_dir_all(t) } else { std::fs::remove_file(t) };
+                }
+                self.backed_up.lock().unwrap().remove(&story);
+                respond_json(stream, "200 OK", &json!({ "freed": freed }))
+            }
+            ("POST", "/api/admin/lock") => {
+                let file = lock_file(&story);
+                let done = if body["locked"].as_bool().unwrap_or(false) { std::fs::write(&file, "This story is locked in the story editor. Delete this file to unlock it.\n") } else if file.exists() { std::fs::remove_file(&file) } else { Ok(()) };
+                answer(stream, done.map(|_| json!({ "locked": file.exists() })).map_err(|e| e.to_string()))
+            }
+            ("GET", "/api/history") => respond_json(stream, "200 OK", &self.history(&story)),
+            ("POST", "/api/history/snapshot") => answer(stream, take_snapshot(&story, "named", body["label"].as_str().unwrap_or("")).map(|name| json!({ "name": name }))),
+            ("GET", "/api/history/get") | ("POST", "/api/history/remove") => {
+                let name = q.get("name").cloned().or_else(|| body["name"].as_str().map(str::to_string)).unwrap_or_default();
+                let file = history_dir(&story).join(&name);
+                if snapshot_parts(&name).is_none() || !file.is_file() {
+                    return respond_json(stream, "404 Not Found", &json!({ "error": "there is no such snapshot" }));
+                }
+                if req.method == "POST" {
+                    return answer(stream, std::fs::remove_file(&file).map(|_| json!({ "ok": true })).map_err(|e| e.to_string()));
+                }
+                let read = std::fs::read_to_string(&file).map_err(|e| e.to_string()).map(|text| {
+                    let (mut doc, _) = Doc::parse(&text);
+                    doc.sanitize();
+                    json!({ "doc": doc })
+                });
+                answer(stream, read)
+            }
             ("POST", "/api/stories/remove") => {
+                if lock_file(&story).exists() {
+                    return respond_json(stream, "423 Locked", &json!({ "error": "this story is locked: unlock it under Manage first", "locked": true }));
+                }
                 let removed = self.library.remove(&story_id).map(|_| {
                     self.jobs.forget_story(&story_id);
                     json!({ "stories": self.library.list() })
@@ -842,7 +1079,7 @@ impl State {
                     let p = problems(&doc);
                     let mut meta = self.meta();
                     meta["path"] = json!(story.display().to_string());
-                    respond_json(stream, "200 OK", &json!({ "doc": doc, "problems": p, "parse_errors": parse_errors, "meta": meta, "revision": revision(&story) }))
+                    respond_json(stream, "200 OK", &json!({ "doc": doc, "problems": p, "parse_errors": parse_errors, "meta": meta, "revision": revision(&story), "locked": lock_file(&story).exists() }))
                 }
                 Err(e) => fail(stream, e),
             },
@@ -852,6 +1089,9 @@ impl State {
             },
             ("PUT", "/api/story") => {
                 // refuse to overwrite a file that changed since this page loaded it (another tab, a hand edit)
+                if lock_file(&story).exists() {
+                    return respond_json(stream, "423 Locked", &json!({ "error": "this story is locked: unlock it under Manage to change it", "locked": true }));
+                }
                 let on_disk = revision(&story);
                 if q.get("base").map_or(false, |base| *base != on_disk) && !q.contains_key("force") {
                     return respond_json(stream, "409 Conflict", &json!({ "error": "the story file has changed since you opened it", "conflict": true }));
