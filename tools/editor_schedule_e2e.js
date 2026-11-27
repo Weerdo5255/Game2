@@ -71,6 +71,21 @@ end Done
   await stop(1).locator('input[type=time]').fill('08:15'); await stop(1).locator('input[type=time]').blur();
   await stop(1).locator('select').selectOption('away');
   await stop(1).locator('input[type=text]').fill('errands'); await stop(1).locator('input[type=text]').blur();
+  // typed, digit by digit, as a person would
+  await p.click('[data-add="stop"]');
+  await stop(2).locator('input[type=time]').focus();
+  await stop(2).locator('input[type=time]').pressSequentially('1145PM');
+  await p.keyboard.press('Enter');
+  await sleep(300);
+  assert(await p.evaluate(() => doc.characters[2].schedule.length === 3 && doc.characters[2].schedule[2].at === 23 * 60 + 45), 'a time can be typed digit by digit: ' + await p.evaluate(() => JSON.stringify(doc.characters[2].schedule.map(s => s.at))));
+  await stop(2).locator('input[type=time]').fill('06:00'); await stop(2).locator('input[type=time]').blur();
+  await sleep(200);
+  assert(await p.evaluate(() => doc.characters[2].schedule[2].at === 23 * 60 + 45) && (await p.textContent('#toast')).includes('already has an entry'), 'two entries cannot share a time');
+  await p.click('[data-add="stop"]');
+  assert(await p.evaluate(() => new Set(doc.characters[2].schedule.map(s => s.at)).size === 4), 'nor does a new one land on a time already taken');
+  await p.locator('#stage').click({ position: { x: 5, y: 5 } });
+  for (let i = 0; i < 3; i++) await p.keyboard.press('Control+z');
+  await p.waitForFunction(() => doc.characters[2].schedule.length === 2);
   // ---- and what interrupts it: an event, made up on the spot
   await p.click('[data-add="interrupt"]');
   const intr = p.locator('[data-interrupt="0"]');
@@ -93,8 +108,10 @@ end Done
 
   // ---- an Event block brings them to the study; a Time block moves the clock
   await p.evaluate(() => { const si = sceneIndex('start'); select(si, 3, true); });
-  await p.locator('#insp button', { hasText: /^\+ Event$/ }).first().click().catch(() => {});
-  if (!(await p.evaluate(() => doc.scenes[0].items.some(i => i.t === 'event')))) await p.evaluate(() => change(() => doc.scenes[0].items.splice(3, 0, { t: 'event', name: 'fire', on: true })));
+  await p.locator('#insp button', { hasText: /^\+ Event$/ }).click();
+  await p.waitForFunction(() => doc.scenes[0].items.some(i => i.t === 'event'));
+  // (the button puts it after the selected block; the story needs it before the place changes)
+  await p.evaluate(() => change(() => { const items = doc.scenes[0].items; const e = items.splice(items.findIndex(i => i.t === 'event'), 1)[0]; items.splice(3, 0, e); }));
   assert(await p.evaluate(() => doc.scenes[0].items.some(i => i.t === 'event' && i.name === 'fire' && i.on)), 'an Event block starts the event');
   text = await save();
   assert(/^event fire$/m.test(text), "written as 'event fire'");
@@ -127,6 +144,15 @@ end Done
   await p.evaluate(() => change(() => doc.characters[1].interrupts.push({ when: { var: '@q', op: '==', val: 1 }, place: 'study', note: '' })));
   assert((await problemsNow()).some(m => m.includes('depends on where someone is')), 'an interruption that waits on where someone is, is refused');
   await p.keyboard.press('Control+z');
+  // a property someone is waiting on is in use; and without properties a condition can still be made
+  await p.evaluate(() => change(() => doc.characters[1].interrupts.push({ when: { var: 'alarm', op: '>=', val: 2 }, place: 'study', note: '' })));
+  assert(await p.evaluate(() => usesOfVar('alarm').length === 1), 'a property an interruption waits on counts as used');
+  await p.keyboard.press('Control+z');
+  await p.evaluate(() => change(() => { doc.vars = []; }));
+  await p.evaluate(() => select(sceneIndex('start'), 0, true));
+  await p.locator('#insp button', { hasText: /^\+ Condition$/ }).click();
+  assert(await p.evaluate(() => doc.scenes[0].items.some(i => i.t === 'if' && i.var === 'clock')), 'a story with a clock and no properties can still be given a condition');
+  await p.keyboard.press('Control+z'); await p.keyboard.press('Control+z');
   // round trip through export
   const exported = await p.evaluate(() => fetch('/api/export?format=json&story=main').then(r => r.json()));
   assert(exported.story.clock.start === 480 && exported.story.characters[2].schedule.length === 2 && exported.story.characters[2].interrupts[0].when.var === 'event.fire', 'schedules travel with an exported story');

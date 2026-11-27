@@ -74,6 +74,8 @@ pub struct Game {
     pub lines_begun: usize,
     /// People the scene sent off although their schedule has them here.
     dismissed: std::collections::HashSet<String>,
+    /// People who are here by their schedule but have no room on stage.
+    unseated: std::collections::HashSet<String>,
     /// The place the cast was last brought into line with the schedules for.
     presence_place: String,
     /// A record of scheduled comings and goings ("09:30 q arrives in study").
@@ -149,6 +151,7 @@ impl Game {
             overlay: None,
             lines_begun: 0,
             dismissed: Default::default(),
+            unseated: Default::default(),
             presence_place: String::new(),
             moves: Vec::new(),
             cur_pc: 0,
@@ -185,12 +188,18 @@ impl Game {
             }
         }
         self.dismissed.retain(|who| here.contains(who));
+        self.unseated.retain(|who| here.contains(who));
         for who in here {
             if self.dismissed.contains(&who) || self.slots.iter().flatten().any(|s| s.who == who) {
                 continue;
             }
-            // the sides first, the middle last
-            let Some(free) = [0, 2, 1].into_iter().find(|i| self.slots[*i].is_none()) else { break };
+            // the sides first, the middle last; with no room they are here all the same, out of view
+            let Some(free) = [0, 2, 1].into_iter().find(|i| self.slots[*i].is_none()) else {
+                self.unseated.insert(who);
+                continue;
+            };
+            // stepping into view is not arriving
+            let quiet = quiet || self.unseated.remove(&who);
             self.slots[free] = Some(Slot { who: who.clone(), expr: "neutral".into(), appear: if quiet { 1.0 } else { 0.0 }, auto: true });
             let (name, col) = self.speaker(&who);
             self.moves.push(format!("{} {} {} {}", stamp, who, if quiet { "is in" } else { "arrives in" }, place));
@@ -202,6 +211,9 @@ impl Game {
 
     fn reset_scene(&mut self) {
         self.bg.clear();
+        // nowhere in particular: nobody is "here" until the story names a place again
+        self.vm.place.clear();
+        self.unseated.clear();
         self.dismissed.clear();
         self.presence_place.clear();
         self.slots = [None, None, None];
@@ -319,6 +331,15 @@ impl Game {
                 }
                 Cmd::Show { who, expr, slot } => {
                     let same = self.slots[slot].as_ref().map_or(false, |s| s.who == who);
+                    // someone here by their schedule makes room: to a free place if there is one
+                    if let Some(moved) = self.slots[slot].take().filter(|s| s.auto && s.who != who) {
+                        match (0..3).find(|i| *i != slot && self.slots[*i].is_none()) {
+                            Some(free) => self.slots[free] = Some(moved),
+                            None => {
+                                self.unseated.insert(moved.who);
+                            }
+                        }
+                    }
                     self.slots[slot] = Some(Slot { who: who.clone(), expr, appear: if same { 1.0 } else { 0.0 }, auto: false });
                     // one of each person: if their schedule had already brought them in elsewhere, they step over
                     for other in 0..3 {
@@ -397,6 +418,9 @@ impl Game {
         for e in &self.vm.events {
             s += &format!("event={}\n", e);
         }
+        for who in &self.dismissed {
+            s += &format!("dismissed={}\n", who);
+        }
         let msg = match std::fs::write(SAVE_FILE, s) {
             Ok(()) => "Game saved".to_string(),
             Err(e) => format!("Save failed: {}", e),
@@ -410,6 +434,7 @@ impl Game {
             return;
         };
         let mut vm = Vm::new(&self.script);
+        let mut dismissed = std::collections::HashSet::new();
         let mut bg = String::new();
         let mut music = String::new();
         let mut slots: [Option<Slot>; 3] = [None, None, None];
@@ -426,6 +451,8 @@ impl Game {
                 vm.clock = v.parse().unwrap_or(vm.clock);
             } else if k == "event" {
                 vm.events.insert(v.to_string());
+            } else if k == "dismissed" {
+                dismissed.insert(v.to_string());
             } else if let Some(name) = k.strip_prefix("var.") {
                 vm.vars.insert(name.to_string(), v.parse().unwrap_or(0));
             } else if let Some(i) = k.strip_prefix("slot").and_then(|i| i.parse::<usize>().ok()) {
@@ -442,6 +469,7 @@ impl Game {
                 self.reset_scene();
                 self.vm = vm;
                 self.presence_place = bg.clone();
+                self.dismissed = dismissed;
                 self.bg = bg;
                 self.slots = slots;
                 self.audio.play_music(&music);
@@ -495,6 +523,9 @@ impl Game {
                     self.bg = b;
                     self.slots = [None, None, None];
                     self.dismissed.clear();
+                    // whoever is in the new place is there as it comes into view
+                    self.presence_place.clear();
+                    self.sync_presence();
                 }
             }
             if t >= FADE_HALF * 2.0 {

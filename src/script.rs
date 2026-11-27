@@ -406,13 +406,14 @@ fn parse_line(line: &str) -> Result<Line, String> {
             let parts: Vec<&str> = rest.split('|').map(str::trim).collect();
             let mut stops = Vec::new();
             for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
-                let mut words = part.splitn(3, char::is_whitespace);
-                let (time, place) = (words.next().unwrap_or(""), words.next().unwrap_or(""));
+                // time, place, then whatever note follows (however the columns are spaced)
+                let (time, after) = part.split_once(char::is_whitespace).unwrap_or((part, ""));
+                let (place, note) = after.trim_start().split_once(char::is_whitespace).unwrap_or((after.trim_start(), ""));
                 let at = parse_time(time).ok_or(format!("a schedule entry starts with a time such as 07:00, not '{}'", time))?;
                 if place.is_empty() {
                     return Err(format!("the schedule entry at {} needs a place", time));
                 }
-                stops.push(Stop { at, place: place.to_string(), note: words.next().unwrap_or("").trim().to_string() });
+                stops.push(Stop { at, place: place.to_string(), note: note.trim().to_string() });
             }
             return Ok(Line::Schedule(parts[0].to_string(), stops));
         }
@@ -501,6 +502,18 @@ impl Doc {
                 errors.push(format!("story line {}: {}", n + 1, e));
                 Line::Item(Item::Comment { text: format!("UNPARSED: {}", line) })
             });
+            // a day for someone the file has not introduced yet cannot be filed: kept as a note, like any line not understood
+            let orphan = match &parsed {
+                Line::Schedule(who, _) | Line::Interrupt(who, _) if !doc.characters.iter().any(|c| c.id == *who) => Some(who.clone()),
+                _ => None,
+            };
+            let parsed = match orphan {
+                Some(who) => {
+                    errors.push(format!("story line {}: this is for '{}', who is not a character declared above it", n + 1, who));
+                    Line::Item(Item::Comment { text: format!("UNPARSED: {}", line) })
+                }
+                None => parsed,
+            };
             match parsed {
                 Line::Title(title, subtitle) => {
                     doc.title = title;
@@ -511,14 +524,16 @@ impl Doc {
                 Line::Track(t) => doc.tracks.push(t),
                 Line::Clock(c) => doc.clock = Some(c),
                 // these belong to a character declared above them
-                Line::Schedule(who, stops) => match doc.characters.iter_mut().find(|c| c.id == who) {
-                    Some(c) => c.schedule.extend(stops),
-                    None => errors.push(format!("story line {}: schedule for '{}', who is not a character declared above it", n + 1, who)),
-                },
-                Line::Interrupt(who, interrupt) => match doc.characters.iter_mut().find(|c| c.id == who) {
-                    Some(c) => c.interrupts.push(interrupt),
-                    None => errors.push(format!("story line {}: interrupt for '{}', who is not a character declared above it", n + 1, who)),
-                },
+                Line::Schedule(who, stops) => {
+                    if let Some(c) = doc.characters.iter_mut().find(|c| c.id == who) {
+                        c.schedule.extend(stops);
+                    }
+                }
+                Line::Interrupt(who, interrupt) => {
+                    if let Some(c) = doc.characters.iter_mut().find(|c| c.id == who) {
+                        c.interrupts.push(interrupt);
+                    }
+                }
                 Line::Render(None, mode) => doc.render = mode,
                 Line::Render(Some(place), mode) => {
                     doc.locales.insert(place, mode);
@@ -978,6 +993,12 @@ impl Doc {
                 push("warning", "", None, format!("{} has a schedule but no portrait, so is never seen arriving anywhere", c.id));
             }
         }
+        for v in self.vars.iter().filter(|v| v.id == "clock" || v.id == "day") {
+            push("error", "", None, format!("a property cannot be called '{}': that name is the story's clock", v.id));
+        }
+        if self.clock.as_ref().map_or(false, |c| !(0..=120).contains(&c.per_line) || !(0..DAY).contains(&c.start)) {
+            push("error", "", None, "the clock's start must be a time of day, and a line can take 0 to 120 minutes".into());
+        }
         for place in self.locales.keys().filter(|p| !bgs.contains(&p.as_str())) {
             push("warning", "", None, format!("'render {} ...' names a place that does not exist", place));
         }
@@ -1003,6 +1024,12 @@ impl Doc {
                 let var = |v: &String, err: &mut dyn FnMut(String)| {
                     if let Some(msg) = self.cond_var_problem(v, &vars, bgs) {
                         err(msg);
+                    }
+                };
+                // only a property can be changed: the clock has 'time' and 'pass', an event has 'event'
+                let changed = |v: &String, err: &mut dyn FnMut(String)| {
+                    if !vars.contains(v.as_str()) {
+                        err(if special_var(v).is_some() { format!("'{}' cannot be changed like a property (the clock has Time blocks, an event has Event blocks)", v) } else { format!("unknown property '{}'", v) });
                     }
                 };
                 if ended && !matches!(item, Item::Comment { .. }) {
@@ -1056,7 +1083,7 @@ impl Doc {
                             err(format!("unknown position '{}'", slot));
                         }
                     }
-                    Item::Add { var: v, .. } | Item::Set { var: v, .. } => var(v, &mut err),
+                    Item::Add { var: v, .. } | Item::Set { var: v, .. } => changed(v, &mut err),
                     Item::If { var: v, op, target: t, .. } => {
                         var(v, &mut err);
                         if !OPS.contains(&op.as_str()) {
@@ -1246,7 +1273,12 @@ impl Script {
             }
         }
         let world = doc.scenes.iter().flat_map(|s| &s.items).filter_map(|i| if let Item::Bg { name } = i { Some(name.clone()) } else { None }).filter(|p| doc.is_3d(p)).collect();
-        Script { title: doc.title.clone(), subtitle: doc.subtitle.clone(), cmds, labels, characters: doc.characters.clone(), vars: doc.vars.clone(), world, clock: doc.clock.clone() }
+        // a day is looked up in time order, however the file lists it
+        let mut characters = doc.characters.clone();
+        for c in &mut characters {
+            c.schedule.sort_by_key(|stop| stop.at);
+        }
+        Script { title: doc.title.clone(), subtitle: doc.subtitle.clone(), cmds, labels, characters, vars: doc.vars.clone(), world, clock: doc.clock.clone() }
     }
 
     pub fn character(&self, id: &str) -> Option<&CharDef> {
@@ -1344,7 +1376,7 @@ impl Vm {
         // the validator rejects jump loops, but never trust a story file with the CPU
         // talking takes time: the line just spoken is counted as the story moves on from it
         if std::mem::take(&mut self.spoke) {
-            self.clock += s.clock.as_ref().map_or(0, |c| c.per_line);
+            self.clock = self.clock.saturating_add(s.clock.as_ref().map_or(0, |c| c.per_line.clamp(0, 120)));
         }
         for _ in 0..100_000 {
             let i = self.pc;
@@ -1360,10 +1392,11 @@ impl Vm {
                 }
                 Cmd::Time(at) => {
                     // forward to that time of day: tomorrow's, if today's has gone
-                    let ahead = (at - self.clock).rem_euclid(DAY);
-                    self.clock += ahead;
+                    let ahead = (at.rem_euclid(DAY) - self.clock.rem_euclid(DAY)).rem_euclid(DAY);
+                    self.clock = self.clock.saturating_add(ahead);
                 }
-                Cmd::Pass(minutes) => self.clock += (*minutes).max(0),
+                // (a week at most at a time, and never past what the clock can hold)
+                Cmd::Pass(minutes) => self.clock = self.clock.saturating_add((*minutes).clamp(0, 7 * DAY)),
                 Cmd::Event(name, on) => {
                     if *on {
                         self.events.insert(name.clone());
@@ -1657,7 +1690,31 @@ mod tests {
         for want in ["keeps no clock", "'nowhere'", "depends on where someone is", "unknown property 'nope'", "who is not a character"] {
             assert!(found.iter().any(|m| m.contains(want)), "missing '{}' in {:?}", want, found);
         }
-        assert!(Doc::parse("schedule ghost | 09:00 study\n*start\nend Done\n").1.len() == 1);
+        // a day for someone not yet introduced is kept as a note, not dropped
+        let (orphan, errors) = Doc::parse("schedule ghost | 09:00 study\n*start\nend Done\n");
+        assert!(errors.len() == 1 && orphan.to_text().contains("UNPARSED: schedule ghost | 09:00 study"));
+        // a day is read in time order however it is written, across lines and uneven spacing
+        let (loose, errors) = Doc::parse("character p | P | #fff | p\nclock 13:00\nschedule p | 12:00   vista   fencing hard | 07:00\taxis\nschedule p | 09:00 study\n*start\nend Done\n");
+        assert!(errors.is_empty(), "{:?}", errors);
+        let s3 = Script::compile(&loose);
+        let mut vm = Vm::new(&s3);
+        assert_eq!(vm.where_is(&s3, "p"), Some("vista"));
+        assert_eq!(loose.characters[0].schedule[0].note, "fencing hard");
+        vm.clock = 8 * 60;
+        assert_eq!(vm.where_is(&s3, "p"), Some("axis"));
+        // the clock and events are not properties to add to; and time cannot run away
+        let (wrong, _) = Doc::parse("clock 08:00\n*start\nset clock 5\nadd event.fire 1\nend Done\n");
+        let found: Vec<String> = problems(&wrong).into_iter().map(|p| p.msg).collect();
+        assert_eq!(found.iter().filter(|m| m.contains("cannot be changed like a property")).count(), 2, "{:?}", found);
+        let (far, _) = Doc::parse("clock 08:00\n*start\npass 2000000000\npass 2000000000\ntime 07:00\nn: later\nend Done\n");
+        let s4 = Script::compile(&far);
+        let mut vm = Vm::new(&s4);
+        while let Some((_, cmd)) = vm.next(&s4) {
+            if matches!(cmd, Cmd::End(..)) {
+                break;
+            }
+        }
+        assert_eq!((vm.value(&s4, "day"), vm.value(&s4, "clock")), (16, 7 * 60));
         assert!(Doc::parse("character p | P\nschedule p | 25:00 study\n*start\nend Done\n").1.len() == 1);
     }
 

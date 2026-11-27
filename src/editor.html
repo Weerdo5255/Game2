@@ -396,6 +396,8 @@ function usesOfVar(id) {
     if (it.t === "if" && it.var === id) uses.push({ si, i, text: `${s.label}: tested` });
     if (it.t === "choice" && it.options.some(o => o.cond && o.cond.var === id)) uses.push({ si, i, text: `${s.label}: gates a choice` });
   }));
+  // and whoever is waiting on it
+  for (const c of doc.characters) for (const k of c.interrupts) if (k.when.var === id) uses.push({ si: -1, i: -1, text: `${c.name || c.id}: an interruption` });
   return uses;
 }
 function charStats(id) {
@@ -995,7 +997,8 @@ const sceneOpts = () => doc.scenes.map(s => ({ value: s.label, label: s.chapter 
 const AWAY = "away";
 const hhmm = m => { m = ((m % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
 const minutesOf = text => { const m = /^(\d{1,2}):(\d{2})/.exec(text || ""); return m ? Math.min(1439, +m[1] * 60 + +m[2]) : 0; };
-const timeInput = (minutes, onChange) => el("input", { type: "time", style: "flex:none;width:104px", value: hhmm(minutes), onchange: ev => onChange(minutesOf(ev.target.value)) });
+// (taken when the field is left, or on Enter: browsers report a change at every digit typed)
+const timeInput = (minutes, onChange) => { const take = ev => { if (ev.target.value && minutesOf(ev.target.value) !== minutes) onChange(minutesOf(ev.target.value)); }; return el("input", { type: "time", style: "flex:none;width:104px", value: hhmm(minutes), onblur: take, onkeydown: ev => { if (ev.key === "Enter") ev.target.blur(); } }); };
 const placeOpts = () => [...meta.bgs, { value: AWAY, label: "away (nowhere to be seen)" }];
 /** Every event the story names: started or ended in a scene, or waited for by someone. */
 function eventNames() {
@@ -1042,6 +1045,12 @@ function bindText(node, obj, key, after) {
 function grow(t) { t.style.height = "auto"; t.style.height = (t.scrollHeight + 2) + "px"; }
 let graphTimer = 0;
 function scheduleGraph() { clearTimeout(graphTimer); graphTimer = setTimeout(renderGraph, 250); }
+/** A condition to start from: on the first property, or without any, on the clock or an event. */
+function firstCond() {
+  if (doc.vars.length) return { var: doc.vars[0].id, op: ">=", val: 1 };
+  if (doc.clock) return { var: "clock", op: ">=", val: 12 * 60 };
+  return { var: "event." + (eventNames()[0] || "alarm"), op: "==", val: 1 };
+}
 /** Edit a condition. Besides properties it can ask the clock, an event, or (not for interrupts) whether someone is here. */
 function condEditor(cond, onChange, forInterrupt) {
   const NEW_EVENT = "\u0000event";
@@ -1051,7 +1060,13 @@ function condEditor(cond, onChange, forInterrupt) {
     { value: NEW_EVENT, label: "\u26A1 a new event\u2026" },
     ...(forInterrupt ? [] : doc.characters.filter(c => c.schedule.length || c.interrupts.length).map(c => ({ value: "@" + c.id, label: "\u{1F6B6} " + (c.name || c.id) + " is here" }))),
   ];
-  const isEvent = cond.var.startsWith("event."), isHere = cond.var.startsWith("@");
+  // a condition from a story file may ask where someone is by name of place: offer it as it is
+  const where = /^@([A-Za-z0-9_]+)\.([A-Za-z0-9_]+)$/.exec(cond.var);
+  if (where && charById(where[1])) special.push({ value: cond.var, label: `\u{1F6B6} ${charById(where[1]).name || where[1]} is in ${where[2]}` });
+  else if (cond.var.startsWith("@") && charById(cond.var.slice(1)) && !special.some(o => o.value === cond.var)) special.push({ value: cond.var, label: `\u{1F6B6} ${charById(cond.var.slice(1)).name || cond.var.slice(1)} is here` });
+  // "is on / is off" only where that is all the condition says; anything else is shown as written
+  const plain = (cond.op === "==" || cond.op === "!=") && (cond.val === 0 || cond.val === 1);
+  const isEvent = plain && cond.var.startsWith("event."), isHere = plain && cond.var.startsWith("@");
   return [
     el("select", { onchange: ev => {
       let v = ev.target.value;
@@ -1060,7 +1075,13 @@ function condEditor(cond, onChange, forInterrupt) {
         if (!name) { ev.target.value = cond.var; return; }
         v = "event." + name;
       }
-      onChange(c => { c.var = v; if (v.startsWith("event.") || v.startsWith("@")) { c.op = "=="; c.val = 1; } else if (v === "clock") { c.op = ">="; } });
+      const was = cond.var;
+      onChange(c => {
+        c.var = v;
+        if (v.startsWith("event.") || v.startsWith("@")) { c.op = "=="; c.val = 1; }
+        else if (v === "clock") { c.op = ">="; c.val = Math.max(0, Math.min(1439, c.val)); if (was !== "clock") c.val = 12 * 60; }
+        else if (was === "clock" || was.startsWith("event.") || was.startsWith("@")) { c.op = ">="; c.val = 1; }   // not minutes any more
+      });
     } }, opts([...varOpts(), ...special], cond.var)),
     // an event or a presence is simply so or not so
     isEvent || isHere
@@ -1127,8 +1148,7 @@ function blockBody(s, it, i) {
           ti >= 0 && effects(ti).length > 0 && el("div", { class: "brow" }, el("label", { text: "consequences" }), effects(ti).map(e => effectChip(e, () => select(ti, -1, true)))),
           el("div", { class: "brow" },
             el("label", {}, el("input", { type: "checkbox", checked: !!o.cond, onchange: ev => {
-              if (ev.target.checked && !doc.vars.length) { ev.target.checked = false; toast("Create a property first (Properties tab): a condition tests one.", true); return; }
-              set(() => o.cond = ev.target.checked ? { var: doc.vars[0].id, op: ">=", val: 1 } : null);
+              set(() => o.cond = ev.target.checked ? firstCond() : null);
             } }), " only if"),
             o.cond && condEditor(o.cond, fn => set(() => fn(o.cond))),
             el("span", { class: "spacer", style: "flex:1" }),
@@ -1236,7 +1256,7 @@ function renderInspector() {
     add("Line", () => ({ t: "say", who: (s.items.slice(0, selItem >= 0 ? selItem + 1 : undefined).reverse().find(x => x.t === "say") || { who: "n" }).who, text: "" })),
     add("Choice", () => ({ t: "choice", options: [{ text: "One way", target: s.label, cond: null }, { text: "Another way", target: s.label, cond: null }] })),
     add("Consequence", () => ({ t: "add", var: firstVar, n: 1 }), "property"),
-    add("Condition", () => ({ t: "if", var: firstVar, op: ">=", val: 1, target: s.label }), "property"),
+    add("Condition", () => ({ t: "if", ...firstCond(), target: s.label })),
     add("Jump", () => ({ t: "goto", target: (doc.scenes[sel + 1] || doc.scenes[0]).label })),
     add("Background", () => ({ t: "bg", name: meta.bgs[0] })),
     add("Music", () => ({ t: "music", track: ((doc.tracks || [])[0] || { id: "" }).id })),
@@ -1348,14 +1368,21 @@ function renderCast(host) {
         el("div", { class: "sect", text: "Schedule" }),
         !doc.clock && (ch.schedule.length > 0 || ch.interrupts.length > 0) && el("div", { class: "pmsg warning", text: "Schedules need a clock: turn it on under Scenes \u2192 This story." }),
         ch.schedule.map((st, k) => el("div", { class: "brow", style: "margin-top:4px", "data-stop": k },
-          timeInput(st.at, m => change(() => { st.at = m; ch.schedule.sort((a, b) => a.at - b.at); })),
+          timeInput(st.at, m => {
+            // one place at a time: two entries cannot share a minute
+            if (ch.schedule.some(o => o !== st && o.at === m)) { toast(`${ch.name || ch.id} already has an entry at ${hhmm(m)}.`, true); renderLeft(); return; }
+            change(() => { st.at = m; ch.schedule.sort((a, b) => a.at - b.at); });
+          }),
           el("select", { style: "flex:1", onchange: ev => change(() => st.place = ev.target.value) }, opts(placeOpts(), st.place)),
           el("button", { class: "ghost danger", title: "Remove this entry", text: "\u2715", onclick: () => change(() => ch.schedule.splice(k, 1)) }),
           bindText(el("input", { type: "text", placeholder: "doing what (a note)", style: "flex-basis:100%" }), st, "note"))),
         el("button", { style: "margin-top:6px", "data-add": "stop", text: "+ Time and place", onclick: () => change(() => {
           // an hour after the last entry, in the same place
           const last = ch.schedule[ch.schedule.length - 1];
-          ch.schedule.push({ at: last ? Math.min(1439, last.at + 60) : (doc.clock ? doc.clock.start : 420), place: last ? last.place : meta.bgs[0], note: "" });
+          let at = last ? Math.min(1439, last.at + 60) : (doc.clock ? doc.clock.start : 420);
+          while (ch.schedule.some(o => o.at === at)) at = (at + 1) % 1440;   // a minute nobody has taken
+          ch.schedule.push({ at, place: last ? last.place : meta.bgs[0], note: "" });
+          ch.schedule.sort((a, b) => a.at - b.at);
         }) }),
         el("div", { class: "sect", text: "Interruptions (the first that holds wins)" }),
         ch.interrupts.map((it, k) => el("div", { class: "card", style: "padding:6px;margin:4px 0", "data-interrupt": k },
