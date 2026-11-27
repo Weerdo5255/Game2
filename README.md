@@ -232,6 +232,57 @@ takes a picture in each place (under `xvfb-run` with Mesa's software Vulkan,
 only been run that way: on a software renderer, not yet on a real graphics
 card.
 
+## In a VR headset
+
+The 3D world can be walked through in a headset, through
+[OpenXR](https://www.khronos.org/openxr/) (so SteamVR, Monado, the Meta and
+Windows Mixed Reality runtimes and the like), using the Bevy community's
+OpenXR plugin:
+
+```bash
+cargo run --release --features vr -- --vr
+```
+
+![Both eyes of the headset in the ballroom, the story's text hanging in the air](docs/world_vr.png)
+
+You stand where the player stands in each place, at your own height, and
+are free to look and lean as the headset tracks you. The story's text,
+choices and meters hang in the air about two metres ahead as a panel; it
+stays put while you look around and comes round in front of you once you
+have clearly turned away. Near a wall it moves closer rather than into it.
+
+| Control | Does |
+|---|---|
+| left stick (or trackpad) | walk, in the direction you are looking |
+| right stick, sideways | turn in 30 degree steps |
+| right stick, up / down | pick a choice |
+| either trigger | advance, confirm |
+
+Bindings are suggested for Oculus Touch, Valve Index, HTC Vive and Windows
+Mixed Reality controllers, and for OpenXR's simple controller (advance
+only). The keyboard and mouse keep working, and the window on the desktop
+shows the ordinary view. Comfort choices: turning is in steps, walking is at
+a steady pace, and the gentle swaying of the zero-gravity room is left out.
+
+Places that a story leaves as paintings, and the title screen and chapter
+cards, are shown on a large screen in the dark, so any story can be played
+this way, including one with no 3D places at all:
+
+![A painted scene in the headset](docs/world_vr_painting.png)
+
+If no OpenXR runtime or headset is found, `--vr` says so and carries on as
+the desktop 3D game. On Linux the OpenXR loader must be findable as
+`libopenxr_loader.so` (the `libopenxr-dev` package provides that name).
+
+**How far this is tested.** No headset was available where this was
+written. It has been run against the Monado runtime's *simulated* headset
+on a software renderer (`tools/vr_check.sh` repeats that, and made the
+pictures above): the OpenXR session starts, both eyes are rendered, the
+text panel is drawn, the controller actions are accepted by the runtime.
+Nothing has been tried on real hardware: controller bindings, the feel of
+walking and turning, the panel's size and height, and performance at a
+headset's frame rate are all unverified until someone puts one on.
+
 ## Managing the library
 
 **Manage** in the editor's top bar is the place to look after stories:

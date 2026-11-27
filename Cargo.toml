@@ -18,6 +18,10 @@ bevy = { version = "0.16", optional = true, default-features = false, features =
     "bevy_render", "bevy_core_pipeline", "bevy_pbr", "bevy_sprite", "tonemapping_luts", "png",
 ] }
 
+bevy_mod_openxr = { version = "0.3", optional = true }
+bevy_mod_xr = { version = "0.3", optional = true }
+bevy_xr_utils = { version = "0.3", optional = true }
+
 [features]
 # Sound needs an audio library at build time (on Linux: ALSA development
 # files, e.g. libasound2-dev). Build with --no-default-features to do without.
@@ -27,6 +31,10 @@ audio = ["dep:rodio"]
 # (several minutes to build the first time), so it is opt-in:
 #   cargo run --release --features world3d
 world3d = ["dep:bevy"]
+# The same world in a VR headset, through OpenXR (needs an OpenXR runtime
+# such as SteamVR or Monado at run time):
+#   cargo run --release --features vr -- --vr
+vr = ["world3d", "dep:bevy_mod_openxr", "dep:bevy_mod_xr", "dep:bevy_xr_utils"]
 
 [profile.dev]
 opt-level = 2

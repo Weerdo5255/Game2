@@ -12,6 +12,9 @@
 //!   Left / Right    turn (or Q/E)   right mouse drag look around
 //!   Up / Down       pick a choice   Enter / Space / click: advance
 //!   Tab (held)      hide the text to look around
+//!
+//! With the `vr` feature and `--vr` the same world is shown in a headset
+//! through OpenXR: see the `vr` module at the end of this file.
 
 use std::collections::HashMap;
 use std::f32::consts::{PI, TAU};
@@ -40,6 +43,40 @@ pub struct Options {
     /// Take one picture of the window once this many lines have been
     /// shown, then quit (for documentation and tests).
     pub shot: Option<(String, usize)>,
+    /// Show the world in a VR headset as well (needs the `vr` feature).
+    pub vr: bool,
+}
+
+/// What a headset and its controllers ask for this frame. Without one it
+/// stays at rest, and everything below behaves as on a desktop.
+#[derive(Resource, Default)]
+struct Headset {
+    /// A headset session is running.
+    active: bool,
+    /// Walking: x to the right, y forward, relative to where the head faces.
+    stick: Vec2,
+    /// Which way the head faces, relative to the body (radians, left positive).
+    heading: f32,
+    /// Turn the body by this much now (snap turning).
+    turn: f32,
+    advance: bool,
+    up: bool,
+    down: bool,
+    /// Where the eyes are in the world, for the cast to face.
+    eye: Option<Vec3>,
+}
+
+/// Where the player stands, for whatever carries the headset's viewpoint.
+#[derive(Resource, Default)]
+struct Body {
+    feet: Vec3,
+    yaw: f32,
+    in_place: bool,
+    /// Clear floor ahead of the player, in metres (for placing the text panel).
+    reach: f32,
+    fog: Option<(Color, f32, f32)>,
+    /// The story's frame was redrawn this frame.
+    redrawn: bool,
 }
 
 const EYE: f32 = 1.62;
@@ -81,6 +118,10 @@ struct Place {
     floating: bool,
 }
 
+/// The system that steps the story and the world, for others to run before or after.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+struct Story;
+
 #[derive(Component)]
 struct PlacePart;
 #[derive(Component)]
@@ -108,18 +149,34 @@ pub fn run(game: Game, opts: Options) {
         shot_timer: None,
         auto: 0.0,
     };
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window { title: opts.title, resolution: WindowResolution::new(opts.size.0 as f32, opts.size.1 as f32), ..default() }),
-            ..default()
-        }))
+    let window = WindowPlugin {
+        primary_window: Some(Window { title: opts.title, resolution: WindowResolution::new(opts.size.0 as f32, opts.size.1 as f32), ..default() }),
+        ..default()
+    };
+    let mut app = App::new();
+    #[cfg_attr(not(feature = "vr"), allow(unused_mut))]
+    let mut window = Some(window);
+    #[cfg(feature = "vr")]
+    if opts.vr {
+        vr::plugins(&mut app, window.take().unwrap());
+    }
+    #[cfg(not(feature = "vr"))]
+    if opts.vr {
+        eprintln!("--vr needs a build with the VR feature (cargo build --features vr): showing the world on the desktop");
+    }
+    if let Some(window) = window {
+        app.add_plugins(DefaultPlugins.set(window));
+    }
+    app
+        .init_resource::<Headset>()
+        .init_resource::<Body>()
         // keep the story moving when the window is not in front
         .insert_resource(WinitSettings::game())
         .insert_resource(ClearColor(Color::BLACK))
         .insert_resource(AmbientLight { color: Color::WHITE, brightness: 300.0, ..default() })
         .insert_non_send_resource(runner)
         .add_systems(Startup, setup)
-        .add_systems(Update, frame)
+        .add_systems(Update, frame.in_set(Story))
         .run();
 }
 
@@ -171,7 +228,7 @@ fn frame(
     mut images: ResMut<Assets<Image>>,
     mut ambient: ResMut<AmbientLight>,
     mut clear: ResMut<ClearColor>,
-    (keys, buttons, motion, time): (Res<ButtonInput<KeyCode>>, Res<ButtonInput<MouseButton>>, Res<AccumulatedMouseMotion>, Res<Time>),
+    (keys, buttons, motion, time, headset, mut body): (Res<ButtonInput<KeyCode>>, Res<ButtonInput<MouseButton>>, Res<AccumulatedMouseMotion>, Res<Time>, Res<Headset>, ResMut<Body>),
     window: Single<&Window, With<PrimaryWindow>>,
     mut eye: Single<(&mut Transform, &mut DistanceFog, &mut Camera), (With<Eye>, Without<CastSlot>, Without<Overlay>)>,
     mut cast: Query<(&CastSlot, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), (Without<Eye>, Without<Overlay>)>,
@@ -192,10 +249,10 @@ fn frame(
         .map(|p| (((p.x - (ww - W as f32 * scale) / 2.0) / scale) as i32, ((p.y - (wh - H as f32 * scale) / 2.0) / scale) as i32))
         .unwrap_or(run.last_mouse);
     let mut inp = Input {
-        advance: pressed(&[KeyCode::Space, KeyCode::Enter, KeyCode::KeyZ]),
+        advance: pressed(&[KeyCode::Space, KeyCode::Enter, KeyCode::KeyZ]) || headset.advance,
         // W and S walk in a 3D place; over a painting they pick, as ever
-        up: pressed(&[KeyCode::ArrowUp]) || (!in_world && pressed(&[KeyCode::KeyW])),
-        down: pressed(&[KeyCode::ArrowDown]) || (!in_world && pressed(&[KeyCode::KeyS])),
+        up: pressed(&[KeyCode::ArrowUp]) || (!in_world && pressed(&[KeyCode::KeyW])) || headset.up,
+        down: pressed(&[KeyCode::ArrowDown]) || (!in_world && pressed(&[KeyCode::KeyS])) || headset.down,
         skip: keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight),
         save: pressed(&[KeyCode::F5]),
         load: pressed(&[KeyCode::F9]),
@@ -251,34 +308,48 @@ fn frame(
             run.yaw = place.yaw;
             run.pitch = 0.0;
             run.place = Some(place);
+            body.fog = Some((air.sky, air.fog.0, air.fog.1));
+        } else {
+            body.fog = None;
         }
     }
 
     // ---- walking and looking
     if let Some(place) = &run.place {
         let turn = (keys.pressed(KeyCode::ArrowLeft) || keys.pressed(KeyCode::KeyQ)) as i32 - (keys.pressed(KeyCode::ArrowRight) || keys.pressed(KeyCode::KeyE)) as i32;
-        run.yaw += turn as f32 * 1.9 * dt;
+        run.yaw += turn as f32 * 1.9 * dt + headset.turn;
         if buttons.pressed(MouseButton::Right) {
             run.yaw -= motion.delta.x * 0.004;
             run.pitch = (run.pitch - motion.delta.y * 0.004).clamp(-1.2, 1.2);
         }
         let forward = Vec2::new(-run.yaw.sin(), -run.yaw.cos());
         let right = Vec2::new(forward.y * -1.0, forward.x);
-        let step = forward * ((keys.pressed(KeyCode::KeyW) as i32 - keys.pressed(KeyCode::KeyS) as i32) as f32) + right * ((keys.pressed(KeyCode::KeyD) as i32 - keys.pressed(KeyCode::KeyA) as i32) as f32);
+        let keys_step = forward * ((keys.pressed(KeyCode::KeyW) as i32 - keys.pressed(KeyCode::KeyS) as i32) as f32) + right * ((keys.pressed(KeyCode::KeyD) as i32 - keys.pressed(KeyCode::KeyA) as i32) as f32);
         let speed = if keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight) { 5.2 } else { 2.6 };
+        // a thumbstick walks where the head is facing, as fast as it is pushed (and never faster than a walk)
+        let facing = run.yaw + headset.heading;
+        let (head_forward, head_right) = (Vec2::new(-facing.sin(), -facing.cos()), Vec2::new(facing.cos(), -facing.sin()));
+        let stick_step = (head_forward * headset.stick.y + head_right * headset.stick.x).clamp_length_max(1.0) * 2.0;
         let at = Vec2::new(eye.0.translation.x, eye.0.translation.z);
-        let to = walk(place, at, step.normalize_or_zero() * speed * dt);
-        let bob = if place.floating { (time.elapsed_secs() * 0.9).sin() * 0.06 } else { 0.0 };
+        let to = walk(place, at, (keys_step.normalize_or_zero() * speed + stick_step) * dt);
+        // (no swaying in a headset: the world should move only when you do)
+        let bob = if place.floating && !headset.active { (time.elapsed_secs() * 0.9).sin() * 0.06 } else { 0.0 };
         eye.0.translation = Vec3::new(to.x, place.spawn.y + bob, to.y);
         eye.0.rotation = Quat::from_euler(EulerRot::YXZ, run.yaw, run.pitch, 0.0);
+        body.feet = Vec3::new(to.x, place.spawn.y - EYE, to.y);
+        body.yaw = run.yaw;
+        // how far the floor runs on ahead, to keep the text panel out of the walls
+        let ahead = [(place.max.x - to.x, forward.x), (to.x - place.min.x, -forward.x), (place.max.y - to.y, forward.y), (to.y - place.min.y, -forward.y)];
+        body.reach = ahead.iter().filter(|(_, along)| *along > 1e-3).map(|(gap, along)| gap / along).fold(f32::MAX, f32::min);
     }
+    body.in_place = run.place.is_some();
 
     // ---- the cast, standing in the place and turned towards you
     let mut wanted: [Option<(String, String, f32, bool)>; 3] = [None, None, None];
     if let (Some(view), Some(_)) = (&view, &run.place) {
         wanted = view.cast.clone();
     }
-    let eye_at = eye.0.translation;
+    let eye_at = headset.eye.filter(|_| headset.active).unwrap_or(eye.0.translation);
     for (slot, mut tf, mut vis, material) in &mut cast {
         let i = slot.0;
         let (Some((who, expr, appear, dim)), Some(place)) = (&wanted[i], &run.place) else {
@@ -355,6 +426,7 @@ fn frame(
         }
     }
     // sent to the engine only when something on it has changed
+    body.redrawn = changed;
     if changed {
         if let Some(data) = images.get_mut(&overlay.0.image).and_then(|i| i.data.as_mut()) {
             data.copy_from_slice(&frame);
@@ -935,6 +1007,218 @@ fn build(name: &str, k: &mut Kit) -> (Place, Air) {
     let at = walk(&place, Vec2::new(place.spawn.x, place.spawn.z), Vec2::ZERO);
     place.spawn = Vec3::new(at.x, place.spawn.y, at.y);
     (place, air)
+}
+
+/// The world in a headset, through OpenXR.
+///
+/// The headset's viewpoint is carried by a tracking root that stands where
+/// the player stands: walking moves the root, and within it you are free to
+/// look and lean as the headset tracks you. The story's text hangs in the
+/// air a couple of metres ahead as a panel. Places left as paintings, the
+/// title and the chapter cards are shown on that same panel, in the dark.
+///
+///   left stick             walk, where you are looking
+///   right stick, sideways  turn in steps
+///   right stick, up/down   pick a choice
+///   either trigger         advance, confirm
+///
+/// The keyboard and mouse still work, and the window shows what the game
+/// shows on a desktop.
+#[cfg(feature = "vr")]
+mod vr {
+    use super::*;
+    use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
+    use bevy::render::view::RenderLayers;
+    use bevy_mod_openxr::{add_xr_plugins, helper_traits::{ToQuat, ToVec3}, resources::OxrViews};
+    use bevy_mod_xr::{camera::XrCamera, session::XrTrackingRoot};
+    use bevy_xr_utils::xr_utils_actions::{ActiveSet, XRUtilsAction, XRUtilsActionSet, XRUtilsActionState, XRUtilsActionSystemSet, XRUtilsActionsPlugin, XRUtilsBinding};
+
+    #[derive(Component)]
+    struct WalkAction;
+    #[derive(Component)]
+    struct LookAction;
+    #[derive(Component)]
+    struct AdvanceAction;
+    #[derive(Component)]
+    struct Panel;
+
+    /// How far ahead the text panel hangs, how wide it is and how high its middle is, in metres.
+    const PANEL: (f32, f32, f32) = (2.0, 2.3, 1.72);
+    const SNAP: f32 = PI / 6.0;
+
+    pub fn plugins(app: &mut App, window: WindowPlugin) {
+        // without a runtime or a headset this falls back to ordinary rendering by itself
+        app.add_plugins(add_xr_plugins(DefaultPlugins.build().disable::<PipelinedRenderingPlugin>()).set(window))
+            .add_plugins(XRUtilsActionsPlugin)
+            .add_systems(Startup, actions.before(XRUtilsActionSystemSet::CreateEvents))
+            .add_systems(Update, (read.before(Story), carry.after(Story)));
+    }
+
+    fn actions(mut commands: Commands) {
+        let set = commands.spawn((XRUtilsActionSet { name: "story".into(), pretty_name: "Story and walking".into(), priority: 0 }, ActiveSet)).id();
+        let sticks = |hand: &str| -> Vec<(&'static str, String)> {
+            vec![
+                ("/interaction_profiles/oculus/touch_controller", format!("/user/hand/{}/input/thumbstick", hand)),
+                ("/interaction_profiles/valve/index_controller", format!("/user/hand/{}/input/thumbstick", hand)),
+                ("/interaction_profiles/microsoft/motion_controller", format!("/user/hand/{}/input/thumbstick", hand)),
+                ("/interaction_profiles/htc/vive_controller", format!("/user/hand/{}/input/trackpad", hand)),
+            ]
+        };
+        let mut triggers: Vec<(&'static str, String)> = Vec::new();
+        for hand in ["left", "right"] {
+            for profile in ["/interaction_profiles/oculus/touch_controller", "/interaction_profiles/valve/index_controller", "/interaction_profiles/microsoft/motion_controller", "/interaction_profiles/htc/vive_controller"] {
+                triggers.push((profile, format!("/user/hand/{}/input/trigger/value", hand)));
+            }
+            triggers.push(("/interaction_profiles/khr/simple_controller", format!("/user/hand/{}/input/select/click", hand)));
+        }
+        let mut make = |name: &str, label: &str, kind: bevy_mod_xr::actions::ActionType, bindings: Vec<(&'static str, String)>| {
+            let action = commands.spawn(XRUtilsAction { action_name: name.to_string().into(), localized_name: label.to_string().into(), action_type: kind }).id();
+            for (profile, binding) in bindings {
+                let b = commands.spawn(XRUtilsBinding { profile: profile.into(), binding: binding.into() }).id();
+                commands.entity(action).add_child(b);
+            }
+            commands.entity(set).add_child(action);
+            action
+        };
+        let walk = make("walk", "Walk", bevy_mod_xr::actions::ActionType::Vector, sticks("left"));
+        let look = make("look", "Turn, and pick a choice", bevy_mod_xr::actions::ActionType::Vector, sticks("right"));
+        let advance = make("advance", "Advance the story", bevy_mod_xr::actions::ActionType::Float, triggers);
+        commands.entity(walk).insert(WalkAction);
+        commands.entity(look).insert(LookAction);
+        commands.entity(advance).insert(AdvanceAction);
+    }
+
+    /// Controllers and head pose, into what the story's frame understands.
+    #[allow(clippy::type_complexity)]
+    fn read(
+        mut headset: ResMut<Headset>,
+        views: Option<Res<OxrViews>>,
+        root: Query<&GlobalTransform, With<XrTrackingRoot>>,
+        walk: Query<&XRUtilsActionState, With<WalkAction>>,
+        look: Query<&XRUtilsActionState, With<LookAction>>,
+        advance: Query<&XRUtilsActionState, With<AdvanceAction>>,
+        mut held: Local<(bool, bool, bool)>,
+    ) {
+        let vector = |q: &Query<&XRUtilsActionState, With<WalkAction>>| q.iter().find_map(|s| if let XRUtilsActionState::Vector(v) = s { Some(Vec2::from(v.current_state)) } else { None });
+        let view = views.as_ref().and_then(|v| v.first().copied());
+        *headset = Headset::default();
+        let Some(view) = view else {
+            *held = (false, false, false);
+            return;
+        };
+        headset.active = true;
+        // which way the head faces, flattened to the floor
+        let ahead = view.pose.orientation.to_quat() * Vec3::NEG_Z;
+        headset.heading = if ahead.xz().length() > 0.2 { (-ahead.x).atan2(-ahead.z) } else { 0.0 };
+        if let Ok(root) = root.single() {
+            headset.eye = Some(root.transform_point(view.pose.position.to_vec3()));
+        }
+        // a little dead space in the middle of each stick
+        let dead = |v: Vec2| if v.length() < 0.2 { Vec2::ZERO } else { v };
+        headset.stick = dead(vector(&walk).unwrap_or_default());
+        let look = look.iter().find_map(|s| if let XRUtilsActionState::Vector(v) = s { Some(Vec2::from(v.current_state)) } else { None }).unwrap_or_default();
+        let pull = advance.iter().find_map(|s| match s {
+            XRUtilsActionState::Float(f) => Some(f.current_state),
+            XRUtilsActionState::Bool(b) => Some(b.current_state as u8 as f32),
+            _ => None,
+        });
+        // each push of the stick, and each pull of the trigger, counts once
+        let (turning, picking, pulling) = (look.x.abs() > 0.7, look.y.abs() > 0.7 && look.x.abs() < 0.5, pull.unwrap_or(0.0) > 0.6);
+        if turning && !held.0 {
+            headset.turn = -look.x.signum() * SNAP;
+        }
+        if picking && !held.1 {
+            headset.up = look.y > 0.0;
+            headset.down = look.y < 0.0;
+        }
+        headset.advance = pulling && !held.2;
+        // let go properly before the next one counts
+        *held = (look.x.abs() > 0.4, look.y.abs() > 0.4, pull.unwrap_or(0.0) > 0.3);
+    }
+
+    /// Put the headset's viewpoint where the player stands, give its eyes
+    /// the place's air, and hang the story's text in front of them.
+    #[allow(clippy::type_complexity)]
+    fn carry(
+        mut commands: Commands,
+        body: Res<Body>,
+        headset: Res<Headset>,
+        mut meshes: ResMut<Assets<Mesh>>,
+        mut materials: ResMut<Assets<StandardMaterial>>,
+        mut root: Query<&mut Transform, (With<XrTrackingRoot>, Without<Panel>)>,
+        eyes: Query<(Entity, Option<&DistanceFog>, Has<RenderLayers>), With<XrCamera>>,
+        frame: Query<&Sprite, With<Overlay>>,
+        mut panel: Query<(&mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), (With<Panel>, Without<XrTrackingRoot>)>,
+        mut panel_yaw: Local<Option<f32>>,
+    ) {
+        if let Ok(mut root) = root.single_mut() {
+            if body.in_place {
+                root.translation = body.feet;
+                root.rotation = Quat::from_rotation_y(body.yaw);
+            } else {
+                // nowhere in particular: a dark room with the story on the wall
+                root.translation = Vec3::new(0.0, -1000.0, 0.0);
+                root.rotation = Quat::IDENTITY;
+            }
+        }
+        for (eye, fog, layered) in &eyes {
+            // the text panel is for the headset's eyes only (the window has the frame itself)
+            if !layered {
+                commands.entity(eye).insert(RenderLayers::from_layers(&[0, 1]));
+            }
+            let wanted = body.fog.map(|(colour, start, end)| DistanceFog { color: colour, falloff: FogFalloff::Linear { start, end }, ..default() });
+            match (wanted, fog) {
+                (Some(w), Some(f)) if f.color == w.color => {}
+                (Some(w), _) => {
+                    commands.entity(eye).insert(w);
+                }
+                (None, Some(_)) => {
+                    commands.entity(eye).remove::<DistanceFog>();
+                }
+                (None, None) => {}
+            }
+        }
+        // the panel: made once the story's frame exists
+        let Ok(sprite) = frame.single() else { return };
+        if panel.is_empty() {
+            commands.spawn((
+                Mesh3d(meshes.add(Rectangle::new(1.0, H as f32 / W as f32))),
+                MeshMaterial3d(materials.add(StandardMaterial { base_color_texture: Some(sprite.image.clone()), unlit: true, alpha_mode: AlphaMode::Blend, cull_mode: None::<Face>, fog_enabled: false, ..default() })),
+                Transform::default(),
+                Visibility::Hidden,
+                NotShadowCaster,
+                RenderLayers::layer(1),
+                Panel,
+            ));
+            return;
+        }
+        let Ok((mut tf, mut vis, material)) = panel.single_mut() else { return };
+        // a material is not told when its picture changes: say so
+        if body.redrawn {
+            materials.get_mut(&material.0);
+        }
+        if !headset.active {
+            *vis = Visibility::Hidden;
+            return;
+        }
+        *vis = Visibility::Visible;
+        let (origin, base_yaw) = if body.in_place { (body.feet, body.yaw) } else { (Vec3::new(0.0, -1000.0, 0.0), 0.0) };
+        // it stays put while you look about, and comes round once you have clearly turned away from it
+        let facing = base_yaw + headset.heading;
+        let yaw = panel_yaw.get_or_insert(facing);
+        let off = (facing - *yaw + PI).rem_euclid(TAU) - PI;
+        if off.abs() > 0.9 || !body.in_place {
+            *yaw = facing;
+        }
+        // nearer (and smaller, so it looks the same) where a wall is close
+        let distance = if body.in_place { PANEL.0.min(body.reach - 0.15).max(0.5) } else { PANEL.0 };
+        let size = PANEL.1 * distance / PANEL.0 * if body.in_place { 1.0 } else { 1.5 };
+        let ahead = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
+        let head = headset.eye.unwrap_or(origin + Vec3::Y * EYE);
+        tf.translation = Vec3::new(head.x, origin.y + PANEL.2 * distance / PANEL.0 + (1.0 - distance / PANEL.0) * EYE, head.z) + ahead * distance;
+        tf.rotation = Quat::from_rotation_y(*yaw);
+        tf.scale = Vec3::splat(size);
+    }
 }
 
 #[cfg(test)]

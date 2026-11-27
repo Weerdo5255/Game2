@@ -8,6 +8,7 @@
 //!   cargo run --release -- --silent        no music or voices
 //!   cargo run --release --features world3d   places marked 3D become a world to walk through
 //!   cargo run --release -- --2d            show paintings even where the story asks for 3D
+//!   cargo run --release --features vr -- --vr   the same world in a VR headset (OpenXR)
 //!   cargo run --release -- --format-story  tidy the story file's layout
 //!   cargo run --release -- --procedural    ignore assets/enhanced
 //!   cargo run --release -- --art-dir DIR   load enhanced art from DIR
@@ -165,14 +166,15 @@ fn main() {
         game.start_at(label);
     }
     // a story with places marked 3D is shown by the 3D engine, if this build has one
-    if game.has_world() && !flag("--2d") {
+    // (in a headset every story is shown by the 3D engine: paintings hang on a panel)
+    if (game.has_world() || (flag("--vr") && cfg!(feature = "vr"))) && !flag("--2d") {
         #[cfg(feature = "world3d")]
         {
             let shot = arg("--world-shot").map(|file| (file, arg("--world-shot-lines").and_then(|n| n.parse().ok()).unwrap_or(1)));
             if shot.is_some() && start.is_none() {
                 game.new_game();
             }
-            world3d::run(game, world3d::Options { title: "Below Stairs, Above Stars".into(), size, shot });
+            world3d::run(game, world3d::Options { title: "Below Stairs, Above Stars".into(), size, shot, vr: flag("--vr") });
             return;
         }
         #[cfg(not(feature = "world3d"))]
