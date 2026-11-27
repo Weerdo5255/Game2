@@ -6,6 +6,7 @@
 //!   cargo run --release -- --story FILE    use another story file
 //!   cargo run --release -- --start LABEL   begin at a scene
 //!   cargo run --release -- --silent        no music or voices
+//!   cargo run --release -- --export-godot godot   write the game as a Godot 4 project (--force to overwrite scenes and pictures)
 //!   cargo run --release --features world3d   places marked 3D become a world to walk through
 //!   cargo run --release -- --2d            show paintings even where the story asks for 3D
 //!   cargo run --release --features vr -- --vr   the same world in a VR headset (OpenXR)
@@ -25,6 +26,7 @@ mod comfy;
 mod editor;
 mod game;
 mod gfx;
+mod godot;
 mod places;
 mod script;
 #[cfg(feature = "world3d")]
@@ -135,6 +137,27 @@ fn main() {
         eprintln!("problems in {}:\n  {}", source, errors.join("\n  "));
         eprintln!("open the editor to fix them:  --editor");
         std::process::exit(1);
+    }
+    if let Some(dir) = arg("--export-godot") {
+        // the game as a Godot project: its engine for showing the story, its editor for the pictures and places
+        let story_file = arg("--story").map(PathBuf::from).or_else(|| Some(PathBuf::from("assets/story.txt")).filter(|p| p.is_file()));
+        match godot::export(Path::new(&dir), &doc, story_file.as_deref(), art_dir.as_deref(), flag("--force")) {
+            Ok(report) => {
+                println!("{}: {} file(s) written, {} already there and left alone", dir, report.written.len(), report.kept.len());
+                if !report.kept.is_empty() {
+                    println!("  (kept as they are, since they may have been edited in Godot; --force writes them again)");
+                }
+                for note in &report.notes {
+                    println!("  note: {}", note);
+                }
+                println!("open it with Godot 4.3 or later:  godot --path {} --editor     run it:  godot --path {}", dir, dir);
+            }
+            Err(e) => {
+                eprintln!("export failed: {}", e);
+                std::process::exit(1);
+            }
+        }
+        return;
     }
     let script = script::Script::compile(&doc);
     let start = arg("--start");

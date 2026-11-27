@@ -157,7 +157,15 @@ let browser = null;
   await p.waitForFunction(() => !document.querySelector('#admin [data-story="main"] button.x') && ![...document.querySelectorAll('#admin [data-story="main"] button')].some(b => b.textContent.startsWith('Free')));
   assert(!fs.existsSync(path.join(tmp, 'assets', 'enhanced', '.removed')) && !fs.existsSync(main + '.bak') && fs.existsSync(main), 'set-aside files can be deleted to free space, and nothing else goes');
 
-  // ---- duplicate, remove, bring back, delete for good
+  // ---- the story as a Godot project
+  [st, r] = await post('/api/godot', { story: 'main', force: false });
+  const gd = path.join(tmp, 'godot');
+  assert(st === 200 && r.written > 60 && fs.existsSync(path.join(gd, 'project.godot')) && fs.existsSync(path.join(gd, 'places', 'pantry.tscn')) && fs.existsSync(path.join(gd, 'art', 'portraits', 'p_neutral.png')) && JSON.parse(fs.readFileSync(path.join(gd, 'story', 'story.json'), 'utf8')).scenes.length === 47, 'the story can be written as a Godot project: ' + r.written + ' files');
+  fs.writeFileSync(path.join(gd, 'places', 'pantry.tscn'), 'edited in Godot');
+  [st, r] = await post('/api/godot', { story: 'main', force: false });
+  assert(r.written === 1 && fs.readFileSync(path.join(gd, 'places', 'pantry.tscn'), 'utf8') === 'edited in Godot', 'writing it again keeps what was changed in Godot and refreshes only the story');
+  assert(await p.locator('#godotBtn').count() === 1, 'and Manage has the button for it');
+
   answer = 'Side Story';
   await p.locator('#admin [data-story="main"] button', { hasText: 'Duplicate' }).click();
   await p.waitForSelector('#admin [data-story="side-story"]');

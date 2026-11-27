@@ -1,0 +1,64 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/stage_2d.gd" id="1"]
+
+[node name="Stage2D" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="Background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Left" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 72.0
+offset_top = 30.0
+offset_right = 408.0
+offset_bottom = 486.0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Centre" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 408.0
+offset_top = 30.0
+offset_right = 744.0
+offset_bottom = 486.0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Right" type="TextureRect" parent="."]
+layout_mode = 0
+offset_left = 744.0
+offset_top = 30.0
+offset_right = 1080.0
+offset_bottom = 486.0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5

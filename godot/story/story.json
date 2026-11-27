@@ -1,0 +1,3077 @@
+{
+  "title": "Below Stairs, Above Stars",
+  "subtitle": "A tale of Halcyon Reach",
+  "header": [
+    "BELOW STAIRS, ABOVE STARS - story script",
+    "",
+    "Edit this file by hand, or visually with:  cargo run --release -- --editor",
+    "",
+    "Syntax (one element per line):",
+    "title Name | Subtitle      shown on the title screen",
+    "character id | Name | #colour | portrait | look     who can speak; portrait is p v s q t c a, or - for none",
+    "var id | Label | start | flags                      a property; flags: meter=N good bad hidden character=id",
+    "chapter Name | x y | note   a group of scenes, shown as one panel in the editor (the game ignores it)",
+    "*label                      starts a scene; flow falls through to the next scene unless it jumps",
+    "card Title | Subtitle       chapter card",
+    "bg name                     change background (clears the cast)",
+    "show who expr slot          slot: left center right",
+    "hide slot|all",
+    "who: text                   dialogue; \"n\" is narration",
+    "choice                      followed by option lines:",
+    "- [var >= n] text => label  (the [condition] is optional)",
+    "add var n / set var n       a consequence: change a property",
+    "if var >= n goto label",
+    "goto label",
+    "end Title | Epilogue"
+  ],
+  "characters": [
+    {
+      "id": "m",
+      "name": "Marlowe",
+      "color": "#96e6a0",
+      "sprite": "",
+      "look": {},
+      "schedule": [],
+      "interrupts": [],
+      "model": "",
+      "model_scale": 0.0,
+      "holds": {},
+      "look_all": {
+        "age": "0.5:0:1",
+        "blush": "0.5:0:1",
+        "brow": "#4d4545",
+        "coat": "#e6e6ed",
+        "hair": "#807a80",
+        "iris": "#422614",
+        "jaw": "0.93:0.62:0.98",
+        "lashes": "0.7:0:1",
+        "lips": "0.5:0:1",
+        "shoulders": "130:96:132",
+        "skin": "#ad7859",
+        "width": "61:46:64"
+      }
+    },
+    {
+      "id": "p",
+      "name": "Peregrine",
+      "color": "#c8b4ff",
+      "sprite": "p",
+      "look": {},
+      "schedule": [],
+      "interrupts": [],
+      "model": "",
+      "model_scale": 0.0,
+      "holds": {},
+      "look_all": {
+        "age": "0:0:1",
+        "blush": "0.55:0:1",
+        "brow": "#9e7033",
+        "coat": "#8f70c7",
+        "hair": "#edbd57",
+        "iris": "#4d85cc",
+        "jaw": "0.76:0.62:0.98",
+        "lashes": "0.3:0:1",
+        "lips": "0.45:0:1",
+        "shoulders": "118:96:132",
+        "skin": "#f7ccb3",
+        "width": "54:46:64"
+      }
+    },
+    {
+      "id": "v",
+      "name": "Lord Varrow",
+      "color": "#ff8282",
+      "sprite": "v",
+      "look": {},
+      "schedule": [],
+      "interrupts": [],
+      "model": "",
+      "model_scale": 0.0,
+      "holds": {},
+      "look_all": {
+        "age": "0.85:0:1",
+        "blush": "0.25:0:1",
+        "brow": "#85858f",
+        "coat": "#941c2b",
+        "hair": "#bdbfc9",
+        "iris": "#6b7a8f",
+        "jaw": "0.88:0.62:0.98",
+        "lashes": "0:0:1",
+        "lips": "0.3:0:1",
+        "shoulders": "126:96:132",
+        "skin": "#e6b59c",
+        "width": "58:46:64"
+      }
+    },
+    {
+      "id": "s",
+      "name": "Lord Solberg",
+      "color": "#6ee6dc",
+      "sprite": "s",
+      "look": {},
+      "schedule": [],
+      "interrupts": [],
+      "model": "",
+      "model_scale": 0.0,
+      "holds": {},
+      "look_all": {
+        "age": "0.6:0:1",
+        "blush": "0.15:0:1",
+        "brow": "#9994a8",
+        "coat": "#1a8080",
+        "hair": "#edebf7",
+        "iris": "#759e80",
+        "jaw": "0.7:0.62:0.98",
+        "lashes": "0.2:0:1",
+        "lips": "0.4:0:1",
+        "shoulders": "116:96:132",
+        "skin": "#f7e3d9",
+        "width": "51:46:64"
+      }
+    },
+    {
+      "id": "q",
+      "name": "Quince",
+      "color": "#aac8e6",
+      "sprite": "q",
+      "look": {},
+      "schedule": [],
+      "interrupts": [],
+      "model": "",
+      "model_scale": 0.0,
+      "holds": {},
+      "look_all": {
+        "age": "0.3:0:1",
+        "blush": "0.1:0:1",
+        "brow": "#120f14",
+        "coat": "#454a5c",
+        "hair": "#17141c",
+        "iris": "#382114",
+        "jaw": "0.74:0.62:0.98",
+        "lashes": "1:0:1",
+        "lips": "0.55:0:1",
+        "shoulders": "106:96:132",
+        "skin": "#855740",
+        "width": "52:46:64"
+      }
+    },
+    {
+      "id": "t",
+      "name": "Tobe",
+      "color": "#ffaa6e",
+      "sprite": "t",
+      "look": {},
+      "schedule": [],
+      "interrupts": [],
+      "model": "",
+      "model_scale": 0.0,
+      "holds": {},
+      "look_all": {
+        "age": "0:0:1",
+        "blush": "0.3:0:1",
+        "brow": "#99471f",
+        "coat": "#248a8a",
+        "hair": "#d15c24",
+        "iris": "#4d8f5c",
+        "jaw": "0.78:0.62:0.98",
+        "lashes": "0.2:0:1",
+        "lips": "0.4:0:1",
+        "shoulders": "106:96:132",
+        "skin": "#edbd99",
+        "width": "52:46:64"
+      }
+    },
+    {
+      "id": "c",
+      "name": "Cook",
+      "color": "#ffdcaa",
+      "sprite": "c",
+      "look": {},
+      "schedule": [],
+      "interrupts": [],
+      "model": "",
+      "model_scale": 0.0,
+      "holds": {},
+      "look_all": {
+        "age": "0.5:0:1",
+        "blush": "0.5:0:1",
+        "brow": "#4d4545",
+        "coat": "#e6e6ed",
+        "hair": "#807a80",
+        "iris": "#422614",
+        "jaw": "0.93:0.62:0.98",
+        "lashes": "0.7:0:1",
+        "lips": "0.5:0:1",
+        "shoulders": "130:96:132",
+        "skin": "#ad7859",
+        "width": "61:46:64"
+      }
+    },
+    {
+      "id": "a",
+      "name": "The Admiral",
+      "color": "#f8f8f8",
+      "sprite": "a",
+      "look": {},
+      "schedule": [],
+      "interrupts": [],
+      "model": "",
+      "model_scale": 0.0,
+      "holds": {},
+      "look_all": {}
+    }
+  ],
+  "vars": [
+    {
+      "id": "peace",
+      "label": "Detente",
+      "initial": 0,
+      "meter": 7,
+      "good": true,
+      "character": "",
+      "hidden": false
+    },
+    {
+      "id": "heat",
+      "label": "Suspicion",
+      "initial": 0,
+      "meter": 4,
+      "good": false,
+      "character": "",
+      "hidden": false
+    },
+    {
+      "id": "favor",
+      "label": "Peregrine's regard",
+      "initial": 0,
+      "meter": 0,
+      "good": true,
+      "character": "p",
+      "hidden": false
+    },
+    {
+      "id": "trust",
+      "label": "Quince's trust",
+      "initial": 0,
+      "meter": 0,
+      "good": true,
+      "character": "q",
+      "hidden": false
+    },
+    {
+      "id": "canvas",
+      "label": "Quince knows the fleet is canvas",
+      "initial": 0,
+      "meter": 0,
+      "good": true,
+      "character": "q",
+      "hidden": true
+    },
+    {
+      "id": "water",
+      "label": "Knows Meridian is short of water",
+      "initial": 0,
+      "meter": 0,
+      "good": true,
+      "character": "",
+      "hidden": true
+    },
+    {
+      "id": "ally",
+      "label": "Peregrine has offered to help",
+      "initial": 0,
+      "meter": 0,
+      "good": true,
+      "character": "p",
+      "hidden": true
+    }
+  ],
+  "tracks": [
+    {
+      "id": "estate",
+      "title": "Thistlemere Morning",
+      "seconds": 40,
+      "prompt": "elegant chamber music, harpsichord and string quartet, unhurried, wry, a faint warm synthesizer pad underneath"
+    },
+    {
+      "id": "intrigue",
+      "title": "Below Stairs",
+      "seconds": 40,
+      "prompt": "quiet pizzicato strings and soft clarinet, tiptoeing, conspiratorial, light percussion"
+    },
+    {
+      "id": "gala",
+      "title": "The Gala Waltz",
+      "seconds": 45,
+      "prompt": "grand ballroom waltz, full string orchestra, sparkling, slightly too proud of itself"
+    },
+    {
+      "id": "summit",
+      "title": "Sixty Hulls",
+      "seconds": 40,
+      "prompt": "slow tense low strings and distant brass, a ticking pulse, held breath"
+    }
+  ],
+  "things": [],
+  "clock": null,
+  "render": "",
+  "locales": {},
+  "chapters": [
+    {
+      "name": "Prologue",
+      "pos": null,
+      "note": ""
+    },
+    {
+      "name": "One: A Breakfast at the Axis",
+      "pos": null,
+      "note": ""
+    },
+    {
+      "name": "Two: Forty Trunks and a Grievance",
+      "pos": null,
+      "note": ""
+    },
+    {
+      "name": "Three: Below Stairs",
+      "pos": null,
+      "note": ""
+    },
+    {
+      "name": "Four: An Affair of Honour",
+      "pos": null,
+      "note": ""
+    },
+    {
+      "name": "Five: The Gala",
+      "pos": null,
+      "note": ""
+    },
+    {
+      "name": "Interlude: A Word in the Study",
+      "pos": null,
+      "note": ""
+    },
+    {
+      "name": "Six: The Summit",
+      "pos": null,
+      "note": ""
+    }
+  ],
+  "scenes": [
+    {
+      "label": "start",
+      "chapter": "Prologue",
+      "pos": null,
+      "items": [
+        {
+          "t": "card",
+          "title": "Prologue",
+          "sub": "Thistlemere, Halcyon Reach"
+        },
+        {
+          "t": "bg",
+          "name": "pantry"
+        },
+        {
+          "t": "music",
+          "track": "estate"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Morning on Halcyon Reach arrives the way everything arrives here: on schedule, by committee, and three minutes late so that His Lordship may feel he was waited for."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The sunline brightens along the axis. Eight kilometres overhead, somebody else's lake catches the light. I stopped looking up years ago. Looking up is for tourists and theologians."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "My name is Marlowe. I am Head of Household to the Honourable Peregrine Varrow, who turns twenty tomorrow and has never once in his life opened a door."
+        },
+        {
+          "t": "show",
+          "who": "c",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "c",
+          "text": "You've the look of a person counting to ten, Marlowe."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "I am counting to twenty, Cook. It is the Young Master's birthday."
+        },
+        {
+          "t": "say",
+          "who": "c",
+          "text": "Weather Office rang. His Lordship's had the rain moved again. Says a drizzle on the eve of a gala is 'defeatist'."
+        },
+        {
+          "t": "say",
+          "who": "c",
+          "text": "That's three days of rain banked up now. When they finally let it go, we'll want boats."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "And our guests?"
+        },
+        {
+          "t": "show",
+          "who": "c",
+          "expr": "worried",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "c",
+          "text": "Lord Solberg's yacht matched spin an hour ago. All the way from Meridian Spindle, with forty trunks and, so the dock boys say, his own air."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "His own air."
+        },
+        {
+          "t": "say",
+          "who": "c",
+          "text": "In bottles. Vintage."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Lord Solberg and Lord Varrow have not spoken civilly since the Veil: a comet of excellent ice, parked between our two cylinders and claimed, loudly, by both."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Officially, Solberg comes to toast the heir. Unofficially, every pantry between here and Meridian knows what follows a toast when lords are involved. An ultimatum."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The bell board chimes. Third row, gold tag. The Axis."
+        },
+        {
+          "t": "show",
+          "who": "c",
+          "expr": "smile",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "c",
+          "text": "He's wanting breakfast up the hub again. Mind the marmalade. It wanders."
+        },
+        {
+          "t": "comment",
+          "text": "---------------------------------------------------------------- chapter 1"
+        }
+      ]
+    },
+    {
+      "label": "ch1",
+      "chapter": "One: A Breakfast at the Axis",
+      "pos": null,
+      "items": [
+        {
+          "t": "card",
+          "title": "Chapter One",
+          "sub": "A Breakfast at the Axis"
+        },
+        {
+          "t": "bg",
+          "name": "axis"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "At the hub of the cylinder there is no gravity, no dignity, and, as of this morning, one croissant in a slow polar orbit around the heir to Thistlemere."
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "smile",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Marlowe! Splendid. Catch that teacup, would you? No, let it go. It's happier."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "Good morning, sir. Many happy returns of tomorrow."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Twenty, Marlowe. Twenty! A man of twenty must have Views. I have been up here since six, having them."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "I tremble to ask, sir."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "View the first. The soup at my gala is to be served up here, weightless. In spheres. Guests shall pursue it with straws. It will be the making of the season."
+        },
+        {
+          "t": "choice",
+          "options": [
+            {
+              "cond": null,
+              "text": "\"An inspired notion, sir. Might I suggest a chilled soup? Scalded dukes litigate.\"",
+              "target": "soup_yes"
+            },
+            {
+              "cond": null,
+              "text": "\"Sir, the last weightless course put the Bishop of the Ring in a ventilation duct.\"",
+              "target": "soup_no"
+            },
+            {
+              "cond": null,
+              "text": "\"Spheres are last year, sir. Lady Okoro did spheres. One hears that cubes are coming.\"",
+              "target": "soup_cube"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "soup_yes",
+      "chapter": "One: A Breakfast at the Axis",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "favor",
+          "n": 1
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "smile",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Chilled! You see, this is why I keep you. Father's man would have said 'no' and then something about insurance."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "I make a note to rehearse the spheres. I make a second note to ensure the rehearsal is a catastrophe that happens to somebody else."
+        },
+        {
+          "t": "goto",
+          "target": "ch1_swan"
+        }
+      ]
+    },
+    {
+      "label": "soup_no",
+      "chapter": "One: A Breakfast at the Axis",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "favor",
+          "n": -1
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "angry",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "The Bishop was perfectly all right. They got him out with a broom. Really, Marlowe, one begins to suspect you of gravity."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "He sulks, rotating gently. A sulk in free fall has nowhere to settle, and so it simply continues."
+        },
+        {
+          "t": "goto",
+          "target": "ch1_swan"
+        }
+      ]
+    },
+    {
+      "label": "soup_cube",
+      "chapter": "One: A Breakfast at the Axis",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "favor",
+          "n": 1
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "shock",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Cubes! Good lord. Did she really? Then spheres are positively provincial. Cubes it is. How does one make soup into a cube?"
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "One serves it in a bowl, sir, and describes it boldly."
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "smile",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Marlowe, you are an artist."
+        },
+        {
+          "t": "goto",
+          "target": "ch1_swan"
+        }
+      ]
+    },
+    {
+      "label": "ch1_swan",
+      "chapter": "One: A Breakfast at the Axis",
+      "pos": null,
+      "items": [
+        {
+          "t": "show",
+          "who": "a",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Something large and white drifts out from behind the telescope, upside down, radiating contempt."
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "smile",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "View the second. The Admiral."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The Admiral is a swan. He was a gift. He holds, by the Young Master's decree, an honorary commission in the House fleet, and he has bitten two viscounts."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "He is to be promoted. Admiral of the Fleet, entire. Father can hardly object. He's the only officer we've got who is actually seaworthy."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "Sir?"
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "smug",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Oh, you know. The fleet. Father's had all sixty hulls towed out of mothballs to glower at Solberg's yacht. Terribly fierce. Thirty-one of them are canvas."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "...Canvas, sir."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Painted! Stretched over scaffolding. Rather good brushwork. One can't tell from beyond a kilometre."
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "neutral",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "The real ones were sold years ago to pay for... well. For this, I suppose. For me. For the hedges."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "He says it the way one mentions the weather. I file it the way one files a lit match."
+        },
+        {
+          "t": "say",
+          "who": "a",
+          "text": "Honk."
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "smile",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Quite right, Admiral. Marlowe? The promotion?"
+        },
+        {
+          "t": "choice",
+          "options": [
+            {
+              "cond": null,
+              "text": "\"I shall have the commission drawn up on vellum, sir. He will want to eat it.\"",
+              "target": "swan_yes"
+            },
+            {
+              "cond": null,
+              "text": "\"Sir, a swan cannot outrank real captains. Not with the fleet at such a delicate moment.\"",
+              "target": "swan_no"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "swan_yes",
+      "chapter": "One: A Breakfast at the Axis",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "favor",
+          "n": 1
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Vellum! Yes. With a ribbon. He's partial to ribbon."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The Admiral regards me with one black eye. It is the look of a superior officer who has not yet decided whether I am crew or bread."
+        },
+        {
+          "t": "goto",
+          "target": "ch2"
+        }
+      ]
+    },
+    {
+      "label": "swan_no",
+      "chapter": "One: A Breakfast at the Axis",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "favor",
+          "n": -1
+        },
+        {
+          "t": "add",
+          "var": "heat",
+          "n": 1
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "neutral",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Delicate moment? I say, Marlowe, you do keep up. I shall tell Father you take an interest in the fleet. He likes a man who takes an interest."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "I would rather he did not. A servant observed to be interested is a servant observed. I say none of this. I retrieve the marmalade."
+        },
+        {
+          "t": "goto",
+          "target": "ch2"
+        },
+        {
+          "t": "comment",
+          "text": "---------------------------------------------------------------- chapter 2"
+        }
+      ]
+    },
+    {
+      "label": "ch2",
+      "chapter": "Two: Forty Trunks and a Grievance",
+      "pos": null,
+      "items": [
+        {
+          "t": "card",
+          "title": "Chapter Two",
+          "sub": "Forty Trunks and a Grievance"
+        },
+        {
+          "t": "bg",
+          "name": "dock"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The private dock of Thistlemere. Lord Solberg's yacht, the Unimpeachable, sits in our cradle like a swallowed insult."
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "neutral",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "Marlowe. Is my son presentable?"
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "He is at the Axis, my lord, promoting a swan."
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "Then he's out of the way. Good. Stand there and look as though we have more servants than they do."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The airlock cycles. First through it: twelve crates stencilled MERIDIAN AIR - GRAND RESERVE. Then a sedan chair. Then, in the sedan chair, Lord Hadrian Solberg."
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "smug",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "Varrow. Forgive my not standing. Your spin, you understand. One-point-oh-two of a gravity. On Meridian we find anything over one to be... striving."
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "angry",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "Solberg. You'll find our gravity is like our fleet. There is rather more of it than you would prefer."
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "Ah, yes. I counted the hulls on approach. Sixty! One does wonder how a house affords it."
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "One may wonder a great many things. One may wonder them at dinner."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "They smile at each other. I have seen friendlier expressions on airlocks."
+        },
+        {
+          "t": "hide",
+          "slot": "all"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The lords depart by separate corridors, as lords do. That leaves the trunks, and the people who carry them."
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "She is counting crates without appearing to. Grey livery, Meridian teal at the cuff, the posture of a person who has not been surprised since childhood."
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "Quince. Steward to Lord Solberg. You will be Marlowe."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "I will. I generally am."
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "His Lordship requires a bath drawn at point-eight gravities, a room facing away from the direction of spin, and that nobody refer to the comet."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "Which comet?"
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "smile",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "Very good."
+        },
+        {
+          "t": "show",
+          "who": "t",
+          "expr": "smile",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "t",
+          "text": "'Scuse me, sorry, which tap's the drinking water? Only I've got to top up the Grand Reserve before..."
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "angry",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "Tobe."
+        },
+        {
+          "t": "show",
+          "who": "t",
+          "expr": "worried",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "t",
+          "text": "...before nothing. Before nothing at all. Lovely dock."
+        },
+        {
+          "t": "hide",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The footman flees, clutching an empty bottle labelled MERIDIAN SPRING - GRAND RESERVE. I notice it. Noticing is the whole of my profession."
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Quince is watching me notice."
+        },
+        {
+          "t": "choice",
+          "options": [
+            {
+              "cond": null,
+              "text": "\"Shall we be correct with each other, Steward? Schedules at six, grievances at nine.\"",
+              "target": "q_formal"
+            },
+            {
+              "cond": null,
+              "text": "\"Between ourselves: mine has just promoted a swan. What has yours done?\"",
+              "target": "q_joke"
+            },
+            {
+              "cond": null,
+              "text": "\"Is your master here to start a war, Steward? I only ask for the catering.\"",
+              "target": "q_probe"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "q_formal",
+      "chapter": "Two: Forty Trunks and a Grievance",
+      "pos": null,
+      "items": [
+        {
+          "t": "say",
+          "who": "q",
+          "text": "Correct. Yes. I find correctness restful. Six, then."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "She inclines her head precisely as far as protocol requires and not one degree further. I have met warmer bulkheads. But a bulkhead, at least, is honest about what it is keeping out."
+        },
+        {
+          "t": "goto",
+          "target": "ch3"
+        }
+      ]
+    },
+    {
+      "label": "q_joke",
+      "chapter": "Two: Forty Trunks and a Grievance",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "trust",
+          "n": 1
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "smile",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "Mine travels with a bust of himself for the bedside table. In case he wakes in the night and requires reassurance."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "A swan and a bust. We are each well provided for."
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "I think, Marlowe, that we shall manage to understand one another."
+        },
+        {
+          "t": "goto",
+          "target": "ch3"
+        }
+      ]
+    },
+    {
+      "label": "q_probe",
+      "chapter": "Two: Forty Trunks and a Grievance",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "trust",
+          "n": 1
+        },
+        {
+          "t": "add",
+          "var": "heat",
+          "n": 1
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "shock",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Her eyes go, very briefly, to the Varrow dockmaster, who is standing ten feet away and has abruptly become fascinated by a clipboard."
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "You are direct. That is either courage or carelessness. Below stairs, tonight. Not here. Never here."
+        },
+        {
+          "t": "goto",
+          "target": "ch3"
+        },
+        {
+          "t": "comment",
+          "text": "---------------------------------------------------------------- chapter 3"
+        }
+      ]
+    },
+    {
+      "label": "ch3",
+      "chapter": "Three: Below Stairs",
+      "pos": null,
+      "items": [
+        {
+          "t": "card",
+          "title": "Chapter Three",
+          "sub": "Below Stairs"
+        },
+        {
+          "t": "bg",
+          "name": "pantry"
+        },
+        {
+          "t": "music",
+          "track": "intrigue"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Eleven at night. Above us the lords are being civil over the fish, which is the most dangerous course. Below: the long table, the good teapot, and the only honest conversation on Halcyon Reach."
+        },
+        {
+          "t": "show",
+          "who": "c",
+          "expr": "neutral",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "c",
+          "text": "Sit. Eat. Nobody's master is in this room."
+        },
+        {
+          "t": "show",
+          "who": "t",
+          "expr": "smile",
+          "slot": "left"
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "t",
+          "text": "Is it true yours has the rain on a timetable?"
+        },
+        {
+          "t": "say",
+          "who": "c",
+          "text": "It's true ours has the rain in arrears."
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "I will say a thing plainly, Marlowe, because the hour is late and the tea is good. My lord did not come here for a birthday."
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "He came to count your fleet. He has counted it. Sixty hulls frighten him, and Lord Solberg frightened is not a man who waits."
+        },
+        {
+          "t": "show",
+          "who": "t",
+          "expr": "worried",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "t",
+          "text": "He's had the Long Spoon turned round."
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "angry",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "Tobe."
+        },
+        {
+          "t": "say",
+          "who": "t",
+          "text": "Well, he has! Biggest mass driver in the Lagrange, built for flinging ore, and it's pointing at your windows. Sorry. I liked your dock."
+        },
+        {
+          "t": "say",
+          "who": "t",
+          "text": "Mind, if he ever does fire it, the lights go out from the farms to the opera house. Draws that much. Nobody's told him. Nobody dares."
+        },
+        {
+          "t": "show",
+          "who": "c",
+          "expr": "worried",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Cook sets down the teapot very gently, the way one does when one would much prefer to throw it."
+        },
+        {
+          "t": "say",
+          "who": "c",
+          "text": "And ours has sixty warships polished up and parked in plain view. Two frightened men with their fists up. I've seen this in the scullery. It ends in crockery."
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "Then we understand one another. The question is what four servants can do about it."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "What servants always do. See to it that the right thing is overheard by the right person."
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "Trade requires goods. What do you bring to the table, Marlowe?"
+        },
+        {
+          "t": "choice",
+          "options": [
+            {
+              "cond": null,
+              "text": "Tell her everything: thirty-one of the sixty hulls are painted canvas.",
+              "target": "share_canvas"
+            },
+            {
+              "cond": null,
+              "text": "Tell her the gentler truth: House Varrow is quietly, elegantly broke.",
+              "target": "share_coffers"
+            },
+            {
+              "cond": null,
+              "text": "Tell her nothing yet. Trust is a thing one decants slowly.",
+              "target": "share_nothing"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "share_canvas",
+      "chapter": "Three: Below Stairs",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "trust",
+          "n": 2
+        },
+        {
+          "t": "set",
+          "var": "canvas",
+          "n": 1
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "shock",
+          "slot": "right"
+        },
+        {
+          "t": "show",
+          "who": "t",
+          "expr": "shock",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "Canvas."
+        },
+        {
+          "t": "say",
+          "who": "t",
+          "text": "What, painted? Like scenery?"
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "You understand what you have handed me. If my lord learns this he will not be frightened any longer. He will be amused. An amused Solberg simply takes what he likes."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "Which is why I have handed it to you, Steward, and not to him."
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "...Yes. That is a great deal of trust. I find that I mean to deserve it."
+        },
+        {
+          "t": "goto",
+          "target": "ch3_reply"
+        }
+      ]
+    },
+    {
+      "label": "share_coffers",
+      "chapter": "Three: Below Stairs",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "trust",
+          "n": 1
+        },
+        {
+          "t": "add",
+          "var": "peace",
+          "n": 1
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "The house is poor. The silver is plate, the summer estate is sold, and the vintner has not been paid since spring. Lord Varrow does not want a war. He cannot afford the invitations."
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "smile",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "A lord who needs money. Now that is a thing my master could be brought to understand. He thinks of very little else."
+        },
+        {
+          "t": "goto",
+          "target": "ch3_reply"
+        }
+      ]
+    },
+    {
+      "label": "share_nothing",
+      "chapter": "Three: Below Stairs",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "trust",
+          "n": -1
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "Prudent. I should do the same in your place."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The tea goes on being good. The conversation does not."
+        },
+        {
+          "t": "goto",
+          "target": "ch3_reply"
+        }
+      ]
+    },
+    {
+      "label": "ch3_reply",
+      "chapter": "Three: Below Stairs",
+      "pos": null,
+      "items": [
+        {
+          "t": "if",
+          "var": "trust",
+          "op": ">=",
+          "val": 2,
+          "target": "q_water"
+        },
+        {
+          "t": "goto",
+          "target": "q_nowater"
+        }
+      ]
+    },
+    {
+      "label": "q_water",
+      "chapter": "Three: Below Stairs",
+      "pos": null,
+      "items": [
+        {
+          "t": "set",
+          "var": "water",
+          "n": 1
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "worried",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "Then here is mine, and it is worth as much. Meridian is drying out. The reclamation plant failed in the winter. We ration baths. We ration tea."
+        },
+        {
+          "t": "show",
+          "who": "t",
+          "expr": "worried",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "t",
+          "text": "The Grand Reserve's your tap water. I fill the bottles at night. He's never noticed. Says ours has 'more character'."
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "He has not come for the Veil out of greed, Marlowe. Without that ice Meridian has perhaps two years. And he would die before he would say so to a Varrow."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "So. Mine has a comet he cannot afford to keep. Yours has money and nothing to drink."
+        },
+        {
+          "t": "show",
+          "who": "c",
+          "expr": "smile",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "c",
+          "text": "Any two fishwives would've settled this by lunch."
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "Fishwives are not burdened with honour. Neither lord can be seen to need. So each must discover the other's need for himself, and believe himself terribly clever."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "The need, mind. Not the weakness. A need makes a customer. A weakness makes a target."
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "smile",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "I see why the boy keeps you. The gala, then. You pour for mine; I shall see that yours asks the right question."
+        },
+        {
+          "t": "goto",
+          "target": "ch4"
+        }
+      ]
+    },
+    {
+      "label": "q_nowater",
+      "chapter": "Three: Below Stairs",
+      "pos": null,
+      "items": [
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "Then I shall keep my own counsel as well. I will say only this: watch what my lord drinks, Marlowe. And where it comes from. Good night."
+        },
+        {
+          "t": "hide",
+          "slot": "right"
+        },
+        {
+          "t": "hide",
+          "slot": "left"
+        },
+        {
+          "t": "show",
+          "who": "c",
+          "expr": "worried",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "c",
+          "text": "Well. That was a cold supper."
+        },
+        {
+          "t": "say",
+          "who": "c",
+          "text": "Mind this, Marlowe. Tell a frightened man his enemy's weak, and he'll hit him. Tell him his enemy's wanting something, and he'll start naming a price. I've seen it at the fish market. Lords are no different. They only smell better."
+        },
+        {
+          "t": "goto",
+          "target": "ch4"
+        },
+        {
+          "t": "comment",
+          "text": "---------------------------------------------------------------- chapter 4"
+        }
+      ]
+    },
+    {
+      "label": "ch4",
+      "chapter": "Four: An Affair of Honour",
+      "pos": null,
+      "items": [
+        {
+          "t": "card",
+          "title": "Chapter Four",
+          "sub": "An Affair of Honour"
+        },
+        {
+          "t": "bg",
+          "name": "vista"
+        },
+        {
+          "t": "music",
+          "track": "estate"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The birthday dawns in perfect, rescheduled sunshine. Overhead the far fields hang like a quilt on a line. I have been awake since four, ironing a cravat for a swan."
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "angry",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Marlowe! My sabres. The good ones. Great-grandfather's."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "Sir. May one ask whom we are stabbing?"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Solberg. At breakfast he looked directly at the Admiral and said... I can hardly repeat it."
+        },
+        {
+          "t": "show",
+          "who": "a",
+          "expr": "angry",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "a",
+          "text": "Honk."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "He called him 'a handsome goose'."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Ah."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "I have sent my card. He has accepted! We meet on the south lawn at nine. To first blood, or second. I forget which one is fashionable."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The heir of Halcyon and the Lord of Meridian, with swords, on the very day both houses have their fists up. Wars have started over less. Most wars have started over less."
+        },
+        {
+          "t": "choice",
+          "options": [
+            {
+              "cond": null,
+              "text": "Swap the sabres for the silver cake knives and announce the Ceremonial First Cut.",
+              "target": "duel_cake"
+            },
+            {
+              "cond": null,
+              "text": "\"Sir. The insult was to the Admiral. Surely the order to engage is his to give?\"",
+              "target": "duel_swan"
+            },
+            {
+              "cond": null,
+              "text": "Inform Lord Varrow at once, and let a father deal with it.",
+              "target": "duel_father"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "duel_cake",
+      "chapter": "Four: An Affair of Honour",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "favor",
+          "n": 1
+        },
+        {
+          "t": "add",
+          "var": "peace",
+          "n": 1
+        },
+        {
+          "t": "hide",
+          "slot": "right"
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "At nine, on the south lawn, before forty guests, I present two noblemen with matched cake knives on a velvet cushion, and announce the ancient Halcyon rite of the First Cut. I invented it at ten past eight."
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "smug",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "Charming. On Meridian we simply eat the cake."
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "smile",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "I say. Is this how duels go? It's rather jolly."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "They cut. There is applause. Lord Solberg is given the corner piece, honour is declared satisfied, and nobody is perforated."
+        },
+        {
+          "t": "goto",
+          "target": "ch4_after"
+        }
+      ]
+    },
+    {
+      "label": "duel_swan",
+      "chapter": "Four: An Affair of Honour",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "favor",
+          "n": 1
+        },
+        {
+          "t": "add",
+          "var": "peace",
+          "n": 1
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "shock",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "By Jove. Chain of command! He IS the senior officer. Admiral! Your orders, sir?"
+        },
+        {
+          "t": "show",
+          "who": "a",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The Admiral regards the Young Master. He regards the sabres. Then he tucks his head beneath his wing and goes to sleep."
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "smile",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "He's standing the fleet down. Magnanimous! That's command for you, Marlowe. I shall write to Solberg that the Admiral accepts his apology."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "He has not apologised, sir."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "He won't know that until he's read it."
+        },
+        {
+          "t": "goto",
+          "target": "ch4_after"
+        }
+      ]
+    },
+    {
+      "label": "duel_father",
+      "chapter": "Four: An Affair of Honour",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "favor",
+          "n": -2
+        },
+        {
+          "t": "add",
+          "var": "heat",
+          "n": -1
+        },
+        {
+          "t": "hide",
+          "slot": "all"
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "angry",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "A duel. With Solberg. Today. Have the boy shut in the orangery until the dancing, and have the sabres put somewhere he cannot reach. A shelf will do."
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "neutral",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "You have sense, Marlowe. It is a rare thing in this house and I do not forget it."
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "angry",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "You PEACHED, Marlowe. I shall never forgive you. I shall forgive you on Thursday at the earliest."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The peace is kept. The Young Master is not speaking to me, which is a kind of peace as well, though I find I do not much care for it."
+        },
+        {
+          "t": "goto",
+          "target": "ch5"
+        }
+      ]
+    },
+    {
+      "label": "ch4_after",
+      "chapter": "Four: An Affair of Honour",
+      "pos": null,
+      "items": [
+        {
+          "t": "if",
+          "var": "favor",
+          "op": ">=",
+          "val": 2,
+          "target": "ch4_ally"
+        },
+        {
+          "t": "goto",
+          "target": "ch5"
+        }
+      ]
+    },
+    {
+      "label": "ch4_ally",
+      "chapter": "Four: An Affair of Honour",
+      "pos": null,
+      "items": [
+        {
+          "t": "hide",
+          "slot": "right"
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "neutral",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Afterwards he lingers on the lawn, looking up at the far side of the world, and for a moment he does not look like a person who serves soup in cubes."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "I'm not actually an idiot, Marlowe. I know what the canvas is for. I know why Solberg's been counting."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "I just don't know what a fellow is supposed to DO about it. So I've been doing soup."
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "Soup is a start, sir."
+        },
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "smile",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "If there's ever something to be done, though. By me, I mean. You'll say?"
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "You will be the first to know, sir."
+        },
+        {
+          "t": "set",
+          "var": "ally",
+          "n": 1
+        },
+        {
+          "t": "goto",
+          "target": "ch5"
+        },
+        {
+          "t": "comment",
+          "text": "---------------------------------------------------------------- chapter 5"
+        }
+      ]
+    },
+    {
+      "label": "ch5",
+      "chapter": "Five: The Gala",
+      "pos": null,
+      "items": [
+        {
+          "t": "card",
+          "title": "Chapter Five",
+          "sub": "The Gala"
+        },
+        {
+          "t": "bg",
+          "name": "ballroom"
+        },
+        {
+          "t": "music",
+          "track": "gala"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Nine in the evening. Four hundred guests, two orchestras, one swan in a cravat. The soup, in the end, was served in bowls. I have let the Young Master believe it was a triumph of geometry."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Beyond the tall windows sixty hulls keep station in the dark. Thirty-one of them are flapping slightly."
+        },
+        {
+          "t": "if",
+          "var": "canvas",
+          "op": ">=",
+          "val": 1,
+          "target": "gala_tobe"
+        },
+        {
+          "t": "goto",
+          "target": "gala_s"
+        }
+      ]
+    },
+    {
+      "label": "gala_tobe",
+      "chapter": "Five: The Gala",
+      "pos": null,
+      "items": [
+        {
+          "t": "show",
+          "who": "t",
+          "expr": "worried",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "t",
+          "text": "Mister Marlowe! I never said anything. About the painted ones. Only I did ask a dock boy which were which, and he looked at me funny."
+        },
+        {
+          "t": "add",
+          "var": "heat",
+          "n": 1
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "I close my eyes for precisely one second. It is all the schedule allows."
+        },
+        {
+          "t": "hide",
+          "slot": "left"
+        },
+        {
+          "t": "goto",
+          "target": "gala_s"
+        }
+      ]
+    },
+    {
+      "label": "gala_s",
+      "chapter": "Five: The Gala",
+      "pos": null,
+      "items": [
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Lord Solberg holds court beside an ice sculpture of himself. He brought it with him. I arrive at his elbow with the decanter. A servant pouring is furniture, and furniture may murmur."
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "You. The Varrow boy's man. Is this the '71? I shall know if it is not the '71."
+        },
+        {
+          "t": "choice",
+          "options": [
+            {
+              "cond": null,
+              "text": "Murmur: \"Do forgive the plate, my lord. The real silver was let go. Quietly. Like the vintner.\"",
+              "target": "s_broke"
+            },
+            {
+              "cond": null,
+              "text": "Murmur: \"Admire the fleet while you can, my lord. Canvas does fade so in sunlight.\"",
+              "target": "s_canvas"
+            },
+            {
+              "cond": {
+                "var": "trust",
+                "op": ">=",
+                "val": 2
+              },
+              "text": "Signal Quince. Stage a quarrel over unpaid bills where he cannot help but overhear.",
+              "target": "s_staged"
+            },
+            {
+              "cond": null,
+              "text": "Pour the wine. Say nothing. Be furniture.",
+              "target": "s_nothing"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "s_broke",
+      "chapter": "Five: The Gala",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "peace",
+          "n": 2
+        },
+        {
+          "t": "add",
+          "var": "heat",
+          "n": 1
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "shock",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "Let go? Varrow, selling the spoons?"
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "smug",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "Well, well. A man who will sell his spoons will sell other things."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "I watch arithmetic happen behind his eyes. It is not the arithmetic of trajectories. It is the arithmetic of offers."
+        },
+        {
+          "t": "goto",
+          "target": "gala_v"
+        }
+      ]
+    },
+    {
+      "label": "s_canvas",
+      "chapter": "Five: The Gala",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "peace",
+          "n": -2
+        },
+        {
+          "t": "add",
+          "var": "heat",
+          "n": 2
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "shock",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "Canvas."
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "smug",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "Canvas! Oh, that is delicious. I have been losing sleep over sailcloth."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "He laughs. It is the worst sound I have heard in thirty years of service. A frightened man is dangerous. A man who has just stopped being frightened is worse."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Across the ballroom, Quince has gone very still."
+        },
+        {
+          "t": "goto",
+          "target": "gala_v"
+        }
+      ]
+    },
+    {
+      "label": "s_staged",
+      "chapter": "Five: The Gala",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "peace",
+          "n": 3
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "angry",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "...three seasons unpaid, Marlowe! My lord's vintner will not extend House Varrow one more bottle on credit!"
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "Lower your voice, Steward! If it were known that His Lordship sold the summer estate merely to keep the hedges trimmed..."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "We are appallingly indiscreet for about forty seconds. Then we notice Lord Solberg, and are mortified. Professionally."
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "smug",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "Don't mind me. Sold the summer estate, did he? For hedges."
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "neutral",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "He turns away, delighted, already composing an offer in his head. He believes he has caught two servants gossiping. In a sense, he has."
+        },
+        {
+          "t": "hide",
+          "slot": "left"
+        },
+        {
+          "t": "goto",
+          "target": "gala_v"
+        }
+      ]
+    },
+    {
+      "label": "s_nothing",
+      "chapter": "Five: The Gala",
+      "pos": null,
+      "items": [
+        {
+          "t": "say",
+          "who": "n",
+          "text": "I pour. It is the '71. He does not know. He says that it is tolerable, and I remain furniture."
+        },
+        {
+          "t": "goto",
+          "target": "gala_v"
+        }
+      ]
+    },
+    {
+      "label": "gala_v",
+      "chapter": "Five: The Gala",
+      "pos": null,
+      "items": [
+        {
+          "t": "hide",
+          "slot": "all"
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "neutral",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Lord Varrow has taken up position beneath his own portrait, so that guests may compare. I bring him the brandy he pretends not to want."
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "Marlowe. Solberg's people. You've had them underfoot for two days. What are they like?"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "An opening. Lords so rarely ask a servant a question that they forget we are able to answer."
+        },
+        {
+          "t": "choice",
+          "options": [
+            {
+              "cond": {
+                "var": "water",
+                "op": ">=",
+                "val": 1
+              },
+              "text": "\"Thirsty, my lord. Meridian's reclamation plant has failed. They are rationing baths.\"",
+              "target": "v_water"
+            },
+            {
+              "cond": null,
+              "text": "\"An odd thing, my lord. His 'Grand Reserve' water. His footman fills the bottles from our taps.\"",
+              "target": "v_bottles"
+            },
+            {
+              "cond": null,
+              "text": "\"Their great mass driver is a bluff, my lord. Firing it would black out half of Meridian.\"",
+              "target": "v_spoon"
+            },
+            {
+              "cond": null,
+              "text": "\"Very correct, my lord. I could not say more.\"",
+              "target": "v_nothing"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "v_water",
+      "chapter": "Five: The Gala",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "peace",
+          "n": 2
+        },
+        {
+          "t": "add",
+          "var": "heat",
+          "n": 1
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "shock",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "Failed? Rationing? Solberg, in two inches of bath..."
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "smug",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "Then it isn't pride he wants out of that comet. It's a drink. A man will pay a very great deal for a drink, Marlowe."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "And there it is again: the arithmetic of offers. It looks much the same on either lord."
+        },
+        {
+          "t": "goto",
+          "target": "after_gala"
+        }
+      ]
+    },
+    {
+      "label": "v_bottles",
+      "chapter": "Five: The Gala",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "peace",
+          "n": 1
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "neutral",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "Our taps? Now why would a man with a whole cylinder of his own..."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "I leave him with it. A lord's thought is like our weather: slow, and long in arrears. But it does, eventually, arrive."
+        },
+        {
+          "t": "goto",
+          "target": "after_gala"
+        }
+      ]
+    },
+    {
+      "label": "v_spoon",
+      "chapter": "Five: The Gala",
+      "pos": null,
+      "items": [
+        {
+          "t": "add",
+          "var": "peace",
+          "n": -2
+        },
+        {
+          "t": "add",
+          "var": "heat",
+          "n": 1
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "smug",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "Can't fire it? Then he has nothing but a wig and a yacht. Have the fleet signalled to close up around his berth. Let him see us properly."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The fleet. Closing up. At close range, canvas has a seam. I have, I think, made a mistake of the kind that is measured from orbit."
+        },
+        {
+          "t": "goto",
+          "target": "after_gala"
+        }
+      ]
+    },
+    {
+      "label": "v_nothing",
+      "chapter": "Five: The Gala",
+      "pos": null,
+      "items": [
+        {
+          "t": "say",
+          "who": "v",
+          "text": "Hm. Correct. Yes. They would be."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "He turns back to his portrait. Of the two, the portrait looks the better informed."
+        },
+        {
+          "t": "goto",
+          "target": "after_gala"
+        }
+      ]
+    },
+    {
+      "label": "after_gala",
+      "chapter": "Five: The Gala",
+      "pos": null,
+      "items": [
+        {
+          "t": "if",
+          "var": "heat",
+          "op": ">=",
+          "val": 3,
+          "target": "caught"
+        },
+        {
+          "t": "goto",
+          "target": "summit"
+        },
+        {
+          "t": "comment",
+          "text": "---------------------------------------------------------------- caught?"
+        }
+      ]
+    },
+    {
+      "label": "caught",
+      "chapter": "Interlude: A Word in the Study",
+      "pos": null,
+      "items": [
+        {
+          "t": "card",
+          "title": "Interlude",
+          "sub": "A Word in the Study"
+        },
+        {
+          "t": "bg",
+          "name": "study"
+        },
+        {
+          "t": "music",
+          "track": "summit"
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "angry",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "Stand there, Marlowe. No. There. In the light."
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "My dockmaster tells me that my son's valet takes a remarkable interest in fleets, and keeps remarkably close company with foreign stewards."
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "My grandfather would have put you out of an airlock. We are more civilised now. We have the algae vats."
+        },
+        {
+          "t": "if",
+          "var": "ally",
+          "op": ">=",
+          "val": 1,
+          "target": "caught_saved"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "I have an answer prepared. I have had one prepared for thirty years. It is a very good answer, and I can see in his face that it will make no difference at all."
+        },
+        {
+          "t": "end",
+          "title": "Reassigned",
+          "text": "Level Nine. The algae vats are warm, and no one there has Views. You read about what happened next in the news-sheets, like everybody else. They did not say whether it could have been stopped. News-sheets never do."
+        }
+      ]
+    },
+    {
+      "label": "caught_saved",
+      "chapter": "Interlude: A Word in the Study",
+      "pos": null,
+      "items": [
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "smile",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Father! There you are. Is Marlowe in trouble? He can't be. Everything Marlowe's done this week, he's done on my instructions."
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "shock",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "Your instructions."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "I'm twenty. I have instructions now. I told him to keep an eye on the Solberg lot. One doesn't like to boast, but I've been running an intelligence service. With a swan."
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "neutral",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "...God help this house. Get out. Both of you."
+        },
+        {
+          "t": "add",
+          "var": "heat",
+          "n": -3
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "In the corridor the Young Master lets out a long breath, and grins like a boy who has just got away with the marmalade."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Was that the something to be done?"
+        },
+        {
+          "t": "say",
+          "who": "m",
+          "text": "It was one of them, sir."
+        },
+        {
+          "t": "goto",
+          "target": "summit"
+        },
+        {
+          "t": "comment",
+          "text": "---------------------------------------------------------------- chapter 6"
+        }
+      ]
+    },
+    {
+      "label": "summit",
+      "chapter": "Six: The Summit",
+      "pos": null,
+      "items": [
+        {
+          "t": "card",
+          "title": "Chapter Six",
+          "sub": "The Summit"
+        },
+        {
+          "t": "bg",
+          "name": "study"
+        },
+        {
+          "t": "music",
+          "track": "summit"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Midnight. Lord Varrow's study. The war table glows between them: two little cylinders of light and, hanging in the middle, a mote labelled THE VEIL."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "I am here to pour. Quince is here to pour. We are furniture, and we are loaded."
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "neutral",
+          "slot": "left"
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "if",
+          "var": "peace",
+          "op": ">=",
+          "val": 5,
+          "target": "end_accord"
+        },
+        {
+          "t": "if",
+          "var": "peace",
+          "op": ">=",
+          "val": 2,
+          "target": "summit_tense"
+        },
+        {
+          "t": "goto",
+          "target": "summit_bad"
+        }
+      ]
+    },
+    {
+      "label": "end_accord",
+      "chapter": "Six: The Summit",
+      "pos": null,
+      "items": [
+        {
+          "t": "say",
+          "who": "v",
+          "text": "Solberg. I have been thinking. The Veil. Damned nuisance of a thing. Costs me a fortune to picket."
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "I have been thinking also. A comet is an untidy thing to quarrel over. So much... water."
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "Supposing, purely as a kindness, I were to let Meridian draw from it. For a consideration."
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "Supposing, purely as a courtesy, I were to pay House Varrow an annual sum. For its trouble."
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "smug",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "I should want it understood that this was my idea."
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "smug",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "I was about to insist that it was mine."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "They shake hands, each with the air of a man picking the other's pocket. Over the decanter, Quince catches my eye. Nothing so vulgar as a smile. A quarter-inch nod. From her, it is a parade."
+        },
+        {
+          "t": "bg",
+          "name": "pantry"
+        },
+        {
+          "t": "show",
+          "who": "q",
+          "expr": "smile",
+          "slot": "right"
+        },
+        {
+          "t": "show",
+          "who": "t",
+          "expr": "smile",
+          "slot": "left"
+        },
+        {
+          "t": "show",
+          "who": "c",
+          "expr": "smile",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "To the Veil Accord. Negotiated, the histories will say, by two great men."
+        },
+        {
+          "t": "say",
+          "who": "c",
+          "text": "Histories get written upstairs."
+        },
+        {
+          "t": "say",
+          "who": "t",
+          "text": "Does this mean I can stop filling the bottles?"
+        },
+        {
+          "t": "say",
+          "who": "q",
+          "text": "No."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Above us, with a sound like applause, three days of banked rain finally let go."
+        },
+        {
+          "t": "end",
+          "title": "The Veil Accord",
+          "text": "Meridian drinks. Halcyon pays its vintner. Both lords dine out for years on how they outwitted the other. Nobody thanks the servants, which is how the servants know it was done properly."
+        }
+      ]
+    },
+    {
+      "label": "summit_tense",
+      "chapter": "Six: The Summit",
+      "pos": null,
+      "items": [
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "angry",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "The Veil is Halcyon's by right of capture."
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "angry",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "The Veil is Meridian's by right of survey. And I will remind you where the Long Spoon is pointing."
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "And I will remind you that there are sixty hulls around your yacht."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Each of them has had half a thought tonight. Half is not enough. The table hums. In about a minute, one of them is going to say a thing that cannot be unsaid."
+        },
+        {
+          "t": "choice",
+          "options": [
+            {
+              "cond": {
+                "var": "ally",
+                "op": ">=",
+                "val": 1
+              },
+              "text": "Open the door. The Young Master did ask to be told if there was something to be done.",
+              "target": "final_perry"
+            },
+            {
+              "cond": null,
+              "text": "Catch Quince's eye. Two teapots, one war table. Accidents will happen.",
+              "target": "final_tea"
+            },
+            {
+              "cond": null,
+              "text": "Remain furniture. It is not a servant's place.",
+              "target": "end_war"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "final_perry",
+      "chapter": "Six: The Summit",
+      "pos": null,
+      "items": [
+        {
+          "t": "show",
+          "who": "p",
+          "expr": "smile",
+          "slot": "center"
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Father! Lord Solberg! I've a birthday wish, and it is still technically my birthday for another six minutes."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "The comet. I want it. Not for me! For the Admiral. Every fleet admiral needs a home port."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Joint flag. Halcyon keeps the title deeds, Meridian keeps the taps, and everybody comes to my twenty-first."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "There is a silence of the kind usually reserved for cathedrals."
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "shock",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "The boy proposes that we give the casus belli to a goose."
+        },
+        {
+          "t": "say",
+          "who": "p",
+          "text": "Swan."
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "neutral",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "...It would get the thing off my books."
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "neutral",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "...One could not be said to have yielded. Not to a bird."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "And so the most dangerous object in the Lagrange becomes a naval base under the command of a swan. I have served this house for thirty years. It is the first time I have been proud of it."
+        },
+        {
+          "t": "end",
+          "title": "The Admiral's Peace",
+          "text": "Port Featherstonehaugh flies two flags and a rather large pennant with a swan on it. The treaty is eleven pages long and has been bitten twice. Peregrine Varrow begins, to general alarm, to take an interest in politics."
+        }
+      ]
+    },
+    {
+      "label": "final_tea",
+      "chapter": "Six: The Summit",
+      "pos": null,
+      "items": [
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Quince stumbles. I have never seen Quince stumble, and it is a beautiful piece of work. Her teapot goes left. Mine, in sympathy, goes right."
+        },
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "shock",
+          "slot": "left"
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "shock",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Lapsang over Halcyon. Darjeeling over Meridian. The war table fizzes, pops, displays for one moment a map of the wine cellar, and dies."
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "MARLOWE!"
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "QUINCE!"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "We are abject. We are inconsolable. The table will take a week to repair, and the only technician is on Meridian, and can be paid only by Halcyon."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "A week in which two lords must talk to one another without a map to point at. It is not peace. But it is a week, and servants can do a very great deal with a week."
+        },
+        {
+          "t": "end",
+          "title": "Armistice by Teapot",
+          "text": "The war is postponed owing to tea. Nobody upstairs can quite recall, afterwards, what they had been about to say. You and Quince have six days left, forty trunks to repack, and a plan."
+        }
+      ]
+    },
+    {
+      "label": "summit_bad",
+      "chapter": "Six: The Summit",
+      "pos": null,
+      "items": [
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "smug",
+          "slot": "left"
+        },
+        {
+          "t": "say",
+          "who": "v",
+          "text": "I know precisely what your Long Spoon is worth, Solberg."
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "smug",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "s",
+          "text": "And I, Varrow, know precisely what your fleet is worth."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Two men, each certain the other is helpless. I have armed them both, and with the wrong thing. There is nothing left on the tray that will serve."
+        },
+        {
+          "t": "goto",
+          "target": "end_war"
+        }
+      ]
+    },
+    {
+      "label": "end_war",
+      "chapter": "Six: The Summit",
+      "pos": null,
+      "items": [
+        {
+          "t": "show",
+          "who": "v",
+          "expr": "angry",
+          "slot": "left"
+        },
+        {
+          "t": "show",
+          "who": "s",
+          "expr": "angry",
+          "slot": "right"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "One of them says it. I shall not record which. The histories will disagree in any case."
+        },
+        {
+          "t": "hide",
+          "slot": "all"
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "By dawn the Unimpeachable has gone, leaving its sedan chair behind. By noon the Long Spoon fires, and the lights of Meridian go out from the farms to the opera house."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "The shot strikes a warship made of canvas, which folds up like a deck chair. Nobody will say who is winning. Both cylinders dim their sunlines to save power."
+        },
+        {
+          "t": "say",
+          "who": "n",
+          "text": "Quince's last note reaches me by a tradesman's channel. It reads: 'We were furniture when we ought to have been in the way.'"
+        },
+        {
+          "t": "end",
+          "title": "The Long Spoon",
+          "text": "You lay the table for breakfast anyway. Somebody must. Overhead, in the half-light, eight kilometres of somebody else's fields wait to see what the masters will break next."
+        }
+      ]
+    }
+  ]
+}

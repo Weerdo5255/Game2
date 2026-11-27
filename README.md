@@ -53,6 +53,74 @@ sets its starting size.
 The two meters top right are **Detente** (how close the lords are to a deal)
 and **Suspicion** (how close you are to the algae vats).
 
+## The Godot project
+
+The game is also a [Godot 4](https://godotengine.org) project, in `godot/`.
+Godot shows the story, over paintings and in 3D places, and Godot's editor
+is where the pictures and places are worked on: every place is an ordinary
+scene, every picture an ordinary texture.
+
+```bash
+godot --path godot              # play
+godot --path godot --editor     # open in the editor
+```
+
+It needs Godot 4.3 or later. What is in the project:
+
+| | |
+|---|---|
+| `places/<place>.tscn` | each 3D place as a scene: meshes with shared materials, lamps and suns, the air (a WorldEnvironment), collision for what you walk around, and markers named `Spawn`, `CastLeft`, `CastCentre`, `CastRight`. Move, restyle, replace or add anything; keep the markers. |
+| `art/bg/<place>.png` | the paintings behind the story where a place is 2D. Replace a file to replace the painting. |
+| `art/portraits/<who>_<expression>.png` | the cast: shown over paintings, and as cut-outs in 3D places. |
+| `scenes/` | the 2D stage (where background and portraits sit), the HUD (dialogue box, choices, meters, clock, the "who has what" panel, cards, endings, title), the player, and a character in 3D: all laid out as scenes to restyle. |
+| `scripts/` | the game in GDScript: `story_vm.gd` runs the story by the same rules as the Rust game; `game.gd` presents it. |
+| `story/story.json` | the story itself, exactly as the story editor keeps it. |
+| `audio/`, `models/` | the story's recordings, music and model files, where it has them. |
+
+The story is still written in the story editor (below); it is data to
+Godot, not something edited there. To bring the Godot project up to date
+with the story, or to make a project for another story:
+
+```bash
+cargo run --release -- --export-godot godot
+cargo run --release -- --story stories/my-tale/story.txt --export-godot stories/my-tale/godot
+```
+
+or **Manage > Export to Godot** in the story editor. The story file is
+rewritten every time. Scenes and pictures that are already there are left
+alone, since you may have changed them in Godot; `--force` writes them
+again from the story's own places (the World view's, or the game's) and
+painter.
+
+How a place's settings arrive in Godot: parts keep their position, size and
+turn as a node transform over a unit mesh, so they can be scaled in the
+editor; colour, roughness, metal and glow become a StandardMaterial3D shared
+by parts that match; a "solid" part and every no-go area become collision
+boxes, and the edge of the walkable floor four more. Light strengths are
+converted by a rule of thumb and are worth a look in Godot. Characters
+marked as a 3D figure are built by `scripts/character_3d.gd` from their
+look; a glTF model is instanced from `models/`. FLAC recordings are not
+copied (Godot does not play FLAC): convert them to Ogg, MP3 or WAV under the
+same names.
+
+**How far this is tested.** Godot could not be run where this was written.
+The exporter is tested (every place becomes a well-formed scene: resources
+declared before use, node paths, transforms; and a re-export leaves edited
+files alone), and the GDScript passes a syntax check with `gdtoolkit`. That
+is all: the project has never been opened in Godot, so expect to fix things
+on first contact. `tools/godot_check.sh` is the test that matters and has
+not been run: with Godot installed it imports the project, plays each story
+with no window along several lines of choices, and compares the endings,
+the comings and goings and the exchanges with the Rust game's.
+
+```bash
+cargo build && tools/godot_check.sh /path/to/godot
+```
+
+The Rust game (its window, the Bevy 3D view, VR) remains as it was and
+plays the same stories; the story editor's World view still edits the place
+descriptions that the Godot scenes are first made from.
+
 ## Story editor
 
 ```bash

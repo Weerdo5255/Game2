@@ -1,0 +1,3295 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/place.gd" id="place"]
+
+[sub_resource type="BoxMesh" id="box"]
+
+[sub_resource type="CylinderMesh" id="cylinder"]
+top_radius = 0.5
+bottom_radius = 0.5
+height = 1.0
+
+[sub_resource type="SphereMesh" id="sphere"]
+radius = 0.5
+height = 1.0
+
+[sub_resource type="Environment" id="air"]
+background_mode = 1
+background_color = Color(0.02353, 0.03137, 0.08627, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.58824, 0.66667, 1, 1)
+ambient_light_energy = 0.2
+fog_enabled = true
+fog_mode = 1
+fog_light_color = Color(0.02353, 0.03137, 0.08627, 1)
+fog_density = 1.0
+fog_depth_begin = 700
+fog_depth_end = 3600
+
+[sub_resource type="StandardMaterial3D" id="mat_1"]
+albedo_color = Color(0.84706, 0.81569, 0.7451, 1)
+metallic = 0
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="mat_2"]
+albedo_color = Color(0.76863, 0.72941, 0.65098, 1)
+metallic = 0
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="mat_3"]
+albedo_color = Color(0.84706, 0.81569, 0.7451, 1)
+metallic = 0
+roughness = 0.8
+
+[sub_resource type="StandardMaterial3D" id="mat_4"]
+albedo_color = Color(0.88627, 0.83922, 0.7451, 1)
+metallic = 0
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="mat_5"]
+albedo_color = Color(1, 0.83922, 0.58824, 1)
+metallic = 0
+roughness = 0.5
+emission_enabled = true
+emission = Color(1, 0.83922, 0.58824, 1)
+emission_energy_multiplier = 3.5
+
+[sub_resource type="StandardMaterial3D" id="mat_6"]
+albedo_color = Color(0.66667, 0.62745, 0.54902, 1)
+metallic = 0
+roughness = 0.85
+
+[sub_resource type="StandardMaterial3D" id="mat_7"]
+albedo_color = Color(0.20392, 0.43137, 0.23529, 1)
+metallic = 0
+roughness = 0.9
+
+[sub_resource type="StandardMaterial3D" id="mat_8"]
+albedo_color = Color(0.27451, 0.51765, 0.2902, 1)
+metallic = 0
+roughness = 0.5
+emission_enabled = true
+emission = Color(0.27451, 0.51765, 0.2902, 1)
+emission_energy_multiplier = 0.03
+
+[sub_resource type="StandardMaterial3D" id="mat_9"]
+albedo_color = Color(0.47059, 0.66667, 0.35294, 1)
+metallic = 0
+roughness = 0.5
+emission_enabled = true
+emission = Color(0.47059, 0.66667, 0.35294, 1)
+emission_energy_multiplier = 0.03
+
+[sub_resource type="StandardMaterial3D" id="mat_10"]
+albedo_color = Color(1, 0.82353, 0.5098, 1)
+metallic = 0
+roughness = 0.5
+emission_enabled = true
+emission = Color(1, 0.82353, 0.5098, 1)
+emission_energy_multiplier = 6
+
+[sub_resource type="StandardMaterial3D" id="mat_11"]
+albedo_color = Color(0.7451, 0.70588, 0.37647, 1)
+metallic = 0
+roughness = 0.5
+emission_enabled = true
+emission = Color(0.7451, 0.70588, 0.37647, 1)
+emission_energy_multiplier = 0.03
+
+[sub_resource type="StandardMaterial3D" id="mat_12"]
+albedo_color = Color(0.27451, 0.5098, 0.78431, 1)
+metallic = 0
+roughness = 0.5
+emission_enabled = true
+emission = Color(0.27451, 0.5098, 0.78431, 1)
+emission_energy_multiplier = 0.045
+
+[sub_resource type="StandardMaterial3D" id="mat_13"]
+albedo_color = Color(0.15686, 0.37647, 0.21961, 1)
+metallic = 0
+roughness = 0.5
+emission_enabled = true
+emission = Color(0.15686, 0.37647, 0.21961, 1)
+emission_energy_multiplier = 0.03
+
+[sub_resource type="StandardMaterial3D" id="mat_14"]
+albedo_color = Color(0.03137, 0.03922, 0.11765, 1)
+metallic = 0
+roughness = 0.5
+emission_enabled = true
+emission = Color(0.03137, 0.03922, 0.11765, 1)
+emission_energy_multiplier = 0.02
+
+[sub_resource type="StandardMaterial3D" id="mat_15"]
+albedo_color = Color(0.0549, 0.07059, 0.15686, 1)
+metallic = 0
+roughness = 0.5
+emission_enabled = true
+emission = Color(0.0549, 0.07059, 0.15686, 1)
+emission_energy_multiplier = 0.3
+
+[sub_resource type="StandardMaterial3D" id="mat_16"]
+albedo_color = Color(0.47059, 0.54902, 0.86275, 1)
+metallic = 0
+roughness = 0.5
+emission_enabled = true
+emission = Color(0.47059, 0.54902, 0.86275, 1)
+emission_energy_multiplier = 2
+
+[sub_resource type="StandardMaterial3D" id="mat_17"]
+albedo_color = Color(1, 0.78431, 0.5098, 1)
+metallic = 0
+roughness = 0.5
+emission_enabled = true
+emission = Color(1, 0.78431, 0.5098, 1)
+emission_energy_multiplier = 6
+
+[sub_resource type="BoxShape3D" id="shape_1"]
+size = Vector3(0.5, 4, 14.2)
+
+[sub_resource type="BoxShape3D" id="shape_2"]
+size = Vector3(0.5, 4, 14.2)
+
+[sub_resource type="BoxShape3D" id="shape_3"]
+size = Vector3(22.2, 4, 0.5)
+
+[sub_resource type="BoxShape3D" id="shape_4"]
+size = Vector3(22.2, 4, 0.5)
+
+[sub_resource type="BoxShape3D" id="shape_5"]
+size = Vector3(1.3, 4, 1.3)
+
+[sub_resource type="BoxShape3D" id="shape_6"]
+size = Vector3(1.3, 4, 1.3)
+
+[node name="vista_night" type="Node3D"]
+script = ExtResource("place")
+floating = false
+
+[node name="Air" type="WorldEnvironment" parent="."]
+environment = SubResource("air")
+
+[node name="Spawn" type="Marker3D" parent="."]
+transform = Transform3D(0.9968, 0, 0.07992, 0, 1, 0, -0.07992, 0, 0.9968, 0.8, 0, -0.3)
+
+[node name="CastLeft" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.25, 0, -3.2)
+
+[node name="CastCentre" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -3.45)
+
+[node name="CastRight" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.25, 0, -3.2)
+
+[node name="Parts" type="Node3D" parent="."]
+
+[node name="box" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(22, 0, 0, 0, 0.5, 0, 0, 0, 14, 0, -0.25, 1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_1")
+
+[node name="box_2" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -10, 0.006, -5)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_3" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -10, 0.006, -1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_4" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -10, 0.006, 3)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_5" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -10, 0.006, 7)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_6" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -8, 0.006, -3)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_7" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -8, 0.006, 1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_8" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -8, 0.006, 5)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_9" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -6, 0.006, -5)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_10" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -6, 0.006, -1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_11" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -6, 0.006, 3)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_12" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -6, 0.006, 7)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_13" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -4, 0.006, -3)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_14" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -4, 0.006, 1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_15" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -4, 0.006, 5)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_16" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -2, 0.006, -5)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_17" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -2, 0.006, -1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_18" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -2, 0.006, 3)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_19" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, -2, 0.006, 7)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_20" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 0, 0.006, -3)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_21" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 0, 0.006, 1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_22" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 0, 0.006, 5)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_23" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 2, 0.006, -5)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_24" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 2, 0.006, -1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_25" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 2, 0.006, 3)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_26" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 2, 0.006, 7)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_27" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 4, 0.006, -3)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_28" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 4, 0.006, 1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_29" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 4, 0.006, 5)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_30" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 6, 0.006, -5)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_31" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 6, 0.006, -1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_32" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 6, 0.006, 3)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_33" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 6, 0.006, 7)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_34" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 8, 0.006, -3)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_35" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 8, 0.006, 1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_36" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 8, 0.006, 5)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_37" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 10, 0.006, -5)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_38" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 10, 0.006, -1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_39" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 10, 0.006, 3)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_40" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.96, 0, 0, 0, 0.012, 0, 0, 0, 1.96, 10, 0.006, 7)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_2")
+
+[node name="box_41" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(22, 0, 0, 0, 0.14, 0, 0, 0, 0.4, 0, 1, -6)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_1")
+
+[node name="box_42" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(22, 0, 0, 0, 0.2, 0, 0, 0, 0.4, 0, 0.1, -6)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_1")
+
+[node name="box_43" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.4, 0, 0, 0, 0.14, 0, 0, 0, 14, -10.9, 1, 1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_1")
+
+[node name="box_44" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.9, 0, 0, 0, 14, -10.9, 0.5, 1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_1")
+
+[node name="box_45" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.4, 0, 0, 0, 0.14, 0, 0, 0, 14, 10.9, 1, 1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_1")
+
+[node name="box_46" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.9, 0, 0, 0, 14, 10.9, 0.5, 1)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_1")
+
+[node name="cylinder" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -11, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_2" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -10.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_3" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -10, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_4" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -9.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_5" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -9, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_6" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -8.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_7" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -8, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_8" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -7.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_9" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -7, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_10" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -6.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_11" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -6, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_12" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -5.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_13" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_14" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -4.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_15" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -4, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_16" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -3.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_17" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -3, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_18" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -2.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_19" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -2, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_20" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -1.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_21" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -1, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_22" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, -0.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_23" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 0, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_24" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 0.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_25" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 1, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_26" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 1.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_27" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 2, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_28" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 2.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_29" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 3, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_30" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 3.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_31" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 4, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_32" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 4.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_33" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_34" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 5.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_35" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 6, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_36" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 6.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_37" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 7, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_38" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 7.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_39" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 8, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_40" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 8.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_41" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 9, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_42" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 9.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_43" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 10, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_44" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 10.5, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="cylinder_45" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.16, 0, 0, 0, 0.8, 0, 0, 0, 0.16, 11, 0.55, -6)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_3")
+
+[node name="box_47" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(22, 0, 0, 0, 8, 0, 0, 0, 0.5, 0, 4, 8.2)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_4")
+
+[node name="box_48" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.6, 0, 0, 0, 4, 0, 0, 0, 0.05, -8, 2.6, 7.93)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_5")
+
+[node name="box_49" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.6, 0, 0, 0, 4, 0, 0, 0, 0.05, -4, 2.6, 7.93)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_5")
+
+[node name="box_50" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.6, 0, 0, 0, 4, 0, 0, 0, 0.05, 0, 2.6, 7.93)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_5")
+
+[node name="box_51" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.6, 0, 0, 0, 4, 0, 0, 0, 0.05, 4, 2.6, 7.93)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_5")
+
+[node name="box_52" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.6, 0, 0, 0, 4, 0, 0, 0, 0.05, 8, 2.6, 7.93)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_5")
+
+[node name="box_53" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.3, 0, 0, 0, 0.9, 0, 0, 0, 1.3, -9, 0.45, -4.3)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_6")
+
+[node name="sphere" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, -9, 1.7, -4.3)
+mesh = SubResource("sphere")
+surface_material_override/0 = SubResource("mat_7")
+
+[node name="box_54" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.3, 0, 0, 0, 0.9, 0, 0, 0, 1.3, 9, 0.45, -4.3)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_6")
+
+[node name="sphere_2" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 9, 1.7, -4.3)
+mesh = SubResource("sphere")
+surface_material_override/0 = SubResource("mat_7")
+
+[node name="box_55" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(120.4537, 1.22021, 0, -53.62945, 2.74064, 0, 0, 0, 2600, -252.177, 13.602, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_56" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(45.67728, 0.20337, 0, -20.33683, 0.45677, 0, 0, 0, 40, -270.876, 24.171, 33.733)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_57" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(12.78964, 2.03368, 0, -5.69431, 4.56773, 0, 0, 0, 18, -204.457, -2.937, -2126.647)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_58" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(32.88764, 0.24404, 0, -14.64252, 0.54813, 0, 0, 0, 60, -263.496, 20.94, -2117.235)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_59" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36.54182, 0.20337, 0, -16.26947, 0.45677, 0, 0, 0, 90, -210.735, -2.605, 182.013)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_60" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(45.67728, 0.20337, 0, -20.33683, 0.45677, 0, 0, 0, 40, -254.943, 17.077, -880.402)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_61" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36.54182, 0.20337, 0, -16.26947, 0.45677, 0, 0, 0, 90, -228.064, 5.11, -300.469)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_62" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, 2.44042, 0, -17.89641, 5.48127, 0, 0, 0, 50, -252.302, 18.912, -119.641)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_63" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(45.67728, 0.20337, 0, -20.33683, 0.45677, 0, 0, 0, 40, -252.726, 16.09, -2020.1471)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_64" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(32.88764, 0.24404, 0, -14.64252, 0.54813, 0, 0, 0, 60, -222.058, 2.491, -1354.7181)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_65" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36.54182, 0.20337, 0, -16.26947, 0.45677, 0, 0, 0, 90, -210.917, -2.524, -1944.8351)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_66" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(32.88764, 0.24404, 0, -14.64252, 0.54813, 0, 0, 0, 60, -255.147, 17.223, -1979.98)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_67" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(32.88764, 0.24404, 0, -14.64252, 0.54813, 0, 0, 0, 60, -240.675, 10.78, -317.928)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_68" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, 2.44042, 0, -17.89641, 5.48127, 0, 0, 0, 50, -241.752, 14.215, 65.87001)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_69" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, 2.44042, 0, -17.89641, 5.48127, 0, 0, 0, 50, -242.96, 14.753, -1368.154)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_70" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, 2.44042, 0, -17.89641, 5.48127, 0, 0, 0, 50, -249.224, 17.541, -470.781)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_71" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(45.67728, 0.20337, 0, -20.33683, 0.45677, 0, 0, 0, 40, -276.902, 26.854, -64.658)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_72" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36.54182, 0.20337, 0, -16.26947, 0.45677, 0, 0, 0, 90, -261.47, 19.983, 240.888)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_73" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(12.78964, 2.03368, 0, -5.69431, 4.56773, 0, 0, 0, 18, -285.08, 32.958, -1615.743)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_74" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(32.88764, 0.24404, 0, -14.64252, 0.54813, 0, 0, 0, 60, -243.618, 12.09, -1018.066)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_75" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(32.88764, 0.24404, 0, -14.64252, 0.54813, 0, 0, 0, 60, -257.106, 18.095, -1803.589)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_76" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(32.88764, 0.24404, 0, -14.64252, 0.54813, 0, 0, 0, 60, -234.541, 8.049, -349.9)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_77" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(12.78964, 2.03368, 0, -5.69431, 4.56773, 0, 0, 0, 18, -245.795, 15.468, -395.27)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_78" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(45.67728, 0.20337, 0, -20.33683, 0.45677, 0, 0, 0, 40, -260.963, 19.758, -1233.367)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_79" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36.54182, 0.20337, 0, -16.26947, 0.45677, 0, 0, 0, 90, -223.768, 3.198, -990.95)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_80" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, 2.44042, 0, -17.89641, 5.48127, 0, 0, 0, 50, -227.294, 7.778, 142.983)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_81" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, 2.44042, 0, -17.89641, 5.48127, 0, 0, 0, 50, -219.339, 4.236, -1732.1809)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_82" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(128.9717, 0.62374, 0, -27.41378, 2.93444, 0, 0, 0, 2600, -128.905, -26.452, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_83" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(43.0385, 1.24747, 0, -9.14812, 5.86889, 0, 0, 0, 50, -89.265, -29.97, -462.824)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_84" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.69407, 1.03956, 0, -2.91076, 4.89074, 0, 0, 0, 18, -179.64, -11.272, -1515.3859)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_85" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(39.12591, 0.10396, 0, -8.31647, 0.48907, 0, 0, 0, 90, -105.119, -29.412, -1723.413)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_86" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(43.0385, 1.24747, 0, -9.14812, 5.86889, 0, 0, 0, 50, -105.875, -26.439, -1206.668)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_87" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.69407, 1.03956, 0, -2.91076, 4.89074, 0, 0, 0, 18, -145.042, -18.626, -1736.19)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_88" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(48.90739, 0.10396, 0, -10.39559, 0.48907, 0, 0, 0, 40, -152.14, -19.417, -552.849)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_89" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(39.12591, 0.10396, 0, -8.31647, 0.48907, 0, 0, 0, 90, -133.836, -23.308, -1578.533)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_90" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(43.0385, 1.24747, 0, -9.14812, 5.86889, 0, 0, 0, 50, -141.932, -18.775, -1998.744)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_91" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.69407, 1.03956, 0, -2.91076, 4.89074, 0, 0, 0, 18, -131.942, -21.41, -373.557)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_92" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(48.90739, 0.10396, 0, -10.39559, 0.48907, 0, 0, 0, 40, -106.558, -29.106, -1670.996)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_93" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(48.90739, 0.10396, 0, -10.39559, 0.48907, 0, 0, 0, 40, -121.673, -25.893, -2059.645)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_94" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.69407, 1.03956, 0, -2.91076, 4.89074, 0, 0, 0, 18, -90.804, -30.154, -842.985)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_95" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(39.12591, 0.10396, 0, -8.31647, 0.48907, 0, 0, 0, 90, -168.292, -15.984, -382.595)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_96" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(35.21332, 0.12475, 0, -7.48482, 0.58689, 0, 0, 0, 60, -82.05001, -34.264, 27.831)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_97" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.69407, 1.03956, 0, -2.91076, 4.89074, 0, 0, 0, 18, -153.156, -16.901, -130.708)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_98" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(35.21332, 0.12475, 0, -7.48482, 0.58689, 0, 0, 0, 60, -83.005, -34.061, 130.494)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_99" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.69407, 1.03956, 0, -2.91076, 4.89074, 0, 0, 0, 18, -83.782, -31.647, -1654.144)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_100" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.69407, 1.03956, 0, -2.91076, 4.89074, 0, 0, 0, 18, -157.877, -15.897, 61.002)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_101" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(43.0385, 1.24747, 0, -9.14812, 5.86889, 0, 0, 0, 50, -115.202, -24.457, -844.132)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_102" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(35.21332, 0.12475, 0, -7.48482, 0.58689, 0, 0, 0, 60, -157.91, -18.139, -2182.722)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_103" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(35.21332, 0.12475, 0, -7.48482, 0.58689, 0, 0, 0, 60, -162.695, -17.122, -338.955)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_104" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.69407, 1.03956, 0, -2.91076, 4.89074, 0, 0, 0, 18, -143.413, -18.972, -1021.71893)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_105" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(39.12591, 0.10396, 0, -8.31647, 0.48907, 0, 0, 0, 90, -156.418, -18.508, -865.701)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_106" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(35.21332, 0.12475, 0, -7.48482, 0.58689, 0, 0, 0, 60, -137.095, -22.564, -904.47107)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_107" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(39.12591, 0.10396, 0, -8.31647, 0.48907, 0, 0, 0, 90, -112.581, -27.826, -1663.3889)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_108" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(48.90739, 0.10396, 0, -10.39559, 0.48907, 0, 0, 0, 40, -154.098, -19.001, -381.245)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_109" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(131.853, 0, 0, 0, 3, 0, 0, 0, 2600, 0, -40, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_110" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(14, 0, 0, 0, 5, 0, 0, 0, 18, -8.072, -35.7, -1958.0089)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_111" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36, 0, 0, 0, 0.6, 0, 0, 0, 60, -39.796, -37.9, -783.056)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_112" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(50, 0, 0, 0, 0.5, 0, 0, 0, 40, 28.24, -37.95, -1316.905)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_113" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(44, 0, 0, 0, 6, 0, 0, 0, 50, -3.302, -35.2, -1577.0621)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_114" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36, 0, 0, 0, 0.6, 0, 0, 0, 60, 17.452, -37.9, -1492.694)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_115" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(50, 0, 0, 0, 0.5, 0, 0, 0, 40, 23.533, -37.95, -844.762)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_116" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(44, 0, 0, 0, 6, 0, 0, 0, 50, 23.132, -35.2, -919.123)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_117" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(50, 0, 0, 0, 0.5, 0, 0, 0, 40, -24.159, -37.95, 135.991)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_118" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40, 0, 0, 0, 0.5, 0, 0, 0, 90, -43.342, -37.95, -1436.7988)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_119" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(14, 0, 0, 0, 5, 0, 0, 0, 18, -51.983, -35.7, -939.42)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_120" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36, 0, 0, 0, 0.6, 0, 0, 0, 60, -6.969, -37.9, 50.69)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_121" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40, 0, 0, 0, 0.5, 0, 0, 0, 90, 44.937, -37.95, -1637.019)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_122" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36, 0, 0, 0, 0.6, 0, 0, 0, 60, 41.822, -37.9, -1633.5621)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_123" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(44, 0, 0, 0, 6, 0, 0, 0, 50, 39.061, -35.2, -1906.572)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_124" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36, 0, 0, 0, 0.6, 0, 0, 0, 60, -44.737, -37.9, -896.05493)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_125" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40, 0, 0, 0, 0.5, 0, 0, 0, 90, 16.69, -37.95, 62.146)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_126" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40, 0, 0, 0, 0.5, 0, 0, 0, 90, -40.507, -37.95, -72.954)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_127" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(50, 0, 0, 0, 0.5, 0, 0, 0, 40, -39.527, -37.95, -963.813)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_128" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40, 0, 0, 0, 0.5, 0, 0, 0, 90, -19.35, -37.95, -1259.998)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_129" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(50, 0, 0, 0, 0.5, 0, 0, 0, 40, 29.59, -37.95, 187.07)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_130" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36, 0, 0, 0, 0.6, 0, 0, 0, 60, -37.541, -37.9, -2222.279)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_131" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(14, 0, 0, 0, 5, 0, 0, 0, 18, 51.831, -35.7, -793.853)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_132" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36, 0, 0, 0, 0.6, 0, 0, 0, 60, 18.42, -37.9, -417.375)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_133" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36, 0, 0, 0, 0.6, 0, 0, 0, 60, 15.058, -37.9, -1686.272)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_134" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(44, 0, 0, 0, 6, 0, 0, 0, 50, 35.75, -35.2, -862.14)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_135" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40, 0, 0, 0, 0.5, 0, 0, 0, 90, 33.826, -37.95, -181.878)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_136" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(128.9717, -0.62374, 0, 27.41378, 2.93444, 0, 0, 0, 2600, 128.905, -26.452, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_137" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.69407, -1.03956, 0, 2.91076, 4.89074, 0, 0, 0, 18, 70.838, -34.398, -1227.234)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_138" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(43.0385, -1.24747, 0, 9.14812, 5.86889, 0, 0, 0, 50, 163.26, -14.242, -286.664)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_139" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.69407, -1.03956, 0, 2.91076, 4.89074, 0, 0, 0, 18, 182.731, -10.615, -2248.09)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_140" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.69407, -1.03956, 0, 2.91076, 4.89074, 0, 0, 0, 18, 97.457, -28.74, -929.767)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_141" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(48.90739, -0.10396, 0, 10.39559, 0.48907, 0, 0, 0, 40, 121.622, -25.904, -640.105)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_142" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(43.0385, -1.24747, 0, 9.14812, 5.86889, 0, 0, 0, 50, 157.812, -15.4, -1043.069)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_143" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(43.0385, -1.24747, 0, 9.14812, 5.86889, 0, 0, 0, 50, 107.385, -26.119, -1293.281)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_144" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(39.12591, -0.10396, 0, 8.31647, 0.48907, 0, 0, 0, 90, 147.772, -20.345, -148.72)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_145" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(39.12591, -0.10396, 0, 8.31647, 0.48907, 0, 0, 0, 90, 94.354, -31.7, -440.948)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_146" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(35.21332, -0.12475, 0, 7.48482, 0.58689, 0, 0, 0, 60, 143.485, -21.206, -237.369)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_147" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(39.12591, -0.10396, 0, 8.31647, 0.48907, 0, 0, 0, 90, 162.885, -17.133, -342.42)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_148" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(35.21332, -0.12475, 0, 7.48482, 0.58689, 0, 0, 0, 60, 120.781, -26.031, -1406.878)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_149" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(43.0385, -1.24747, 0, 9.14812, 5.86889, 0, 0, 0, 50, 111.583, -25.226, -1134.198)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_150" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.69407, -1.03956, 0, 2.91076, 4.89074, 0, 0, 0, 18, 150.447, -17.477, -2078.492)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_151" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(35.21332, -0.12475, 0, 7.48482, 0.58689, 0, 0, 0, 60, 172.994, -14.933, -482.344)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_152" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(35.21332, -0.12475, 0, 7.48482, 0.58689, 0, 0, 0, 60, 138.604, -22.243, -83.475)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_153" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(43.0385, -1.24747, 0, 9.14812, 5.86889, 0, 0, 0, 50, 152.438, -16.542, -1353.707)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_154" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(43.0385, -1.24747, 0, 9.14812, 5.86889, 0, 0, 0, 50, 98.003, -28.113, -236.989)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_155" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(39.12591, -0.10396, 0, 8.31647, 0.48907, 0, 0, 0, 90, 84.952, -33.698, -1209.538)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_156" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(43.0385, -1.24747, 0, 9.14812, 5.86889, 0, 0, 0, 50, 127.054, -21.938, -156.101)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_157" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(39.12591, -0.10396, 0, 8.31647, 0.48907, 0, 0, 0, 90, 146.86, -20.539, -2055.396)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_158" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(35.21332, -0.12475, 0, 7.48482, 0.58689, 0, 0, 0, 60, 126.18, -24.884, -754.119)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_159" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.69407, -1.03956, 0, 2.91076, 4.89074, 0, 0, 0, 18, 97.468, -28.738, -1149.882)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_160" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(39.12591, -0.10396, 0, 8.31647, 0.48907, 0, 0, 0, 90, 161.507, -17.426, -1522.632)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_161" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(48.90739, -0.10396, 0, 10.39559, 0.48907, 0, 0, 0, 40, 103.028, -29.856, -1625.447)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_162" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(48.90739, -0.10396, 0, 10.39559, 0.48907, 0, 0, 0, 40, 156.552, -18.479, -114.515)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_163" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(120.4537, -1.22021, 0, 53.62945, 2.74064, 0, 0, 0, 2600, 252.177, 13.602, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_164" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(45.67728, -0.20337, 0, 20.33683, 0.45677, 0, 0, 0, 40, 286.175, 30.983, -1900.9751)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_165" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, -2.44042, 0, 17.89641, 5.48127, 0, 0, 0, 50, 267.479, 25.669, -1334.391)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_166" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(32.88764, -0.24404, 0, 14.64252, 0.54813, 0, 0, 0, 60, 271.489, 24.499, 88.176)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_167" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36.54182, -0.20337, 0, 16.26947, 0.45677, 0, 0, 0, 90, 250.144, 14.941, -1646.482)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_168" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, -2.44042, 0, 17.89641, 5.48127, 0, 0, 0, 50, 213.689, 1.72, -1442.3179)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_169" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, -2.44042, 0, 17.89641, 5.48127, 0, 0, 0, 50, 287.221, 34.459, -2192.101)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_170" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, -2.44042, 0, 17.89641, 5.48127, 0, 0, 0, 50, 272.284, 27.809, -1061.949)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_171" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(32.88764, -0.24404, 0, 14.64252, 0.54813, 0, 0, 0, 60, 259.928, 19.352, -288.996)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_172" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36.54182, -0.20337, 0, 16.26947, 0.45677, 0, 0, 0, 90, 261.979, 20.21, -433.684)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_173" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(12.78964, -2.03368, 0, 5.69431, 4.56773, 0, 0, 0, 18, 199.983, -4.929, -1931.194)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_174" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36.54182, -0.20337, 0, 16.26947, 0.45677, 0, 0, 0, 90, 270.704, 24.095, -1924.347)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_175" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(12.78964, -2.03368, 0, 5.69431, 4.56773, 0, 0, 0, 18, 226.331, 6.802, -139.462)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_176" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, -2.44042, 0, 17.89641, 5.48127, 0, 0, 0, 50, 211.574, 0.779, -1596.988)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_177" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, -2.44042, 0, 17.89641, 5.48127, 0, 0, 0, 50, 286.163, 33.988, -1598.036)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_178" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(45.67728, -0.20337, 0, 20.33683, 0.45677, 0, 0, 0, 40, 241.736, 11.197, -2147.062)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_179" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(12.78964, -2.03368, 0, 5.69431, 4.56773, 0, 0, 0, 18, 265.185, 24.101, -1071.298)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_180" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36.54182, -0.20337, 0, 16.26947, 0.45677, 0, 0, 0, 90, 242.29, 11.444, -1751.9569)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_181" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(12.78964, -2.03368, 0, 5.69431, 4.56773, 0, 0, 0, 18, 199.576, -5.111, -93.639)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_182" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(32.88764, -0.24404, 0, 14.64252, 0.54813, 0, 0, 0, 60, 249.35, 14.642, -1480.668)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_183" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, -2.44042, 0, 17.89641, 5.48127, 0, 0, 0, 50, 286.933, 34.331, -85.409)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_184" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, -2.44042, 0, 17.89641, 5.48127, 0, 0, 0, 50, 249.33, 17.589, -450.93)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_185" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(36.54182, -0.20337, 0, 16.26947, 0.45677, 0, 0, 0, 90, 250.117, 14.929, -836.406)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_186" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, -2.44042, 0, 17.89641, 5.48127, 0, 0, 0, 50, 290.033, 35.711, -1668.6809)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_187" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(32.88764, -0.24404, 0, 14.64252, 0.54813, 0, 0, 0, 60, 268.235, 23.05, 65.393)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_188" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(32.88764, -0.24404, 0, 14.64252, 0.54813, 0, 0, 0, 60, 266.219, 22.153, -1033.085)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_189" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.196, -2.44042, 0, 17.89641, 5.48127, 0, 0, 0, 50, 248.492, 17.215, -170.488)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_190" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(106.67132, -1.17557, 0, 77.50125, 1.61803, 0, 0, 0, 2600, 364.427, 78.409, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_191" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(88.22687, -1.48629, 0, 97.98588, 1.33826, 0, 0, 0, 2600, 460.75, 165.139, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_192" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(65.92649, -1.73205, 0, 114.18805, 1, 0, 0, 0, 2600, 536.936, 270, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_193" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.74482, -1.90211, 0, 125.39966, 0.61803, 0, 0, 0, 2600, 589.655, 388.41, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_194" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.78239, -1.98904, 0, 131.13069, 0.20906, 0, 0, 0, 2600, 616.604, 515.192, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_195" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-13.7824, -2.98357, 0, 131.13069, -0.31359, 0, 0, 0, 2600, 616.604, 644.808, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_196" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-5.22643, -0.49726, 0, 49.7261, -0.05226, 0, 0, 0, 40, 617.136, 620.127, -2183.183)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_197" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-5.22643, -0.49726, 0, 49.7261, -0.05226, 0, 0, 0, 40, 614.017, 649.807, -1935.037)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_198" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-1.4634, -4.97261, 0, 13.92331, -0.52264, 0, 0, 0, 18, 607.061, 694.459, -1793.42)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_199" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.18114, -0.49726, 0, 39.78088, -0.05226, 0, 0, 0, 90, 615.553, 635.196, -1621.31)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_200" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-5.22643, -0.49726, 0, 49.7261, -0.05226, 0, 0, 0, 40, 613.932, 650.615, -938.477)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_201" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.59925, -5.96713, 0, 43.75897, -0.62717, 0, 0, 0, 50, 615.292, 611.369, -1753.692)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_202" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-1.4634, -4.97261, 0, 13.92331, -0.52264, 0, 0, 0, 18, 609.744, 668.931, -1836.779)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_203" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.18114, -0.49726, 0, 39.78088, -0.05226, 0, 0, 0, 90, 615.097, 639.535, -1974.824)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_204" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.59925, -5.96713, 0, 43.75897, -0.62717, 0, 0, 0, 50, 612.521, 637.728, -490.579)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_205" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.59925, -5.96713, 0, 43.75897, -0.62717, 0, 0, 0, 50, 611.986, 642.82, -1336.047)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_206" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, -0.59671, 0, 35.80279, -0.06272, 0, 0, 0, 60, 612.747, 661.414, -562.265)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_207" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, -0.59671, 0, 35.80279, -0.06272, 0, 0, 0, 60, 611.476, 673.50507, -2032.054)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_208" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, -0.59671, 0, 35.80279, -0.06272, 0, 0, 0, 60, 615.209, 637.984, -2105.368)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_209" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-1.4634, -4.97261, 0, 13.92331, -0.52264, 0, 0, 0, 18, 616.975, 600.134, -2012.9092)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_210" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.18114, -0.49726, 0, 39.78088, -0.05226, 0, 0, 0, 90, 612.271, 666.415, -1598.326)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_211" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, -0.59671, 0, 35.80279, -0.06272, 0, 0, 0, 60, 610.151, 686.111, -1765.502)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_212" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, -0.59671, 0, 35.80279, -0.06272, 0, 0, 0, 60, 613.165, 657.434, -1953.189)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_213" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, -0.59671, 0, 35.80279, -0.06272, 0, 0, 0, 60, 610.072, 686.861, -700.515)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_214" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-1.4634, -4.97261, 0, 13.92331, -0.52264, 0, 0, 0, 18, 606.24, 702.273, -1383.839)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_215" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-5.22643, -0.49726, 0, 49.7261, -0.05226, 0, 0, 0, 40, 611.873, 670.207, -1478.966)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_216" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-1.4634, -4.97261, 0, 13.92331, -0.52264, 0, 0, 0, 18, 611.073, 656.295, -562.749)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_217" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-5.22643, -0.49726, 0, 49.7261, -0.05226, 0, 0, 0, 40, 610.296, 685.212, -482.962)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_218" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, -0.59671, 0, 35.80279, -0.06272, 0, 0, 0, 60, 615.352, 636.626, -1965.508)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_219" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-1.4634, -4.97261, 0, 13.92331, -0.52264, 0, 0, 0, 18, 616.842, 601.399, 52.658)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_220" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-1.4634, -4.97261, 0, 13.92331, -0.52264, 0, 0, 0, 18, 609.478, 671.467, -1042.09)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_221" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, -0.59671, 0, 35.80279, -0.06272, 0, 0, 0, 60, 613.817, 651.229, -1241.023)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_222" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.74481, -2.85317, 0, 125.39966, -0.92705, 0, 0, 0, 2600, 589.655, 771.59106, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_223" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.32624, -4.75528, 0, 13.31479, -1.54508, 0, 0, 0, 18, 588.782, 760.362, -1956.874)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_224" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.32624, -4.75528, 0, 13.31479, -1.54508, 0, 0, 0, 18, 575.084, 802.52, 112.031)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_225" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-12.36068, -0.47553, 0, 38.04226, -0.15451, 0, 0, 0, 90, 574.755, 810.816, -949.47)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_226" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.12461, -0.57063, 0, 34.23804, -0.18541, 0, 0, 0, 60, 587.55, 771.274, -366.409)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_227" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.32624, -4.75528, 0, 13.31479, -1.54508, 0, 0, 0, 18, 582.097, 780.937, -1479.2659)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_228" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.32624, -4.75528, 0, 13.31479, -1.54508, 0, 0, 0, 18, 597.201, 734.451, -490.077)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_229" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-15.45085, -0.47553, 0, 47.55283, -0.15451, 0, 0, 0, 40, 592.37, 756.6, -2071.958)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_230" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-15.45085, -0.47553, 0, 47.55283, -0.15451, 0, 0, 0, 40, 575.154, 809.588, -475.544)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_231" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-15.45085, -0.47553, 0, 47.55283, -0.15451, 0, 0, 0, 40, 590.141, 763.46094, -1279.996)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_232" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-13.59675, -5.70634, 0, 41.84649, -1.8541, 0, 0, 0, 50, 594.752, 740.372, -1103.903)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_233" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-13.59675, -5.70634, 0, 41.84649, -1.8541, 0, 0, 0, 50, 595.087, 739.34, -1744.557)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_234" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-13.59675, -5.70634, 0, 41.84649, -1.8541, 0, 0, 0, 50, 592.425, 747.532, -411.919)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_235" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.12461, -0.57063, 0, 34.23804, -0.18541, 0, 0, 0, 60, 590.67, 761.672, -598.112)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_236" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.32624, -4.75528, 0, 13.31479, -1.54508, 0, 0, 0, 18, 584.528, 773.454, -2066.043)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_237" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-13.59675, -5.70634, 0, 41.84649, -1.8541, 0, 0, 0, 50, 577.484, 793.515, -1217.666)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_238" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.32624, -4.75528, 0, 13.31479, -1.54508, 0, 0, 0, 18, 583.897, 775.396, -201.072)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_239" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.12461, -0.57063, 0, 34.23804, -0.18541, 0, 0, 0, 60, 591.498, 759.124, -223.02)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_240" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-15.45085, -0.47553, 0, 47.55283, -0.15451, 0, 0, 0, 40, 581.376, 790.436, -512.589)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_241" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-12.36068, -0.47553, 0, 38.04226, -0.15451, 0, 0, 0, 90, 593.865, 752, -955.69507)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_242" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.12461, -0.57063, 0, 34.23804, -0.18541, 0, 0, 0, 60, 600.367, 731.828, 2.719)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_243" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-12.36068, -0.47553, 0, 38.04226, -0.15451, 0, 0, 0, 90, 584.645, 780.376, -1566.294)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_244" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.12461, -0.57063, 0, 34.23804, -0.18541, 0, 0, 0, 60, 577.261, 802.94, -906.629)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_245" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-12.36068, -0.47553, 0, 38.04226, -0.15451, 0, 0, 0, 90, 595.846, 745.904, -2124.641)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_246" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-15.45085, -0.47553, 0, 47.55283, -0.15451, 0, 0, 0, 40, 575.835, 807.49, 63.994)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_247" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.12461, -0.57063, 0, 34.23804, -0.18541, 0, 0, 0, 60, 574.853, 810.352, -1941.982)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_248" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-12.36068, -0.47553, 0, 38.04226, -0.15451, 0, 0, 0, 90, 577.444, 802.54, -1881.658)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_249" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-65.92651, -2.59808, 0, 114.18804, -1.5, 0, 0, 0, 2600, 536.936, 890, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_250" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-25.00001, -0.43301, 0, 43.30127, -0.25, 0, 0, 0, 40, 529.345, 899.048, -401.45)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_251" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-20, -0.43301, 0, 34.64102, -0.25, 0, 0, 0, 90, 524.031, 908.252, -2181.163)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_252" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-25.00001, -0.43301, 0, 43.30127, -0.25, 0, 0, 0, 40, 540.641, 879.482, -625.712)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_253" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-18, -0.51962, 0, 31.17692, -0.3, 0, 0, 0, 60, 534.254, 890.444, -377.472)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_254" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-7, -4.33013, 0, 12.12436, -2.5, 0, 0, 0, 18, 555.879, 848.59, -112.958)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_255" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-22, -5.19615, 0, 38.10512, -3, 0, 0, 0, 50, 543.821, 868.475, -831.283)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_256" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-7, -4.33013, 0, 12.12436, -2.5, 0, 0, 0, 18, 530.963, 891.74493, -2137.933)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_257" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-18, -0.51962, 0, 31.17692, -0.3, 0, 0, 0, 60, 528.981, 899.577, -920.112)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_258" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-18, -0.51962, 0, 31.17692, -0.3, 0, 0, 0, 60, 516.344, 921.465, -1087.247)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_259" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-7, -4.33013, 0, 12.12436, -2.5, 0, 0, 0, 18, 541.159, 874.085, -2223.618)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_260" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-18, -0.51962, 0, 31.17692, -0.3, 0, 0, 0, 60, 550.012, 863.152, -71.57701)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_261" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-20, -0.43301, 0, 34.64102, -0.25, 0, 0, 0, 90, 529.06, 899.542, 227.601)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_262" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-20, -0.43301, 0, 34.64102, -0.25, 0, 0, 0, 90, 515.466, 923.087, 24.801)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_263" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-20, -0.43301, 0, 34.64102, -0.25, 0, 0, 0, 90, 536.905, 885.95306, -50.261)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_264" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-18, -0.51962, 0, 31.17692, -0.3, 0, 0, 0, 60, 540.659, 879.352, -1659.476)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_265" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-7, -4.33013, 0, 12.12436, -2.5, 0, 0, 0, 18, 553.092, 853.41693, -556.653)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_266" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-22, -5.19615, 0, 38.10512, -3, 0, 0, 0, 50, 539.347, 876.224, -2175.097)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_267" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-18, -0.51962, 0, 31.17692, -0.3, 0, 0, 0, 60, 553.676, 856.80493, -1575.341)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_268" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-18, -0.51962, 0, 31.17692, -0.3, 0, 0, 0, 60, 545.019, 871.8, -151.831)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_269" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-20, -0.43301, 0, 34.64102, -0.25, 0, 0, 0, 90, 529.099, 899.473, 173.874)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_270" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-18, -0.51962, 0, 31.17692, -0.3, 0, 0, 0, 60, 540.891, 878.949, 131.951)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_271" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-22, -5.19615, 0, 38.10512, -3, 0, 0, 0, 50, 523.483, 903.7, -617.351)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_272" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-20, -0.43301, 0, 34.64102, -0.25, 0, 0, 0, 90, 528.377, 900.725, -1449.057)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_273" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-22, -5.19615, 0, 38.10512, -3, 0, 0, 0, 50, 547.182, 862.653, -436.747)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_274" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-18, -0.51962, 0, 31.17692, -0.3, 0, 0, 0, 60, 512.533, 928.066, -1047.074)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_275" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-18, -0.51962, 0, 31.17692, -0.3, 0, 0, 0, 60, 514.99, 923.811, 164.321)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_276" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-88.22688, -2.22943, 0, 97.98587, -2.00739, 0, 0, 0, 2600, 460.75, 994.861, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_277" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-24.08871, -0.44589, 0, 26.75322, -0.40148, 0, 0, 0, 60, 476.285, 974.46893, -810.30707)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_278" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-24.08871, -0.44589, 0, 26.75322, -0.40148, 0, 0, 0, 60, 462.586, 989.684, 54.298)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_279" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-9.36783, -3.71572, 0, 10.40403, -3.34565, 0, 0, 0, 18, 447.223, 1003.458, -1297.651)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_280" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, -0.37157, 0, 37.15724, -0.33457, 0, 0, 0, 40, 480.376, 970, -1735.401)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_281" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.44175, -4.45887, 0, 32.69837, -4.01478, 0, 0, 0, 50, 484.804, 960.973, 167)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_282" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, -0.37157, 0, 37.15724, -0.33457, 0, 0, 0, 40, 478.376, 972.22107, -638.448)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_283" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-26.76523, -0.37157, 0, 29.72579, -0.33457, 0, 0, 0, 90, 480.657, 969.688, -1962.541)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_284" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.44175, -4.45887, 0, 32.69837, -4.01478, 0, 0, 0, 50, 471.63, 975.604, -2179.39)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_285" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-24.08871, -0.44589, 0, 26.75322, -0.40148, 0, 0, 0, 60, 436.479, 1018.678, -773.645)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_286" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.44175, -4.45887, 0, 32.69837, -4.01478, 0, 0, 0, 50, 473.086, 973.98694, -2160.702)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_287" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, -0.37157, 0, 37.15724, -0.33457, 0, 0, 0, 40, 472.835, 978.376, -198.706)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_288" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-24.08871, -0.44589, 0, 26.75322, -0.40148, 0, 0, 0, 60, 436.609, 1018.534, -2071.826)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_289" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-24.08871, -0.44589, 0, 26.75322, -0.40148, 0, 0, 0, 60, 451.734, 1001.736, -2155.301)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_290" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-26.76523, -0.37157, 0, 29.72579, -0.33457, 0, 0, 0, 90, 481.7, 968.53, -2106.967)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_291" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-24.08871, -0.44589, 0, 26.75322, -0.40148, 0, 0, 0, 60, 468.433, 983.19, -809.124)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_292" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-26.76523, -0.37157, 0, 29.72579, -0.33457, 0, 0, 0, 90, 431.579, 1024.195, 247.856)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_293" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-24.08871, -0.44589, 0, 26.75322, -0.40148, 0, 0, 0, 60, 455.758, 997.267, -1481.9548)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_294" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, -0.37157, 0, 37.15724, -0.33457, 0, 0, 0, 40, 451.693, 1001.856, -1792.175)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_295" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-26.76523, -0.37157, 0, 29.72579, -0.33457, 0, 0, 0, 90, 428.914, 1027.155, -1607.324)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_296" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, -0.37157, 0, 37.15724, -0.33457, 0, 0, 0, 40, 470.63, 980.824, -1013.496)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_297" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, -0.37157, 0, 37.15724, -0.33457, 0, 0, 0, 40, 484.248, 965.701, -255.163)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_298" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-9.36783, -3.71572, 0, 10.40403, -3.34565, 0, 0, 0, 18, 495.218, 950.154, -1307.99)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_299" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, -0.37157, 0, 37.15724, -0.33457, 0, 0, 0, 40, 456.31, 996.72906, -947.44293)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_300" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-9.36783, -3.71572, 0, 10.40403, -3.34565, 0, 0, 0, 18, 488.76, 957.327, -534.791)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_301" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-24.08871, -0.44589, 0, 26.75322, -0.40148, 0, 0, 0, 60, 436.123, 1019.07294, -863.232)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_302" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.44175, -4.45887, 0, 32.69837, -4.01478, 0, 0, 0, 50, 446.241, 1003.801, 159.659)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_303" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-106.67133, -1.76336, 0, 77.50124, -2.42705, 0, 0, 0, 2600, 364.427, 1081.591, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_304" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.45085, -0.29389, 0, 29.38926, -0.40451, 0, 0, 0, 40, 370.915, 1074.343, -427.628)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_305" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.12462, -0.35267, 0, 21.16027, -0.48541, 0, 0, 0, 60, 389.673, 1060.653, -390.365)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_306" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-32.36068, -0.29389, 0, 23.51141, -0.40451, 0, 0, 0, 90, 327.328, 1106.01, -1788.289)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_307" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.45085, -0.29389, 0, 29.38926, -0.40451, 0, 0, 0, 40, 366.195, 1077.772, -1599.754)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_308" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-32.36068, -0.29389, 0, 23.51141, -0.40451, 0, 0, 0, 90, 365.968, 1077.937, -149.587)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_309" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-32.36068, -0.29389, 0, 23.51141, -0.40451, 0, 0, 0, 90, 397.604, 1054.952, -676.3591)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_310" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.45085, -0.29389, 0, 29.38926, -0.40451, 0, 0, 0, 40, 375.223, 1071.213, -1951.519)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_311" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.45085, -0.29389, 0, 29.38926, -0.40451, 0, 0, 0, 40, 385.827, 1063.508, -2091.032)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_312" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.12462, -0.35267, 0, 21.16027, -0.48541, 0, 0, 0, 60, 391.79, 1059.114, -792.104)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_313" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.32624, -2.93893, 0, 8.22899, -4.04509, 0, 0, 0, 18, 335.406, 1097.361, -1667.8508)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_314" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-32.36068, -0.29389, 0, 23.51141, -0.40451, 0, 0, 0, 90, 330.686, 1103.571, -1891.916)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_315" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-32.36068, -0.29389, 0, 23.51141, -0.40451, 0, 0, 0, 90, 381.157, 1066.901, -1323.861)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_316" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.32624, -2.93893, 0, 8.22899, -4.04509, 0, 0, 0, 18, 350.773, 1086.196, -1131.338)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_317" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-35.59675, -3.52671, 0, 25.86255, -4.8541, 0, 0, 0, 50, 374.94, 1068.019, -1295.818)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_318" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-35.59675, -3.52671, 0, 25.86255, -4.8541, 0, 0, 0, 50, 347.621, 1087.868, -1348.822)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_319" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.32624, -2.93893, 0, 8.22899, -4.04509, 0, 0, 0, 18, 354.108, 1083.773, 59.11)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_320" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.32624, -2.93893, 0, 8.22899, -4.04509, 0, 0, 0, 18, 377.157, 1067.027, -1515.7012)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_321" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-35.59675, -3.52671, 0, 25.86255, -4.8541, 0, 0, 0, 50, 370.25, 1071.427, -1107.977)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_322" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.12462, -0.35267, 0, 21.16027, -0.48541, 0, 0, 0, 60, 375.061, 1071.268, -2193.609)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_323" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.45085, -0.29389, 0, 29.38926, -0.40451, 0, 0, 0, 40, 366.487, 1077.56, -1114.854)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_324" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-35.59675, -3.52671, 0, 25.86255, -4.8541, 0, 0, 0, 50, 380.757, 1063.793, -678.15106)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_325" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.12462, -0.35267, 0, 21.16027, -0.48541, 0, 0, 0, 60, 338.329, 1097.956, -752.587)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_326" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.12462, -0.35267, 0, 21.16027, -0.48541, 0, 0, 0, 60, 363.763, 1079.477, -30.774)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_327" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.32624, -2.93893, 0, 8.22899, -4.04509, 0, 0, 0, 18, 336.881, 1096.289, -441.31)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_328" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-35.59675, -3.52671, 0, 25.86255, -4.8541, 0, 0, 0, 50, 358.707, 1079.813, -143.686)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_329" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.32624, -2.93893, 0, 8.22899, -4.04509, 0, 0, 0, 18, 366.032, 1075.11, -399.247)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_330" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-120.45371, -0.81347, 0, 53.62944, -1.82709, 0, 0, 0, 2600, 252.177, 1146.398, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_331" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-128.9717, -0.41582, 0, 27.41377, -1.9563, 0, 0, 0, 2600, 128.905, 1186.452, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_332" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-131.853, 0, 0, 0.00001, -2, 0, 0, 0, 2600, 0, 1200, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_333" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-128.9717, 0.41582, 0, -27.41377, -1.9563, 0, 0, 0, 2600, -128.905, 1186.451, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_334" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-120.45371, 0.81347, 0, -53.62944, -1.82709, 0, 0, 0, 2600, -252.177, 1146.398, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_335" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-106.67133, 1.76336, 0, -77.50124, -2.42705, 0, 0, 0, 2600, -364.427, 1081.59, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_336" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.45085, 0.29389, 0, -29.38926, -0.40451, 0, 0, 0, 40, -330.569, 1103.656, -2163.798)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_337" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.45085, 0.29389, 0, -29.38926, -0.40451, 0, 0, 0, 40, -383.666, 1065.079, -428.532)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_338" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.32624, 2.93893, 0, -8.22899, -4.04509, 0, 0, 0, 18, -399.21, 1051.004, 135.121)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_339" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.12462, 0.35267, 0, -21.16027, -0.48541, 0, 0, 0, 60, -396.336, 1055.812, 114.212)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_340" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.32624, 2.93893, 0, -8.22899, -4.04509, 0, 0, 0, 18, -387.153, 1059.764, -1496.048)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_341" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.32624, 2.93893, 0, -8.22899, -4.04509, 0, 0, 0, 18, -398.855, 1051.262, -561.14)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_342" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-35.59675, 3.52671, 0, -25.86255, -4.8541, 0, 0, 0, 50, -363.894, 1076.044, -593.242)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_343" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.32624, 2.93893, 0, -8.22899, -4.04509, 0, 0, 0, 18, -333.797, 1098.529, -255.281)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_344" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-32.36068, 0.29389, 0, -23.51141, -0.40451, 0, 0, 0, 90, -385.807, 1063.523, -312.065)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_345" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-35.59675, 3.52671, 0, -25.86255, -4.8541, 0, 0, 0, 50, -326.134, 1103.478, -789.024)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_346" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.45085, 0.29389, 0, -29.38926, -0.40451, 0, 0, 0, 40, -333.704, 1101.378, -369.25)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_347" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.45085, 0.29389, 0, -29.38926, -0.40451, 0, 0, 0, 40, -375.22, 1071.215, -222.26)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_348" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.32624, 2.93893, 0, -8.22899, -4.04509, 0, 0, 0, 18, -339.962, 1094.05, 240.477)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_349" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.12462, 0.35267, 0, -21.16027, -0.48541, 0, 0, 0, 60, -338.868, 1097.564, -668.121)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_350" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.45085, 0.29389, 0, -29.38926, -0.40451, 0, 0, 0, 40, -332.429, 1102.305, -1888.823)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_351" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-35.59675, 3.52671, 0, -25.86255, -4.8541, 0, 0, 0, 50, -326.264, 1103.384, -1982.1979)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_352" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-35.59675, 3.52671, 0, -25.86255, -4.8541, 0, 0, 0, 50, -380.003, 1064.341, -227.189)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_353" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.45085, 0.29389, 0, -29.38926, -0.40451, 0, 0, 0, 40, -348.621, 1090.54, -754.6091)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_354" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-35.59675, 3.52671, 0, -25.86255, -4.8541, 0, 0, 0, 50, -351.197, 1085.27, -1879.092)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_355" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-35.59675, 3.52671, 0, -25.86255, -4.8541, 0, 0, 0, 50, -332.118, 1099.131, -153.312)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_356" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.32624, 2.93893, 0, -8.22899, -4.04509, 0, 0, 0, 18, -401.327, 1049.466, -2189.195)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_357" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.45085, 0.29389, 0, -29.38926, -0.40451, 0, 0, 0, 40, -340.325, 1096.568, -2229.085)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_358" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.12462, 0.35267, 0, -21.16027, -0.48541, 0, 0, 0, 60, -336.738, 1099.112, -491.252)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_359" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.32624, 2.93893, 0, -8.22899, -4.04509, 0, 0, 0, 18, -406.388, 1045.789, -2014.7489)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_360" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-32.36068, 0.29389, 0, -23.51141, -0.40451, 0, 0, 0, 90, -354.637, 1086.169, -1460.926)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_361" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-32.36068, 0.29389, 0, -23.51141, -0.40451, 0, 0, 0, 90, -380.804, 1067.158, -102.283)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_362" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-88.22688, 2.22943, 0, -97.98587, -2.00739, 0, 0, 0, 2600, -460.75, 994.861, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_363" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-26.76523, 0.37157, 0, -29.72579, -0.33457, 0, 0, 0, 90, -473.087, 978.095, -593.314)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_364" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, 0.37157, 0, -37.15724, -0.33457, 0, 0, 0, 40, -455.448, 997.686, -1580.23)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_365" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, 0.37157, 0, -37.15724, -0.33457, 0, 0, 0, 40, -460.012, 992.61707, -2186.845)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_366" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-9.36783, 3.71572, 0, -10.40403, -3.34565, 0, 0, 0, 18, -444.995, 1005.932, -2228.9)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_367" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, 0.37157, 0, -37.15724, -0.33457, 0, 0, 0, 40, -469.184, 982.43, -1220.577)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_368" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-24.08871, 0.44589, 0, -26.75322, -0.40148, 0, 0, 0, 60, -463.57, 988.59, -1921.1979)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_369" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-26.76523, 0.37157, 0, -29.72579, -0.33457, 0, 0, 0, 90, -450.348, 1003.35, -255.558)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_370" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.44175, 4.45887, 0, -32.69837, -4.01478, 0, 0, 0, 50, -434.996, 1016.29, -731.085)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_371" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-26.76523, 0.37157, 0, -29.72579, -0.33457, 0, 0, 0, 90, -449.642, 1004.134, -1316.625)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_372" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-9.36783, 3.71572, 0, -10.40403, -3.34565, 0, 0, 0, 18, -472.991, 974.84, -2028.541)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_373" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, 0.37157, 0, -37.15724, -0.33457, 0, 0, 0, 40, -480.042, 970.371, -1712.45)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_374" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-26.76523, 0.37157, 0, -29.72579, -0.33457, 0, 0, 0, 90, -471.437, 979.928, -1808.1649)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_375" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, 0.37157, 0, -37.15724, -0.33457, 0, 0, 0, 40, -439.614, 1015.27094, -1772.667)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_376" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-9.36783, 3.71572, 0, -10.40403, -3.34565, 0, 0, 0, 18, -442.662, 1008.523, -1376.9569)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_377" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-24.08871, 0.44589, 0, -26.75322, -0.40148, 0, 0, 0, 60, -458.622, 994.086, -115.175)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_378" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, 0.37157, 0, -37.15724, -0.33457, 0, 0, 0, 40, -444.272, 1010.098, -1784.161)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_379" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.44175, 4.45887, 0, -32.69837, -4.01478, 0, 0, 0, 50, -449.466, 1000.21893, -648.019)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_380" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.44175, 4.45887, 0, -32.69837, -4.01478, 0, 0, 0, 50, -427.811, 1024.27, -2231.014)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_381" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.44175, 4.45887, 0, -32.69837, -4.01478, 0, 0, 0, 50, -439.32, 1011.488, -1152.348)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_382" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.44175, 4.45887, 0, -32.69837, -4.01478, 0, 0, 0, 50, -456.966, 991.89, -1619.656)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_383" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.44175, 4.45887, 0, -32.69837, -4.01478, 0, 0, 0, 50, -471.385, 975.87506, -829.568)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_384" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-29.44175, 4.45887, 0, -32.69837, -4.01478, 0, 0, 0, 50, -455.448, 993.575, -1606.97)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_385" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-9.36783, 3.71572, 0, -10.40403, -3.34565, 0, 0, 0, 18, -422.041, 1031.426, -2220.716)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_386" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-24.08871, 0.44589, 0, -26.75322, -0.40148, 0, 0, 0, 60, -479.825, 970.538, -1489.59)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_387" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-9.36783, 3.71572, 0, -10.40403, -3.34565, 0, 0, 0, 18, -457.972, 991.52, -1262.995)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_388" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-33.45654, 0.37157, 0, -37.15724, -0.33457, 0, 0, 0, 40, -439.038, 1015.91, -1679.4219)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_389" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-65.92651, 2.59808, 0, -114.18804, -1.5, 0, 0, 0, 2600, -536.936, 890, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_390" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-20, 0.43301, 0, -34.64102, -0.25, 0, 0, 0, 90, -545.582, 870.924, -1531.152)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_391" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-18, 0.51962, 0, -31.17692, -0.3, 0, 0, 0, 60, -549.116, 864.704, -1403.521)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_392" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-18, 0.51962, 0, -31.17692, -0.3, 0, 0, 0, 60, -514.245, 925.102, 236.397)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_393" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-25.00001, 0.43301, 0, -43.30127, -0.25, 0, 0, 0, 40, -551.385, 860.874, -1796.84)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_394" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-7, 4.33013, 0, -12.12436, -2.5, 0, 0, 0, 18, -523.554, 904.577, -688.759)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_395" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-22, 5.19615, 0, -38.10512, -3, 0, 0, 0, 50, -518.162, 912.91693, -719.949)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_396" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-25.00001, 0.43301, 0, -43.30127, -0.25, 0, 0, 0, 40, -530.199, 897.569, 210.462)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_397" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-22, 5.19615, 0, -38.10512, -3, 0, 0, 0, 50, -516.31, 916.12494, -2145.048)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_398" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-7, 4.33013, 0, -12.12436, -2.5, 0, 0, 0, 18, -552.623, 854.22906, -1567.416)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_399" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-20, 0.43301, 0, -34.64102, -0.25, 0, 0, 0, 90, -533.855, 891.236, -1281.225)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_400" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-20, 0.43301, 0, -34.64102, -0.25, 0, 0, 0, 90, -539.965, 880.652, -435.225)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_401" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-25.00001, 0.43301, 0, -43.30127, -0.25, 0, 0, 0, 40, -550.674, 862.106, -972.71893)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_402" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-20, 0.43301, 0, -34.64102, -0.25, 0, 0, 0, 90, -540.771, 879.257, -174.061)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_403" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-7, 4.33013, 0, -12.12436, -2.5, 0, 0, 0, 18, -508.494, 930.663, -770.64)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_404" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-22, 5.19615, 0, -38.10512, -3, 0, 0, 0, 50, -542.397, 870.941, -777.84106)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_405" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-18, 0.51962, 0, -31.17692, -0.3, 0, 0, 0, 60, -554.94, 854.616, -1667.944)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_406" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-22, 5.19615, 0, -38.10512, -3, 0, 0, 0, 50, -523.085, 904.39, -2073.044)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_407" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-22, 5.19615, 0, -38.10512, -3, 0, 0, 0, 50, -548.032, 861.181, 231.756)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_408" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-22, 5.19615, 0, -38.10512, -3, 0, 0, 0, 50, -515.574, 917.399, -1584.615)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_409" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-7, 4.33013, 0, -12.12436, -2.5, 0, 0, 0, 18, -508.24, 931.103, -349.936)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_410" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-7, 4.33013, 0, -12.12436, -2.5, 0, 0, 0, 18, -526.056, 900.24493, -815.842)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_411" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-22, 5.19615, 0, -38.10512, -3, 0, 0, 0, 50, -535.686, 882.566, -356.952)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_412" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-22, 5.19615, 0, -38.10512, -3, 0, 0, 0, 50, -526.564, 898.364, -1763.788)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_413" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-25.00001, 0.43301, 0, -43.30127, -0.25, 0, 0, 0, 40, -516.099, 921.99, -1514.937)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_414" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-22, 5.19615, 0, -38.10512, -3, 0, 0, 0, 50, -550.779, 856.422, -196.461)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_415" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-7, 4.33013, 0, -12.12436, -2.5, 0, 0, 0, 18, -552.093, 855.148, -1005.514)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_416" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-40.74481, 2.85317, 0, -125.39966, -0.92705, 0, 0, 0, 2600, -589.655, 771.59106, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_417" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-15.45085, 0.47553, 0, -47.55283, -0.15451, 0, 0, 0, 40, -593.485, 753.17, -1317.037)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_418" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-15.45085, 0.47553, 0, -47.55283, -0.15451, 0, 0, 0, 40, -587.8, 770.66693, -1150.381)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_419" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.12461, 0.57063, 0, -34.23804, -0.18541, 0, 0, 0, 60, -597.134, 741.778, -527.832)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_420" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.32624, 4.75528, 0, -13.31479, -1.54508, 0, 0, 0, 18, -567.71, 825.216, -1829.8901)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_421" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-13.59675, 5.70634, 0, -41.84649, -1.8541, 0, 0, 0, 50, -572.697, 808.249, -1926.173)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_422" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-12.36068, 0.47553, 0, -38.04226, -0.15451, 0, 0, 0, 90, -584.89, 779.622, -1106.388)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_423" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.12461, 0.57063, 0, -34.23804, -0.18541, 0, 0, 0, 60, -589.512, 765.235, -1009.52)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_424" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-12.36068, 0.47553, 0, -38.04226, -0.15451, 0, 0, 0, 90, -590.714, 761.697, -1209.622)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_425" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-12.36068, 0.47553, 0, -38.04226, -0.15451, 0, 0, 0, 90, -601.651, 728.036, -681.937)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_426" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-13.59675, 5.70634, 0, -41.84649, -1.8541, 0, 0, 0, 50, -587.482, 762.74493, -388.639)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_427" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-12.36068, 0.47553, 0, -38.04226, -0.15451, 0, 0, 0, 90, -595.15, 748.045, -2132.052)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_428" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-15.45085, 0.47553, 0, -47.55283, -0.15451, 0, 0, 0, 40, -598.668, 737.217, -1610.736)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_429" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-13.59675, 5.70634, 0, -41.84649, -1.8541, 0, 0, 0, 50, -573.047, 807.173, -1837.684)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_430" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.32624, 4.75528, 0, -13.31479, -1.54508, 0, 0, 0, 18, -572.367, 810.88293, -911.702)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_431" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.12461, 0.57063, 0, -34.23804, -0.18541, 0, 0, 0, 60, -583.268, 784.45306, -1438.172)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_432" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.32624, 4.75528, 0, -13.31479, -1.54508, 0, 0, 0, 18, -568.068, 824.114, -1841.755)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_433" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.12461, 0.57063, 0, -34.23804, -0.18541, 0, 0, 0, 60, -589.901, 764.03906, -845.798)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_434" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.32624, 4.75528, 0, -13.31479, -1.54508, 0, 0, 0, 18, -577.62, 794.715, -2126.871)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_435" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-13.59675, 5.70634, 0, -41.84649, -1.8541, 0, 0, 0, 50, -593.044, 745.626, -336.358)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_436" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-13.59675, 5.70634, 0, -41.84649, -1.8541, 0, 0, 0, 50, -580.061, 785.584, 155.622)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_437" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-15.45085, 0.47553, 0, -47.55283, -0.15451, 0, 0, 0, 40, -591.541, 759.153, -1809.623)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_438" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-13.59675, 5.70634, 0, -41.84649, -1.8541, 0, 0, 0, 50, -584.435, 772.123, -813.58)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_439" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-15.45085, 0.47553, 0, -47.55283, -0.15451, 0, 0, 0, 40, -581.125, 791.209, -1536.877)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_440" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.12461, 0.57063, 0, -34.23804, -0.18541, 0, 0, 0, 60, -582.529, 786.727, -1995.393)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_441" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-13.59675, 5.70634, 0, -41.84649, -1.8541, 0, 0, 0, 50, -596.085, 736.27, -1358.738)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_442" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-11.12461, 0.57063, 0, -34.23804, -0.18541, 0, 0, 0, 60, -579.987, 794.551, -1698.448)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_443" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-13.7824, 2.98357, 0, -131.13069, -0.31359, 0, 0, 0, 2600, -616.604, 644.808, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_8")
+cast_shadow = 0
+
+[node name="box_444" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.59925, 5.96713, 0, -43.75897, -0.62717, 0, 0, 0, 50, -614.154, 622.189, -1055.73)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_445" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.18114, 0.49726, 0, -39.78088, -0.05226, 0, 0, 0, 90, -614.25, 647.592, -1771.377)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_446" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, 0.59671, 0, -35.80279, -0.06272, 0, 0, 0, 60, -612.549, 663.295, -1330.387)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_447" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-1.4634, 4.97261, 0, -13.92331, -0.52264, 0, 0, 0, 18, -614.95, 619.399, -1441.033)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_448" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, 0.59671, 0, -35.80279, -0.06272, 0, 0, 0, 60, -618.787, 603.94, -606.767)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_449" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, 0.59671, 0, -35.80279, -0.06272, 0, 0, 0, 60, -616.079, 629.712, -2.755)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_450" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-1.4634, 4.97261, 0, -13.92331, -0.52264, 0, 0, 0, 18, -612.958, 638.358, -2014.865)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_451" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-1.4634, 4.97261, 0, -13.92331, -0.52264, 0, 0, 0, 18, -606.977, 695.26, -400.335)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_452" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.59925, 5.96713, 0, -43.75897, -0.62717, 0, 0, 0, 50, -612.127, 641.476, -577.308)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_453" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-1.4634, 4.97261, 0, -13.92331, -0.52264, 0, 0, 0, 18, -612.123, 646.3, -818.783)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_454" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.18114, 0.49726, 0, -39.78088, -0.05226, 0, 0, 0, 90, -617.136, 620.126, -2097.692)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_455" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-5.22643, 0.49726, 0, -49.7261, -0.05226, 0, 0, 0, 40, -612.285, 666.283, -971.136)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_456" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.59925, 5.96713, 0, -43.75897, -0.62717, 0, 0, 0, 50, -607.691, 683.68, -657.564)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_457" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, 0.59671, 0, -35.80279, -0.06272, 0, 0, 0, 60, -619.247, 599.562, -1759.996)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_458" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, 0.59671, 0, -35.80279, -0.06272, 0, 0, 0, 60, -614.034, 649.169, -806.372)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_459" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, 0.59671, 0, -35.80279, -0.06272, 0, 0, 0, 60, -615.543, 634.808, -654.219)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_460" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, 0.59671, 0, -35.80279, -0.06272, 0, 0, 0, 60, -611.274, 675.422, -2069.185)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_461" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.59925, 5.96713, 0, -43.75897, -0.62717, 0, 0, 0, 50, -609.457, 666.886, -909.714)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_462" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.18114, 0.49726, 0, -39.78088, -0.05226, 0, 0, 0, 90, -618.91, 603.251, -2144.552)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_463" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.59925, 5.96713, 0, -43.75897, -0.62717, 0, 0, 0, 50, -612.692, 636.102, 100.462)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_13")
+cast_shadow = 0
+
+[node name="box_464" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-3.76303, 0.59671, 0, -35.80279, -0.06272, 0, 0, 0, 60, -616.504, 625.661, -2213.239)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_11")
+cast_shadow = 0
+
+[node name="box_465" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-5.22643, 0.49726, 0, -49.7261, -0.05226, 0, 0, 0, 40, -615.548, 635.242, -771.146)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_466" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.18114, 0.49726, 0, -39.78088, -0.05226, 0, 0, 0, 90, -618.786, 604.428, -471.399)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_467" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-1.4634, 4.97261, 0, -13.92331, -0.52264, 0, 0, 0, 18, -609.989, 666.6, -1636.399)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_10")
+cast_shadow = 0
+
+[node name="box_468" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-4.18114, 0.49726, 0, -39.78088, -0.05226, 0, 0, 0, 90, -612.715, 662.191, -1932.9412)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_12")
+cast_shadow = 0
+
+[node name="box_469" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(-5.22643, 0.49726, 0, -49.7261, -0.05226, 0, 0, 0, 40, -618.613, 606.077, -491.667)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_9")
+cast_shadow = 0
+
+[node name="box_470" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(13.78239, 1.98904, 0, -131.13069, 0.20906, 0, 0, 0, 2600, -616.604, 515.192, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_471" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(40.74482, 1.90211, 0, -125.39966, 0.61803, 0, 0, 0, 2600, -589.655, 388.409, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_472" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(65.92649, 1.73205, 0, -114.18805, 1, 0, 0, 0, 2600, -536.936, 270, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_473" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(88.22687, 1.48629, 0, -97.98588, 1.33826, 0, 0, 0, 2600, -460.75, 165.139, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="box_474" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(106.67132, 1.17557, 0, -77.50125, 1.61803, 0, 0, 0, 2600, -364.427, 78.409, -1000)
+mesh = SubResource("box")
+surface_material_override/0 = SubResource("mat_14")
+cast_shadow = 0
+
+[node name="cylinder_46" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(1260, 0, 0, 0, 0, -1260, 0, 4, -0.00006, 0, 580, -2300)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_15")
+cast_shadow = 0
+
+[node name="cylinder_47" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(5, 0, 0, 0, -0.00011, -5, 0, 2600, 0, 0, 580, -1000)
+mesh = SubResource("cylinder")
+surface_material_override/0 = SubResource("mat_16")
+cast_shadow = 0
+
+[node name="sphere_3" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.22, 0, 0, 0, 0.22, 0, 0, 0, 0.22, -6, 2.6, 6.6)
+mesh = SubResource("sphere")
+surface_material_override/0 = SubResource("mat_17")
+cast_shadow = 0
+
+[node name="sphere_4" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.22, 0, 0, 0, 0.22, 0, 0, 0, 0.22, 0, 2.6, 6.6)
+mesh = SubResource("sphere")
+surface_material_override/0 = SubResource("mat_17")
+cast_shadow = 0
+
+[node name="sphere_5" type="MeshInstance3D" parent="Parts"]
+transform = Transform3D(0.22, 0, 0, 0, 0.22, 0, 0, 0, 0.22, 6, 2.6, 6.6)
+mesh = SubResource("sphere")
+surface_material_override/0 = SubResource("mat_17")
+cast_shadow = 0
+
+[node name="Lights" type="Node3D" parent="."]
+
+[node name="Lamp" type="OmniLight3D" parent="Lights"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 2.6, 6.6)
+light_color = Color(1, 0.78431, 0.5098, 1)
+light_energy = 2.8
+omni_range = 30
+shadow_enabled = false
+
+[node name="Lamp_2" type="OmniLight3D" parent="Lights"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.6, 6.6)
+light_color = Color(1, 0.78431, 0.5098, 1)
+light_energy = 2.8
+omni_range = 30
+shadow_enabled = true
+
+[node name="Lamp_3" type="OmniLight3D" parent="Lights"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6, 2.6, 6.6)
+light_color = Color(1, 0.78431, 0.5098, 1)
+light_energy = 2.8
+omni_range = 30
+shadow_enabled = false
+
+[node name="Sun" type="DirectionalLight3D" parent="Lights"]
+transform = Transform3D(-0.89443, 0.40825, -0.18257, 0, 0.40825, 0.91287, 0.44721, 0.8165, -0.36515, -2, 10, -4)
+light_color = Color(0.58824, 0.66667, 1, 1)
+light_energy = 0.05556
+shadow_enabled = true
+
+[node name="Collision" type="StaticBody3D" parent="."]
+
+[node name="EdgeWest" type="CollisionShape3D" parent="Collision"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -10.85, 2, 1.1)
+shape = SubResource("shape_1")
+
+[node name="EdgeEast" type="CollisionShape3D" parent="Collision"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 10.85, 2, 1.1)
+shape = SubResource("shape_2")
+
+[node name="EdgeNorth" type="CollisionShape3D" parent="Collision"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, -5.75)
+shape = SubResource("shape_3")
+
+[node name="EdgeSouth" type="CollisionShape3D" parent="Collision"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 7.95)
+shape = SubResource("shape_4")
+
+[node name="Solid_1" type="CollisionShape3D" parent="Collision"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -9, 2, -4.3)
+shape = SubResource("shape_5")
+
+[node name="Solid_2" type="CollisionShape3D" parent="Collision"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9, 2, -4.3)
+shape = SubResource("shape_6")
+

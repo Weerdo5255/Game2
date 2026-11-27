@@ -1136,6 +1136,17 @@ impl State {
                 let done = if body["locked"].as_bool().unwrap_or(false) { std::fs::write(&file, "This story is locked in the story editor. Delete this file to unlock it.\n") } else if file.exists() { std::fs::remove_file(&file) } else { Ok(()) };
                 answer(stream, done.map(|_| json!({ "locked": file.exists() })).map_err(|e| e.to_string()))
             }
+            ("POST", "/api/godot") => {
+                // write (or bring up to date) the Godot project for this story
+                let folder = story.parent().unwrap_or(Path::new("."));
+                // (the main story's project sits beside its folder: assets/story.txt and godot/)
+                let dir = if story_id == "main" || story_id.is_empty() { folder.parent().unwrap_or(Path::new(".")).join("godot") } else { folder.join("godot") };
+                let done = self.load(&story).and_then(|(mut doc, _)| {
+                    doc.sanitize();
+                    crate::godot::export(&dir, &doc, Some(&story), self.art_dir(&story).as_deref(), body["force"].as_bool().unwrap_or(false))
+                });
+                answer(stream, done.map(|r| json!({ "folder": dir.display().to_string(), "written": r.written.len(), "kept": r.kept.len(), "notes": r.notes })))
+            }
             ("GET", "/api/history") => respond_json(stream, "200 OK", &self.history(&story)),
             ("POST", "/api/history/snapshot") => answer(stream, take_snapshot(&story, "named", body["label"].as_str().unwrap_or("")).map(|name| json!({ "name": name }))),
             ("GET", "/api/history/get") | ("POST", "/api/history/remove") => {

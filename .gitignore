@@ -11,3 +11,5 @@ __pycache__/
 /stories/.removed
 *.bak
 .removed/
+# Godot's own cache of imported files
+/godot/.godot/

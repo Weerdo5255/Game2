@@ -1,0 +1,25 @@
+; Engine configuration file.
+; The story, its pictures and its places are written here by the game's own tool:
+;   cargo run --release -- --export-godot godot
+; Scenes under places/ and characters/ are yours to edit in Godot: the tool
+; leaves a file that is already there alone unless asked to --force.
+
+config_version=5
+
+[application]
+
+config/name="Below Stairs, Above Stars"
+config/description="A visual novel: the story is data (story/story.json), its places are scenes."
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.3", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1152
+window/size/viewport_height=648
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+
+[rendering]
+
+anti_aliasing/quality/msaa_3d=2

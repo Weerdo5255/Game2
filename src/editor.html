@@ -2409,6 +2409,11 @@ function renderAdmin() {
       el("span", { style: "flex:1" }),
       el("button", { text: "Refresh", onclick: refreshAdmin })),
     el("h2", {}, "This story: " + (me.title || "Untitled story"),
+      el("button", { id: "godotBtn", text: "Export to Godot", title: "Write this story as a Godot 4 project: its pictures as textures, its 3D places as scenes, the story as data", onclick: async () => {
+        if (dirty && !(await save())) return;
+        const force = confirm("Write the Godot project for this story.\n\nOK: also write its scenes and pictures again, replacing any changes made to them in Godot.\nCancel: only bring the story up to date and add what is missing (changes made in Godot are kept).");
+        adminDo(() => api("POST", "/api/godot", { story: storyId, force }), r => `Godot project in ${r.folder}: ${r.written} file(s) written, ${r.kept} kept` + (r.notes.length ? ". " + r.notes.join("; ") : ""));
+      } }),
       el("button", { id: "lockBtn", text: locked ? "🔓 Unlock" : "🔒 Lock", title: "A locked story cannot be saved over or removed until it is unlocked", onclick: () => adminDo(() => api("POST", "/api/admin/lock", { story: storyId, locked: !locked }), r => r.locked ? "Locked: this story cannot be changed" : "Unlocked") })),
     el("div", { class: "stats" }, stat(st.scenes, "scenes"), stat(st.lines, "lines"), stat(st.words.toLocaleString(), "words"), stat("~" + st.minutes + " min", "to read through"), stat(st.choices, "choices"), stat(st.endings, "endings"), stat(doc.characters.length, "characters")),
     st.speakers.length > 0 && el("div", { style: "margin-top:8px;display:flex;flex-wrap:wrap;gap:6px" }, st.speakers.map(sp => el("span", { class: "chip", text: `${sp.name}: ${sp.n}` }))),
