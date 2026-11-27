@@ -359,14 +359,15 @@ pub fn export(dir: &Path, doc: &Doc, story: Option<&Path>, art_dir: Option<&Path
     put(&dir.join("story/story.json"), story_text.as_bytes(), force, true, &mut report, "story/story.json")?;
 
     // pictures: every place the game paints, and every expression of everyone with a portrait
-    for name in art::BACKGROUNDS {
+    let backgrounds = crate::painting::backgrounds_for(story);
+    for name in backgrounds.iter().map(String::as_str) {
         let label = format!("art/bg/{}.png", name);
         let path = dir.join(&label);
         if path.exists() && !force {
             report.kept.push(label);
             continue;
         }
-        let (canvas, _) = art::background(name, art_dir);
+        let (canvas, _) = art::background_of(name, art_dir, story);
         put(&path, &canvas.png_bytes(false)?, true, true, &mut report, &label)?;
     }
     for c in doc.characters.iter().filter(|c| !c.sprite.is_empty()) {
@@ -387,7 +388,7 @@ pub fn export(dir: &Path, doc: &Doc, story: Option<&Path>, art_dir: Option<&Path
     let listed = |d: PathBuf| -> Vec<String> { std::fs::read_dir(d).into_iter().flatten().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).filter(|f| places::model_file(f)).collect() };
     let mut models_there = world.as_ref().map_or(Vec::new(), |w| listed(w.join("models")));
     models_there.extend(listed(dir.join("models")));
-    for name in art::BACKGROUNDS.iter().filter(|_| mode != Mode::Flat) {
+    for name in backgrounds.iter().map(String::as_str).filter(|_| mode != Mode::Flat) {
         if let Some(place) = places::load(world.as_deref(), name) {
             let label = format!("places/{}.tscn", name);
             let missing: Vec<&str> = place.parts.iter().filter(|p| p.shape == "model" && !models_there.contains(&p.file)).map(|p| p.file.as_str()).collect();

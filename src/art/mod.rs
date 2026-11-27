@@ -9,7 +9,7 @@
 mod axis;
 mod ballroom;
 mod dock;
-mod paint;
+pub(crate) mod paint;
 mod pantry;
 mod people;
 mod study;
@@ -80,6 +80,25 @@ pub fn background(name: &str, enhanced: Option<&Path>) -> (Canvas, bool) {
         _ => {}
     }
     (c, true)
+}
+
+/// A background a story can name: the game's own, or one of the story's own
+/// paintings (`paintings/<name>.json` beside `story`). Enhanced art
+/// (`bg_<name>.png`) comes first for either.
+pub fn background_of(name: &str, enhanced: Option<&Path>, story: Option<&Path>) -> (Canvas, bool) {
+    if BACKGROUNDS.contains(&name) {
+        return background(name, enhanced);
+    }
+    if let Some(mut img) = load_enhanced(enhanced, &format!("bg_{}.png", name), W, H) {
+        for p in img.px.iter_mut() {
+            *p |= 0xFF00_0000;
+        }
+        return (img, false);
+    }
+    match story.and_then(|s| crate::painting::load(s, name)) {
+        Some(p) => (p.render(), false),
+        None => background(name, None),
+    }
 }
 
 /// Per-frame animated overlay for a procedural background (cheap: it runs

@@ -224,6 +224,56 @@ properties and art.
 - To play one: `cargo run --release -- --story stories/<name>/story.txt`, or
   use Play in the editor.
 
+### Creating characters and places with Claude or Ollama
+
+**Cast → ✦ Create with AI** designs a new character from a description, and
+**Scenes → ✦ New place with AI** paints a new place. Either can ask Claude
+(through the Claude API) or any model you run with
+[Ollama](https://ollama.com), on this computer or another.
+
+- **A character** comes back as one of the game's six portrait figures,
+  recoloured and reshaped (skin, hair, eyes, coat, face width, jaw, age and
+  so on), with a name, a name colour and a short note on who they are. Look
+  at it, rename it if you like, and **Add to the cast**. The description it
+  was made from is kept as that character's ComfyUI prompt, so the Art view
+  can paint a proper portrait of them.
+- **A place** comes back as a painting made of layers of simple shapes
+  (bands of sky, polygons, soft haze, glowing lamps, stars), drawn by the
+  game's own renderer, so it works in the game, the editor, the Art view and
+  the Godot export like the seven built-in places. Tick **Also build it as a
+  3D room** and the model lays out a room to walk through as well (floor,
+  walls, furniture, lamps), which opens in the World editor. **Add to the
+  story** saves it, and it appears in every Background block's list.
+- A story's own places live beside it: `paintings/<name>.json` for the
+  painting (plain JSON, easy to edit by hand) and `world/<name>.json` for the
+  room. They travel with the story when it is exported, imported or copied.
+  The game's own place names cannot be taken.
+- Whatever the model sends is checked and cleaned by the game's rules
+  before it is used: unknown shapes are left out, numbers are kept within
+  what the renderer draws, ids are made unique.
+
+Setting it up:
+
+- **Claude:** start the editor with your API key in its environment:
+  `ANTHROPIC_API_KEY=... cargo run --release -- --editor`. The key is only
+  ever sent to the Claude API in a request header: it is not written to any
+  file, shown on the page, or logged. The default model is
+  `claude-opus-5-5`; type another model's id in the dialog to use it.
+  `ANTHROPIC_BASE_URL` sends the requests somewhere else (a gateway).
+  Requests are streamed and ask for JSON of a fixed shape. For the models
+  that support it, server-side fallback is turned on, so a request the
+  model declines can be finished by another model instead of failing.
+  A refusal, a busy API (retried a few times) and a missing key are
+  reported plainly in the dialog.
+- **Ollama:** run Ollama and pull a model (`ollama pull qwen3:32b`, say);
+  the dialog lists the models it has. `OLLAMA_HOST` points to it if it is
+  not at `http://127.0.0.1:11434`. Larger models paint better places: a
+  small model may return a sparse painting, and is worth a second try.
+
+To try it with no key and no Ollama, `python3 tools/mock_ai_server.py`
+runs a stand-in for both; point `ANTHROPIC_BASE_URL` and `OLLAMA_HOST` at
+the address it prints.
+
 ### Art: sending assets through ComfyUI
 
 The **Art** button opens a view of every background and every character
@@ -766,6 +816,10 @@ cargo build && node tools/editor_schedule_e2e.js
 
 ```bash
 cargo build && node tools/editor_holdings_e2e.js
+```
+
+```bash
+cargo build && node tools/editor_ai_e2e.js
 ```
 
 ```bash

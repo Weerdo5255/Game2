@@ -201,6 +201,13 @@ label { color: var(--dim); }
 .prow:hover { background: var(--panel2); }
 #toast { position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%); background: #000c; border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; z-index: 30; display: none; max-width: 70vw; }
 #toast.err { border-color: var(--bad); color: var(--bad); }
+#aiDlg { position: absolute; inset: 0; background: #000a; z-index: 45; display: none; place-items: center; }
+#aiDlg.show { display: grid; }
+#aiDlg > div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; width: min(620px, 94vw); max-height: 92vh; overflow: auto; }
+#aiDlg textarea { width: 100%; min-height: 70px; box-sizing: border-box; }
+#aiDlg .made { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+#aiDlg .made img.paint { width: 100%; border-radius: 6px; display: block; }
+#aiDlg .made img.portrait { height: 220px; display: block; margin: 0 auto; }
 #help { position: absolute; inset: 0; background: #000a; z-index: 40; display: none; place-items: center; }
 #help.show { display: grid; }
 #help div { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 22px; max-width: 560px; }
@@ -248,6 +255,7 @@ label { color: var(--dim); }
 <div id="compare"></div>
 <div id="probs"></div>
 <div id="toast"></div>
+<div id="aiDlg"><div id="aiBody"></div></div>
 <div id="help"><div>
   <h2>How this works</h2>
   <ul>
@@ -260,6 +268,7 @@ label { color: var(--dim); }
     <li>The story menu at the top switches between stories, and makes, copies or removes them. Each story has its own file, cast and art.</li>
     <li><b>Art</b> sends this story's backgrounds and characters through ComfyUI, with a choice of workflows, and shows the results beside the game's own paintings.</li>
     <li><b>Sound</b> gives each speaker a voice (a stock voice, or one cloned from a sample recording) and has their lines read out through ComfyUI; it also generates the music tracks that scenes start with a Music block.</li>
+    <li><b>&#10022; Create with AI</b> (Cast) and <b>&#10022; New place with AI</b> (Scenes) ask Claude or a local Ollama model to design a character or paint a new place, optionally with a 3D room. Claude needs the editor started with <code>ANTHROPIC_API_KEY</code> set.</li>
     <li>The story menu can also export the story as a <b>Godot game</b> (.zip): every scene and choice, the pictures, the 3D places and the sound, as a project for Godot 4.3 or later. Choose places as the story sets them, all 2D, or all 3D.</li>
     <li>The story menu's <b>Files</b> group exports the open story as one file (the story alone, or with its pictures and recordings) and imports such a file, or a story text file, as a new story.</li>
     <li><b>Manage</b> lists every story with its size and word count, keeps earlier versions of the open story (a snapshot is taken automatically as you save, and you can take named ones), locks a story against changes, and brings removed stories back.</li>
@@ -1529,10 +1538,10 @@ function renderCast(host) {
     }
     host.append(card);
   });
-  host.append(el("button", { text: "+ Character", onclick: () => change(() => {
+  host.append(el("div", { class: "brow" }, el("button", { text: "+ Character", onclick: () => change(() => {
     const id = uniqueId("x", ["n", ...doc.characters.map(c => c.id)]);
     doc.characters.push({ id, name: "New character", color: "#ffffff", sprite: "", look: {} }); openChar = id;
-  }) }));
+  }) }), el("button", { id: "aiCharBtn", title: "Describe someone and have Claude or a local Ollama model design them", text: "\u2726 Create with AI", onclick: () => openAi("character") })));
 }
 function renderProps(host) {
   host.append(el("div", { class: "sub", style: "color:var(--dim);margin-bottom:8px", text: "Properties are what choices change and conditions test. A consequence is a change to one of them." }));
@@ -1616,6 +1625,7 @@ function renderScenes(host) {
       meta.bgs.map(b => el("div", { class: "brow", style: "margin-top:4px" }, el("span", { style: "flex:1", text: b + (doc.scenes.some(sc => sc.items.some(it => it.t === "bg" && it.name === b)) ? "" : " (not used)") }), placeModeSelect(b))),
       // settings for places the game does not have (a hand-written or imported file): shown so they can be taken out
       Object.keys(doc.locales).filter(b => !meta.bgs.includes(b)).map(b => el("div", { class: "brow", style: "margin-top:4px" }, el("span", { style: "flex:1;color:#ffb070", text: b + " (no such place)" }), el("button", { class: "ghost danger", text: "Remove", onclick: () => change(() => { delete doc.locales[b]; }) })))),
+    el("button", { id: "aiPlaceBtn", style: "margin-top:8px", title: "Describe a place and have Claude or a local Ollama model paint it (and build it in 3D, if you like)", text: "\u2726 New place with AI", onclick: () => openAi("place") }),
     (doc.render === "3d" || Object.values(doc.locales).includes("3d")) && !meta.world3d && el("div", { class: "pmsg warning", style: "margin-top:8px", text: "This build of the game has no 3D engine, so it shows paintings for these places too. Build it with: cargo build --features world3d" })));
   host.append(el("input", { type: "text", class: "filter", placeholder: "Filter scenes…", value: sceneFilter, style: "width:100%;margin-bottom:8px", oninput: ev => { sceneFilter = ev.target.value; const pos = ev.target.selectionStart; renderLeft(); const f = $("#leftBody input.filter"); f.focus(); f.setSelectionRange(pos, pos); } }),
     el("div", { class: "sub", style: "color:var(--dim);margin-bottom:6px", text: "The order matters only where a scene continues into the next one. Drag to reorder, or drag a scene on to a chapter in the main graph to move it there." }));
@@ -1853,6 +1863,96 @@ async function pollJobs() {
   } catch (e) { /* the editor server is gone; keep quiet */ }
   const busy = art.jobs.some(j => j.state === "queued" || j.state === "running");
   if (art.open || sound.open || busy) art.timer = setTimeout(pollJobs, busy ? 900 : 2500);
+}
+// ------------------------------------------------- creating with a language model
+const ai = { status: null, provider: "", model: { claude: "", ollama: "" }, kind: "character", brief: "", want3d: false, busy: false, made: null, error: "" };
+async function openAi(kind) {
+  ai.kind = kind; ai.made = null; ai.error = "";
+  $("#aiDlg").classList.add("show"); renderAi();
+  try { ai.status = await api("GET", "/api/ai"); } catch (e) { ai.status = { claude: { ready: false }, ollama: { ok: false, error: e.message } }; }
+  if (!ai.provider) ai.provider = ai.status.claude.ready || !(ai.status.ollama.ok && ai.status.ollama.models.length) ? "claude" : "ollama";
+  if (!ai.model.ollama && ai.status.ollama.ok) ai.model.ollama = ai.status.ollama.models[0] || "";
+  renderAi();
+}
+function closeAi() { if (!ai.busy) $("#aiDlg").classList.remove("show"); }
+function renderAi() {
+  const host = $("#aiBody"); host.textContent = "";
+  const st = ai.status, place = ai.kind === "place";
+  const claudeNote = !st ? "checking\u2026" : st.claude.ready ? "ready" : "no key: start the editor with ANTHROPIC_API_KEY set";
+  const ollamaNote = !st ? "checking\u2026" : st.ollama.ok ? (st.ollama.models.length ? `${st.ollama.models.length} model(s) at ${st.ollama.host}` : `no models at ${st.ollama.host} (ollama pull one)`) : st.ollama.error;
+  const modelInput = ai.provider === "ollama"
+    ? el("select", { id: "aiModel", style: "flex:1", onchange: ev => ai.model.ollama = ev.target.value }, opts(st && st.ollama.ok ? st.ollama.models : [], ai.model.ollama))
+    : el("input", { id: "aiModel", type: "text", style: "flex:1", placeholder: (st && st.claude.model) || "claude-opus-5-5", value: ai.model.claude, oninput: ev => ai.model.claude = ev.target.value.trim() });
+  appendAll(host,
+    el("h2", { style: "margin-top:0", text: place ? "A new place" : "A new character" }),
+    el("div", { class: "brow" }, el("label", { text: "Ask" }),
+      el("select", { id: "aiProvider", onchange: ev => { ai.provider = ev.target.value; renderAi(); } }, opts([{ value: "claude", label: "Claude (" + claudeNote + ")" }, { value: "ollama", label: "Ollama (" + ollamaNote + ")" }], ai.provider || "claude"))),
+    el("div", { class: "brow", style: "margin-top:6px" }, el("label", { text: "Model" }), modelInput),
+    el("div", { class: "sub", style: "color:var(--dim);margin:10px 0 4px", text: place
+      ? "Describe the place: where it is, the time of day, the light, the mood. It is painted for the game as shapes, and the description is kept as the prompt for ComfyUI."
+      : "Describe who they are: their place in the household, age, temperament, how they look. The game's portrait is reshaped to fit, and the description is kept as the prompt for ComfyUI." }),
+    el("textarea", { id: "aiBrief", placeholder: place ? "e.g. the servants' stair at night, one candle, the green baize door half open" : "e.g. a sharp-eyed housekeeper in her fifties who keeps every key and every secret", oninput: ev => ai.brief = ev.target.value }, ai.brief),
+    place && el("label", { style: "display:flex;gap:6px;align-items:center;margin-top:6px" }, el("input", { id: "aiWant3d", type: "checkbox", checked: ai.want3d, onchange: ev => ai.want3d = ev.target.checked }), "Also build it as a 3D room to walk through"),
+    el("div", { class: "brow", style: "margin-top:10px" },
+      el("button", { id: "aiGo", class: "primary", disabled: ai.busy, text: ai.busy ? "Working\u2026" : ai.made ? "Try again" : "Create", onclick: runAi }),
+      el("span", { style: "flex:1;color:var(--dim);font-size:12px", text: ai.busy ? "This can take a minute or two." : "" }),
+      el("button", { class: "ghost", disabled: ai.busy, text: "Close", onclick: closeAi })),
+    ai.error && el("div", { class: "pmsg error", id: "aiError", style: "margin-top:8px", text: ai.error }),
+    ai.made && (place ? madePlace() : madeCharacter()));
+}
+async function runAi() {
+  if (!ai.brief.trim()) { toast("Say what to make first.", true); return; }
+  ai.busy = true; ai.error = ""; renderAi();
+  try {
+    const body = { story: storyId, provider: ai.provider, model: ai.provider === "ollama" ? ai.model.ollama : ai.model.claude, brief: ai.brief, want3d: ai.want3d };
+    ai.made = await api("POST", "/api/ai/" + ai.kind, body);
+  } catch (e) { ai.error = e.message; }
+  ai.busy = false; renderAi();
+}
+function madeCharacter() {
+  const ch = ai.made.character;
+  ch.id = uniqueId(ch.id, ["n", ...doc.characters.map(c => c.id)]);   // (the cast may have changed meanwhile)
+  return el("div", { class: "made", id: "aiMade" },
+    ch.sprite && el("img", { class: "portrait", src: spriteUrl(ch, "neutral") }),
+    el("div", { class: "grid2", style: "margin-top:8px" },
+      el("label", { text: "Name" }), bindText(el("input", { type: "text", id: "aiName" }), ch, "name"),
+      el("label", { text: "Portrait" }), el("span", { text: (SPRITE_NAMES[ch.sprite] || ch.sprite) + ", reshaped" })),
+    ai.made.bio && el("p", { style: "margin:8px 0", text: ai.made.bio }),
+    ai.made.art_prompt && el("div", { class: "sub", style: "color:var(--dim)", text: "For ComfyUI: " + ai.made.art_prompt }),
+    el("div", { class: "brow", style: "margin-top:8px" }, el("button", { id: "aiAdd", class: "primary", text: "Add to the cast", onclick: addMadeCharacter })));
+}
+async function addMadeCharacter() {
+  const ch = JSON.parse(JSON.stringify(ai.made.character)), prompt = ai.made.art_prompt;
+  ch.id = uniqueId(ch.id, ["n", ...doc.characters.map(c => c.id)]);
+  tab = "cast";
+  change(() => { doc.characters.push(ch); openChar = ch.id; });
+  $("#aiDlg").classList.remove("show"); ai.made = null; ai.brief = "";
+  toast(`${ch.name} joined the cast.`);
+  if (prompt) {
+    // keep the description as this character's ComfyUI prompt (with the story's other choices as they are)
+    try { const r = await api("GET", forStory("/api/art")); adoptPrefs(r.prefs); } catch (e) { return; }
+    prefs.prompts["spr_" + ch.id] = prompt; savePrefs();
+  }
+}
+function madePlace() {
+  const m = ai.made;
+  return el("div", { class: "made", id: "aiMade" },
+    el("img", { class: "paint", src: m.preview }),
+    el("div", { class: "grid2", style: "margin-top:8px" },
+      el("label", { text: "Called" }), el("span", { text: m.painting.title || m.name }),
+      el("label", { text: "Id" }), el("input", { type: "text", id: "aiPlaceName", value: m.name, onchange: ev => m.name = ev.target.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_") }),
+      el("label", { text: "3D room" }), el("span", { text: m.room ? `${m.room.parts.length} part(s), ${m.room.lights.length} light(s)` : "none" })),
+    el("div", { class: "brow", style: "margin-top:8px" }, el("button", { id: "aiAdd", class: "primary", text: "Add to the story", onclick: addMadePlace })));
+}
+async function addMadePlace() {
+  const m = ai.made;
+  try {
+    const r = await api("POST", "/api/ai/place/save", { story: storyId, name: m.name, painting: m.painting, room: m.room });
+    meta.bgs = r.bgs; meta.painted = r.painted;
+    $("#aiDlg").classList.remove("show"); ai.made = null; ai.brief = "";
+    toast(`'${r.name}' is now one of the story's places${r.room ? ", with a 3D room" : ""}: use it in any Background block.`);
+    renderAll();
+  } catch (e) { ai.error = e.message; renderAi(); }
 }
 // Saves go out one after another, and anything that depends on them waits for the last.
 let prefsSaved = Promise.resolve();
@@ -2714,7 +2814,7 @@ function wire() {
     else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") { ev.preventDefault(); if (dirty) save(); }
     else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z" && !typing) { ev.preventDefault(); ev.shiftKey ? redo() : undo(); }
     else if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "f") { ev.preventDefault(); openFind(); }
-    else if (ev.key === "Escape") { closeFind(); $("#probs").classList.remove("show"); $("#help").classList.remove("show"); $("#compare").classList.remove("show"); }
+    else if (ev.key === "Escape") { closeAi(); closeFind(); $("#probs").classList.remove("show"); $("#help").classList.remove("show"); $("#compare").classList.remove("show"); }
   });
   window.addEventListener("beforeunload", ev => { if (dirty || world.dirty) { ev.preventDefault(); ev.returnValue = ""; } });
   window.addEventListener("resize", drawEdges);

@@ -11,7 +11,7 @@ png = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 rodio = { version = "0.20", optional = true, default-features = false, features = ["flac", "vorbis", "wav", "mp3"] }
-ureq = { version = "2", default-features = false, features = ["json"] }
+ureq = { version = "2", default-features = false, features = ["json", "tls"] }
 bevy = { version = "0.16", optional = true, default-features = false, features = [
     "std", "async_executor", "multi_threaded", "bevy_log",
     "bevy_asset", "bevy_color", "bevy_window", "bevy_winit", "x11",

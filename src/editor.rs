@@ -148,6 +148,10 @@ impl Library {
                 }
             }
             let _ = std::fs::copy(source.with_file_name("art.json"), folder.join("art.json"));
+            let (src, target) = (crate::painting::dir(&source), folder.join("paintings"));
+            for e in std::fs::read_dir(&src).into_iter().flatten().filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
+                let _ = std::fs::create_dir_all(&target).and_then(|_| std::fs::copy(e.path(), target.join(e.file_name())).map(|_| ()));
+            }
             if let Ok(entries) = std::fs::read_dir(comfy::enhanced_dir(&source)) {
                 let target = folder.join("enhanced");
                 for e in entries.filter_map(|e| e.ok()).filter(|e| e.path().is_file()) {
@@ -377,6 +381,8 @@ fn carried_file(name: &str) -> Option<(&'static str, &str)> {
         return Some(("world/models", f)).filter(|_| crate::places::model_file(f));
     } else if let Some(f) = name.strip_prefix("world/") {
         ("world", f, &["json"])
+    } else if let Some(f) = name.strip_prefix("paintings/") {
+        ("paintings", f, &["json"])
     } else {
         return None;
     };
@@ -508,8 +514,22 @@ struct Request {
     body: Vec<u8>,
 }
 
-fn problems(doc: &Doc) -> Vec<Problem> {
-    doc.problems(art::EXPRS, art::BACKGROUNDS, art::SPRITES)
+fn problems(doc: &Doc, story: &Path) -> Vec<Problem> {
+    let bgs = crate::painting::backgrounds_for(Some(story));
+    let names: Vec<&str> = bgs.iter().map(String::as_str).collect();
+    doc.problems(art::EXPRS, &names, art::SPRITES)
+}
+
+/// Can a story name this place (the game's own, or one it painted)?
+fn known_place(story: &Path, name: &str) -> bool {
+    art::BACKGROUNDS.contains(&name) || (crate::painting::usable_name(name) && crate::painting::dir(story).join(format!("{}.json", name)).is_file())
+}
+
+/// A painting as this build understands it, or nothing.
+fn painting_from(bytes: &[u8]) -> Option<crate::painting::PaintingData> {
+    let mut p: crate::painting::PaintingData = serde_json::from_slice(bytes).ok()?;
+    p.clean();
+    Some(p)
 }
 
 fn read_request(stream: &mut TcpStream) -> Option<Request> {
@@ -824,9 +844,18 @@ impl State {
         let (mut doc, _) = self.load(story)?;
         doc.sanitize();
         let mut out = json!({ "format": EXPORT_FORMAT, "version": EXPORT_VERSION, "story": doc, "prefs": Self::clean_prefs(&self.prefs(story)) });
+        let folder = story.parent().unwrap_or(Path::new("."));
+        let mut files = serde_json::Map::new();
+        // the places a story painted for itself are part of it: they always travel
+        for name in crate::painting::names(story) {
+            if let Ok(bytes) = std::fs::read(crate::painting::dir(story).join(format!("{}.json", name))) {
+                files.insert(format!("paintings/{}.json", name), json!(base64_encode(&bytes)));
+            }
+        }
+        if !with_files && !files.is_empty() {
+            out["files"] = Value::Object(files.clone());
+        }
         if with_files {
-            let mut files = serde_json::Map::new();
-            let folder = story.parent().unwrap_or(Path::new("."));
             for sub in ["enhanced", "audio", "audio/samples", "world", "world/models"] {
                 let mut names: Vec<String> = std::fs::read_dir(folder.join(sub)).into_iter().flatten().filter_map(|e| e.ok()).filter(|e| e.path().is_file()).map(|e| e.file_name().to_string_lossy().to_string()).collect();
                 names.sort();
@@ -912,10 +941,15 @@ impl State {
                     if !bytes.is_empty()
                         && (folder != "enhanced" || png_size_ok(&bytes))
                         && (folder != "world/models" || model_bytes_ok(file, &bytes))
-                        && (folder != "world" || (art::BACKGROUNDS.contains(&file.trim_end_matches(".json")) && place_from(&bytes).is_some())) =>
+                        && (folder != "world" || ((art::BACKGROUNDS.contains(&file.trim_end_matches(".json")) || crate::painting::usable_name(file.trim_end_matches(".json"))) && place_from(&bytes).is_some()))
+                        && (folder != "paintings" || (crate::painting::usable_name(file.trim_end_matches(".json")) && painting_from(&bytes).is_some())) =>
                 {
-                    // a place is written as this build understands it, not as it came
-                    let bytes = if folder == "world" { serde_json::to_vec(&place_from(&bytes).unwrap()).unwrap_or(bytes) } else { bytes };
+                    // a place or painting is written as this build understands it, not as it came
+                    let bytes = match folder {
+                        "world" => serde_json::to_vec(&place_from(&bytes).unwrap()).unwrap_or(bytes),
+                        "paintings" => serde_json::to_vec_pretty(&painting_from(&bytes).unwrap()).unwrap_or(bytes),
+                        _ => bytes,
+                    };
                     files.push((folder, file, bytes))
                 }
                 _ => skipped.push(name.clone()),
@@ -947,7 +981,7 @@ impl State {
             let _ = std::fs::remove_dir_all(&folder);
             return Err(format!("the story could not be written: {}", e));
         }
-        let notes = problems(&doc);
+        let notes = problems(&doc, &folder.join("story.txt"));
         Ok(json!({
             "id": id, "title": if doc.title.is_empty() { "Untitled story".to_string() } else { doc.title.clone() }, "scenes": doc.scenes.len(), "files": files.len(), "skipped": skipped, "unread": unread,
             "errors": notes.iter().filter(|p| p.level == "error").count(), "stories": self.library.list(),
@@ -997,7 +1031,7 @@ impl State {
     fn art_overview(&self, story: &Path) -> Result<Value, String> {
         let (doc, _) = self.load(story)?;
         let dir = comfy::enhanced_dir(story);
-        let assets: Vec<Value> = comfy::assets_for(&doc)
+        let assets: Vec<Value> = comfy::assets_of(&doc, story)
             .iter()
             .map(|a| {
                 let meta = std::fs::metadata(dir.join(a.output())).ok();
@@ -1063,7 +1097,7 @@ impl State {
             Err(e) => return respond_json(stream, "404 Not Found", &json!({ "error": e })),
         };
         // a locked story is not changed by any route: not its text, its art, its sound or its history
-        const CHANGES: [&str; 12] = ["/api/world", "/api/world/reset", "/api/world/model", "/api/story", "/api/stories/remove", "/api/admin/clean", "/api/history/remove", "/api/art/prefs", "/api/art/run", "/api/art/revert", "/api/sound/sample", "/api/sound/prune"];
+        const CHANGES: [&str; 13] = ["/api/ai/place/save", "/api/world", "/api/world/reset", "/api/world/model", "/api/story", "/api/stories/remove", "/api/admin/clean", "/api/history/remove", "/api/art/prefs", "/api/art/run", "/api/art/revert", "/api/sound/sample", "/api/sound/prune"];
         if req.method != "GET" && CHANGES.contains(&req.path.as_str()) && lock_file(&story).exists() {
             return respond_json(stream, "423 Locked", &json!({ "error": "this story is locked: unlock it under Manage to change it", "locked": true }));
         }
@@ -1207,15 +1241,17 @@ impl State {
                 Ok((mut doc, parse_errors)) => {
                     // tidy what a hand-edited file may leave loose (a scene in a chapter that was never declared, say)
                     doc.sanitize();
-                    let p = problems(&doc);
+                    let p = problems(&doc, &story);
                     let mut meta = self.meta();
                     meta["path"] = json!(story.display().to_string());
+                    meta["bgs"] = json!(crate::painting::backgrounds_for(Some(&story)));
+                    meta["painted"] = json!(crate::painting::names(&story));
                     respond_json(stream, "200 OK", &json!({ "doc": doc, "problems": p, "parse_errors": parse_errors, "meta": meta, "revision": revision(&story), "locked": lock_file(&story).exists() }))
                 }
                 Err(e) => fail(stream, e),
             },
             ("POST", "/api/validate") => match self.doc_from(&req.body) {
-                Ok(doc) => respond_json(stream, "200 OK", &json!({ "problems": problems(&doc) })),
+                Ok(doc) => respond_json(stream, "200 OK", &json!({ "problems": problems(&doc, &story) })),
                 Err(e) => fail(stream, e),
             },
             ("PUT", "/api/story") => {
@@ -1233,7 +1269,7 @@ impl State {
                         if let Some(before) = &before {
                             self.follow_renames(&story, before, &doc);
                         }
-                        respond_json(stream, "200 OK", &json!({ "ok": true, "doc": doc, "problems": problems(&doc), "revision": revision(&story) }))
+                        respond_json(stream, "200 OK", &json!({ "ok": true, "doc": doc, "problems": problems(&doc, &story), "revision": revision(&story) }))
                     }
                     Err(e) => fail(stream, e),
                 }
@@ -1258,15 +1294,17 @@ impl State {
             }
             ("GET", path) if path.starts_with("/art/bg/") => {
                 let name = path.trim_start_matches("/art/bg/").trim_end_matches(".png").to_string();
-                if !art::BACKGROUNDS.contains(&name.as_str()) {
+                if !known_place(&story, &name) {
                     return respond(stream, "404 Not Found", "text/plain", false, b"no such background");
                 }
                 let dir = self.art_dir(&story).filter(|_| !q.contains_key("plain"));
                 let full = q.contains_key("full");
-                let key = self.art_key(&req, dir.as_deref().map(|d| d.join(format!("bg_{}.png", name))));
+                // (a painting the story made: its file's age tells a stale picture from a fresh one)
+                let enhanced = dir.as_deref().map(|d| d.join(format!("bg_{}.png", name))).filter(|f| f.is_file() || art::BACKGROUNDS.contains(&name.as_str()));
+                let key = self.art_key(&req, enhanced.or_else(|| Some(crate::painting::dir(&story).join(format!("{}.json", name))).filter(|_| !art::BACKGROUNDS.contains(&name.as_str()))));
                 respond_image(stream, &req, &key, || {
                     self.art(&key, || {
-                        let (mut c, animated) = art::background(&name, dir.as_deref());
+                        let (mut c, animated) = art::background_of(&name, dir.as_deref(), Some(&story));
                         if animated {
                             art::animate(&mut c, &name, 0.5);
                         }
@@ -1392,11 +1430,72 @@ impl State {
                 };
                 respond_json(stream, "200 OK", &reply)
             }
+            // ---- making new characters and places with a language model
+            ("GET", "/api/ai") => respond_json(stream, "200 OK", &crate::ai::status()),
+            ("POST", "/api/ai/character") | ("POST", "/api/ai/place") => {
+                let made = (|| -> Result<Value, String> {
+                    let provider = crate::ai::Provider::parse(body["provider"].as_str().unwrap_or("")).ok_or("ask Claude or Ollama")?;
+                    let model = body["model"].as_str().unwrap_or("");
+                    let brief: String = body["brief"].as_str().unwrap_or("").chars().filter(|c| !c.is_control() || *c == '\n').take(2000).collect();
+                    if brief.trim().is_empty() {
+                        return Err("say what to make".into());
+                    }
+                    let (doc, _) = self.load(&story)?;
+                    let context = crate::ai::story_context(&doc);
+                    if req.path == "/api/ai/character" {
+                        let taken: Vec<String> = doc.characters.iter().map(|c| c.id.clone()).chain(["n".to_string()]).collect();
+                        let user = format!("{}\nMake this character: {}", context, brief.trim());
+                        let schema = crate::ai::character_schema();
+                        let v = crate::ai::ask(provider, model, &crate::ai::Ask { system: crate::ai::CHARACTER_SYSTEM, user: &user, schema: &schema, max_tokens: 8000 })?;
+                        let (def, bio, art_prompt) = crate::ai::character_from(&v, &taken)?;
+                        Ok(json!({ "character": def, "bio": bio, "art_prompt": art_prompt }))
+                    } else {
+                        let want3d = body["want3d"].as_bool().unwrap_or(false);
+                        let taken = crate::painting::backgrounds_for(Some(&story));
+                        let user = format!("{}The story's places so far: {}.\nPaint this place: {}", context, taken.join(", "), brief.trim());
+                        let system = if want3d { format!("{}\n{}", crate::ai::PLACE_SYSTEM, crate::ai::ROOM_HELP) } else { crate::ai::PLACE_SYSTEM.to_string() };
+                        let schema = crate::ai::place_schema(want3d);
+                        let v = crate::ai::ask(provider, model, &crate::ai::Ask { system: &system, user: &user, schema: &schema, max_tokens: 32000 })?;
+                        let (name, painting, room) = crate::ai::place_from(&v, &taken)?;
+                        let preview = painting.render().resized(576, 324).png_bytes(false)?;
+                        Ok(json!({ "name": name, "painting": painting, "room": room, "preview": format!("data:image/png;base64,{}", base64_encode(&preview)) }))
+                    }
+                })();
+                answer(stream, made)
+            }
+            ("POST", "/api/ai/place/save") => {
+                // a place that was made (and looked at): its painting, and its room if it has one
+                let saved = (|| -> Result<Value, String> {
+                    let name = body["name"].as_str().unwrap_or("").to_string();
+                    if !crate::painting::usable_name(&name) {
+                        return Err(format!("'{}' cannot name a new place: lowercase letters, digits and _, and not one of the game's own", name));
+                    }
+                    let replace = body["replace"].as_bool().unwrap_or(false);
+                    if known_place(&story, &name) && !replace {
+                        return Err(format!("the story already has a place called '{}'", name));
+                    }
+                    let painting = serde_json::to_vec(&body["painting"]).ok().and_then(|b| painting_from(&b)).ok_or("this is not a painting")?;
+                    crate::painting::save(&story, &name, &painting)?;
+                    let mut room_saved = false;
+                    if body["room"].is_object() {
+                        if let Some(place) = serde_json::to_vec(&body["room"]).ok().and_then(|b| place_from(&b)) {
+                            let dir = crate::places::world_dir(&story);
+                            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                            let _one = WORLD_WRITES.lock().unwrap_or_else(|e| e.into_inner());
+                            let (tmp, file) = (dir.join(format!("{}.json.tmp", name)), dir.join(format!("{}.json", name)));
+                            std::fs::write(&tmp, serde_json::to_string(&place).unwrap_or_default() + "\n").and_then(|_| std::fs::rename(&tmp, &file)).map_err(|e| e.to_string())?;
+                            room_saved = true;
+                        }
+                    }
+                    Ok(json!({ "ok": true, "name": name, "room": room_saved, "bgs": crate::painting::backgrounds_for(Some(&story)), "painted": crate::painting::names(&story) }))
+                })();
+                answer(stream, saved)
+            }
             // ---- 3D places and models
             ("GET", "/api/world") | ("PUT", "/api/world") | ("POST", "/api/world/reset") => {
                 use crate::places;
                 let name = q.get("place").cloned().or_else(|| body["place"].as_str().map(str::to_string)).unwrap_or_default();
-                if !art::BACKGROUNDS.contains(&name.as_str()) {
+                if !known_place(&story, &name) {
                     return respond_json(stream, "404 Not Found", &json!({ "error": format!("there is no place called '{}'", name) }));
                 }
                 let dir = places::world_dir(&story);
@@ -1425,7 +1524,7 @@ impl State {
                         let custom = place.is_some();
                         let mut models: Vec<String> = std::fs::read_dir(dir.join("models")).into_iter().flatten().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).filter(|f| places::model_file(f)).collect();
                         models.sort();
-                        let listed: Vec<Value> = art::BACKGROUNDS.iter().map(|b| json!({ "name": b, "custom": dir.join(format!("{}.json", b)).is_file() })).collect();
+                        let listed: Vec<Value> = crate::painting::backgrounds_for(Some(&story)).iter().map(|b| json!({ "name": b, "custom": dir.join(format!("{}.json", b)).is_file() })).collect();
                         respond_json(stream, "200 OK", &json!({
                             "place": place.or_else(|| places::builtin(&name)).unwrap_or_else(places::PlaceData::blank),
                             "custom": custom, "error": error, "models": models, "places": listed, "blank": places::PlaceData::blank(),
@@ -1557,7 +1656,7 @@ impl State {
         if let Some(e) = errors.first() {
             return Err(e.clone());
         }
-        if let Some(p) = problems(&doc).iter().find(|p| p.level == "error") {
+        if let Some(p) = problems(&doc, story).iter().find(|p| p.level == "error") {
             return Err(format!("fix the story's errors first ({})", p.msg));
         }
         if !doc.scenes.iter().any(|s| s.label == label) {

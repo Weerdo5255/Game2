@@ -158,6 +158,8 @@ pub struct Asset {
     pub text: String,
     /// For music: how long, in seconds (0 = the workflow's default).
     pub seconds: i32,
+    /// For a place the story painted for itself: that painting.
+    pub painting: Option<Box<crate::painting::PaintingData>>,
 }
 
 impl Asset {
@@ -185,6 +187,7 @@ pub fn audio_assets(doc: &Doc) -> Vec<Asset> {
         who: String::new(),
         text: String::new(),
         seconds: 0,
+        painting: None,
     };
     let mut out = Vec::new();
     for t in doc.tracks.iter().filter(|t| crate::script::valid_id(&t.id)) {
@@ -207,6 +210,7 @@ pub fn audio_assets(doc: &Doc) -> Vec<Asset> {
 }
 
 /// Pictures and sound together.
+#[cfg(test)]
 pub fn all_assets(doc: &Doc) -> Vec<Asset> {
     let mut all = assets_for(doc);
     all.extend(audio_assets(doc));
@@ -229,6 +233,7 @@ pub fn assets_for(doc: &Doc) -> Vec<Asset> {
             who: String::new(),
             text: String::new(),
             seconds: 0,
+            painting: None,
         });
     }
     for ch in doc.characters.iter().filter(|c| art::SPRITES.contains(&c.sprite.as_str()) && crate::script::valid_id(&c.id)) {
@@ -244,10 +249,43 @@ pub fn assets_for(doc: &Doc) -> Vec<Asset> {
                 who: String::new(),
                 text: String::new(),
                 seconds: 0,
+                painting: None,
             });
         }
     }
     out
+}
+
+/// Every picture asset of a story, with the places it painted for itself.
+pub fn assets_of(doc: &Doc, story: &Path) -> Vec<Asset> {
+    let mut out = assets_for(doc);
+    let at = out.iter().position(|a| a.character.is_some()).unwrap_or(out.len());
+    let own: Vec<Asset> = crate::painting::names(story)
+        .into_iter()
+        .filter_map(|name| crate::painting::load(story, &name).map(|p| (name, p)))
+        .map(|(name, p)| Asset {
+            id: format!("bg_{}", name),
+            kind: "background",
+            prompt: if p.prompt.is_empty() { format!("{}, painted background, no people", if p.title.is_empty() { name.replace('_', " ") } else { p.title.clone() }) } else { p.prompt.clone() },
+            prompt_key: format!("bg_{}", name),
+            name,
+            character: None,
+            expr: String::new(),
+            who: String::new(),
+            text: String::new(),
+            seconds: 0,
+            painting: Some(Box::new(p)),
+        })
+        .collect();
+    out.splice(at..at, own);
+    out
+}
+
+/// Pictures and sound together, with the story's own places.
+pub fn all_assets_of(doc: &Doc, story: &Path) -> Vec<Asset> {
+    let mut all = assets_of(doc, story);
+    all.extend(audio_assets(doc));
+    all
 }
 
 /// The game's own painting of an asset, as the workflows want it.
@@ -255,7 +293,10 @@ pub fn assets_for(doc: &Doc) -> Vec<Asset> {
 fn painted(asset: &Asset, role: &str) -> Result<Vec<u8>, String> {
     match &asset.character {
         None => {
-            let (mut c, animated) = art::background(&asset.name, None);
+            let (mut c, animated) = match &asset.painting {
+                Some(p) => (p.render(), false),
+                None => art::background(&asset.name, None),
+            };
             if animated {
                 art::animate(&mut c, &asset.name, 0.5);
             }
@@ -855,7 +896,7 @@ impl Jobs {
     /// Queue assets of one story. Neutral portraits go ahead of the
     /// expressions built from them.
     pub fn enqueue(&self, story: &str, story_path: &Path, doc: &Doc, ids: &[String], ov: &Overrides) -> Result<usize, String> {
-        let all = all_assets(doc);
+        let all = all_assets_of(doc, story_path);
         let mut chosen: Vec<&Asset> = Vec::new();
         for id in ids {
             chosen.push(all.iter().find(|a| &a.id == id).ok_or_else(|| format!("this story has no asset called '{}'", id))?);
@@ -968,7 +1009,7 @@ impl Jobs {
     fn run(&self, job: &Job) -> Result<PathBuf, String> {
         let text = std::fs::read_to_string(&job.story_path).map_err(|e| format!("{}: {}", job.story_path.display(), e))?;
         let (doc, _) = Doc::parse(&text);
-        let asset = all_assets(&doc).into_iter().find(|a| a.id == job.asset).ok_or("this is no longer in the story (was the line reworded?)")?;
+        let asset = all_assets_of(&doc, &job.story_path).into_iter().find(|a| a.id == job.asset).ok_or("this is no longer in the story (was the line reworded?)")?;
         let built = build(&self.suite, &asset, &job.story, &job.overrides)?;
         let out_dir = if asset.is_audio() { audio::audio_dir(&job.story_path) } else { enhanced_dir(&job.story_path) };
         let target = out_dir.join(asset.output());

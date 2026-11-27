@@ -21,6 +21,7 @@
 //!       headless playthrough, picking the listed option at each choice
 //!       and saving screenshots
 
+mod ai;
 mod art;
 mod audio;
 mod comfy;
@@ -28,6 +29,7 @@ mod editor;
 mod game;
 mod gfx;
 mod godot;
+mod painting;
 mod places;
 mod script;
 #[cfg(feature = "world3d")]
@@ -128,8 +130,11 @@ fn main() {
         return;
     }
     let mut errors: Vec<String> = errors;
+    let story_path = arg("--story").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("assets/story.txt"));
+    let bgs = painting::backgrounds_for(Some(&story_path));
+    let bg_names: Vec<&str> = bgs.iter().map(String::as_str).collect();
     errors.extend(
-        doc.problems(art::EXPRS, art::BACKGROUNDS, art::SPRITES)
+        doc.problems(art::EXPRS, &bg_names, art::SPRITES)
             .into_iter()
             .filter(|p| p.level == "error")
             .map(|p| if p.scene.is_empty() { p.msg } else { format!("scene '{}': {}", p.scene, p.msg) }),
@@ -184,6 +189,7 @@ fn main() {
     let story_file = arg("--story").map(PathBuf::from).or_else(|| Some(PathBuf::from("assets/story.txt")).filter(|p| p.is_file()));
     let sound = audio::Audio::new(story_file.map(|s| audio::audio_dir(&s)).filter(|_| !flag("--silent")), !headless_run);
     let mut game = Game::new(script, art_dir, sound);
+    game.story_file = Some(story_path.clone());
 
     // (for pictures: the "who has what" panel open from the start)
     game.show_ledger(flag("--ledger"));

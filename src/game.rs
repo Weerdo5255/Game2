@@ -65,6 +65,8 @@ pub struct Game {
     bg_cache: Option<(String, Canvas, bool)>,
     /// Directory of enhanced art that overrides the procedural paintings.
     art_dir: Option<PathBuf>,
+    /// The story file, for the places it paints for itself (`paintings` beside it).
+    pub story_file: Option<PathBuf>,
     pub audio: Audio,
     cur_pc: usize,
     pub quit: bool,
@@ -160,6 +162,7 @@ impl Game {
             sprites: HashMap::new(),
             bg_cache: None,
             art_dir,
+            story_file: None,
             audio,
             overlay: None,
             lines_begun: 0,
@@ -701,7 +704,7 @@ impl Game {
             return;
         }
         if self.bg_cache.as_ref().map_or(true, |b| b.0 != name) {
-            let (img, animated) = art::background(name, self.art_dir.as_deref());
+            let (img, animated) = art::background_of(name, self.art_dir.as_deref(), self.story_file.as_deref());
             self.bg_cache = Some((name.to_string(), img, animated));
         }
         let (_, img, animated) = self.bg_cache.as_ref().unwrap();
