@@ -70,9 +70,9 @@ end Done
   await hold('q.nerve').fill('3'); await hold('q.nerve').blur();
   await hold('q.canvas').check();
   await hold('c.coin').fill('-4'); await hold('c.coin').blur();
-  assert(await p.evaluate(() => doc.characters[0].holds.coin === 5 && doc.characters[1].holds.key === 1 && doc.characters[1].holds.canvas === 1 && doc.characters[2].holds.coin === undefined), 'the table sets who starts with what (and nobody carries fewer than none)');
+  assert(await p.evaluate(() => doc.characters[0].holds.coin === 5 && doc.characters[1].holds.key === 1 && doc.characters[1].holds.canvas === 1 && doc.characters[2].holds.coin === 0), 'the table sets who starts with what (and nobody carries fewer than none)');
   let text = await save();
-  assert(text.includes('item coin | Coins | 0') && text.includes('attribute nerve | Nerve | 0') && text.includes('info canvas | The fleet is canvas | 0') && text.includes('holds m | coin 5') && text.includes('holds q | canvas 1 | key 1 | nerve 3'), 'all of it is written to the story file');
+  assert(text.includes('item coin | Coins | 0') && text.includes('attribute nerve | Nerve | 0') && text.includes('info canvas | The fleet is canvas | 0') && text.includes('holds m | coin 5') && text.includes('holds q | canvas 1 | key 1 | nerve 3') && text.includes('holds c | coin 0'), 'all of it is written to the story file');
   if (out !== tmp) { fs.mkdirSync(out, { recursive: true }); await p.screenshot({ path: path.join(out, 'editor_holdings.png') }); }
   // and on the character's own card
   await p.click('.tabs button[data-tab="cast"]');
@@ -130,11 +130,12 @@ end Done
   assert((await p.locator('#insp .blk.on select').nth(2).locator('option').allTextContents()).includes('knows it'), 'for information it asks whether they know it');
   await p.keyboard.press('Control+z'); await p.keyboard.press('Control+z');
   // a fresh condition can be turned into one
-  await addBlock('Condition').catch(() => {});
-  await p.evaluate(() => { if (!doc.scenes[0].items.some(i => i.t === 'if')) change(() => doc.scenes[0].items.splice(3, 0, { t: 'if', ...firstCond(), target: 'start' })); select(sceneIndex('start'), doc.scenes[0].items.findIndex(i => i.t === 'if'), true); });
+  await addBlock('Condition');
+  await p.waitForFunction(() => doc.scenes[0].items.some(i => i.t === 'if' && i.var === 'event.alarm'));
+  await p.evaluate(() => select(sceneIndex('start'), doc.scenes[0].items.findIndex(i => i.t === 'if'), true));
   await p.locator('#insp .blk.on select').first().selectOption({ label: '🎒 what someone has…' });
-  await p.waitForFunction(() => /^[a-z]+\.[a-z]+$/.test(doc.scenes[0].items.find(i => i.t === 'if').var));
-  assert(true, "'what someone has' is offered among the things a condition can test");
+  await sleep(200);
+  assert(await p.evaluate(() => { const c = doc.scenes[0].items.find(i => i.t === 'if'); return c.var === 'm.coin' && c.op === '>=' && c.val === 1; }), "a condition can be turned into one on what someone has: " + await p.evaluate(() => doc.scenes[0].items.find(i => i.t === 'if').var));
   await p.evaluate(() => { while (undoStack.length && doc.scenes[0].items.some(i => i.t === 'if')) undo(); });
 
   // ---- renaming and deleting

@@ -407,8 +407,13 @@ impl Game {
                         let def = g.script.things.iter().find(|t| t.id == thing).filter(|t| !t.hidden)?;
                         Some((g.script.character(who).map_or(who.to_string(), |c| c.name.clone()), if def.label.is_empty() { def.id.clone() } else { def.label.clone() }))
                     };
-                    if changes.is_empty() {
-                        if let Cmd::Trade { a, b, .. } = &cmd {
+                    if !self.vm.done {
+                        // (a refused trade in things kept from the player is kept from them too)
+                        let open = |g: &Game, t: &str| g.script.things.iter().any(|d| d.id == t && !d.hidden);
+                        if let Cmd::Trade { a, b, thing, thing2, .. } = &cmd {
+                            if !(open(self, thing) && open(self, thing2)) {
+                                continue;
+                            }
                             let names = [a, b].map(|w| self.script.character(w).map_or(w.clone(), |c| c.name.clone()));
                             self.toasts.push((format!("{} and {}: no trade", names[0], names[1]), rgb(200, 200, 215), 3.0));
                         }
@@ -858,6 +863,7 @@ impl Game {
                 let n = self.vm.has(&self.script, &ch.id, &t.id);
                 let label = if t.label.is_empty() { &t.id } else { &t.label };
                 match (t.kind.as_str(), n) {
+                    ("attribute", _) => has.push(format!("{} {}", label, n)),
                     (_, 0) => {}
                     ("info", _) => has.push(format!("knows: {}", label)),
                     ("item", 1) => has.push(label.to_string()),
@@ -878,7 +884,12 @@ impl Game {
         if lines.is_empty() {
             lines.push((None, "Nobody has anything of note.".into()));
         }
-        lines.truncate(13);
+        // what does not fit is said, not dropped in silence
+        if lines.len() > 13 {
+            let more = lines.len() - 12;
+            lines.truncate(12);
+            lines.push((None, format!("... and {} more line{}", more, if more == 1 { "" } else { "s" })));
+        }
         let h = 70 + lines.len() as i32 * 26;
         let top = (440 - h).max(8) / 2 + 8;
         c.panel(96, top, W - 192, h);
@@ -893,7 +904,8 @@ impl Game {
     }
 
     fn render_hud(&self, c: &mut Canvas) {
-        if self.ledger {
+        // (not over a choice: the options must stay readable)
+        if self.ledger && matches!(self.mode, Mode::Say { .. }) {
             self.render_ledger(c);
         }
         // one meter per property that declares one
@@ -923,7 +935,7 @@ impl Game {
             c.rect_blend(W / 2 - w / 2, 8, w, 32, rgba(8, 8, 28, 130));
             c.text_c(W / 2, 16, &label, rgb(214, 222, 255), 2);
         }
-        for (i, (msg, col, _)) in self.toasts.iter().rev().take(4).enumerate() {
+        for (i, (msg, col, _)) in self.toasts.iter().rev().take(8).enumerate() {
             c.text_sh(20, 16 + i as i32 * 26, msg, *col, 2);
         }
     }

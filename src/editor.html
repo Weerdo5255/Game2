@@ -1038,10 +1038,22 @@ const fitThing = (t, n) => t.kind === "info" ? Math.max(0, Math.min(1, n)) : t.k
 const startsWith = (ch, t) => fitThing(t, ch.holds[t.id] != null ? ch.holds[t.id] : t.initial);
 /** A field for how much of a thing a character starts with: a tick for information, a number otherwise. */
 function holdInput(ch, t) {
-  const put = n => change(() => { n = fitThing(t, n); if (n === t.initial) delete ch.holds[t.id]; else ch.holds[t.id] = n; });
+  // (what is entered is kept as entered, even where it equals what everyone starts with: a later change to that leaves it alone)
+  const put = n => change(() => { ch.holds[t.id] = fitThing(t, n); });
   return t.kind === "info"
     ? el("input", { type: "checkbox", "data-hold": ch.id + "." + t.id, title: `${ch.name || ch.id} knows this at the start`, checked: startsWith(ch, t) === 1, onchange: ev => put(ev.target.checked ? 1 : 0) })
     : el("input", { type: "number", "data-hold": ch.id + "." + t.id, style: "width:58px", min: t.kind === "item" ? 0 : null, value: startsWith(ch, t), onchange: ev => put(num(ev.target.value)) });
+}
+/** Where a character is still needed besides their own lines: exchanges, and conditions that ask after them. */
+function usesOfChar(id) {
+  const uses = [], asks = c => c && !c.var.startsWith("event.") && (c.var === "@" + id || c.var.startsWith("@" + id + ".") || c.var.startsWith(id + "."));
+  doc.scenes.forEach(sc => sc.items.forEach(it => {
+    if (["give", "copy", "grant", "trade"].includes(it.t) && [it.from, it.to, it.who, it.a, it.b].includes(id)) uses.push(sc.label);
+    if (it.t === "if" && asks(it)) uses.push(sc.label);
+    if (it.t === "choice" && it.options.some(o => asks(o.cond))) uses.push(sc.label);
+  }));
+  for (const c of doc.characters) if (c.id !== id && c.interrupts.some(i => asks(i.when))) uses.push(c.name || c.id);
+  return uses;
 }
 /** Every place a thing is used: exchanged in a scene, or asked after by a condition or an interruption. */
 function usesOfThing(id) {
@@ -1184,11 +1196,11 @@ function blockBody(s, it, i) {
     case "trade": return [el("div", { class: "brow" },
         el("select", { onchange: ev => set(() => it.a = ev.target.value) }, opts(charOpts(), it.a)), el("label", { text: "offers" }),
         el("input", { type: "number", min: 0, style: "width:56px;flex:none", value: it.n, onchange: ev => set(() => it.n = Math.max(0, num(ev.target.value))) }),
-        el("select", { onchange: ev => set(() => it.thing = ev.target.value) }, opts(thingOpts(), it.thing))),
+        el("select", { onchange: ev => set(() => { it.thing = ev.target.value; if ((thingById(it.thing) || {}).kind === "info") it.n = 1; }) }, opts(thingOpts(), it.thing))),
       el("div", { class: "brow", style: "margin-top:4px" },
         el("select", { onchange: ev => set(() => it.b = ev.target.value) }, opts(charOpts(), it.b)), el("label", { text: "offers" }),
         el("input", { type: "number", min: 0, style: "width:56px;flex:none", value: it.n2, onchange: ev => set(() => it.n2 = Math.max(0, num(ev.target.value))) }),
-        el("select", { onchange: ev => set(() => it.thing2 = ev.target.value) }, opts(thingOpts(), it.thing2))),
+        el("select", { onchange: ev => set(() => { it.thing2 = ev.target.value; if ((thingById(it.thing2) || {}).kind === "info") it.n2 = 1; }) }, opts(thingOpts(), it.thing2))),
       el("div", { class: "sub", style: "color:var(--dim);margin-top:4px", text: "Happens only if each has what they offer; otherwise nothing changes hands. Test what someone has afterwards to tell which." })];
     case "music": return el("div", { class: "brow" },
       el("select", { onchange: ev => set(() => it.track = ev.target.value) }, opts([{ value: "", label: "Silence (stop the music)" }, ...(doc.tracks || []).map(t => ({ value: t.id, label: t.title || t.id }))], it.track)),
@@ -1318,11 +1330,14 @@ function renderInspector() {
   });
   const add = (label, make, needs) => el("button", { text: "+ " + label, onclick: () => {
     if (needs === "property" && !doc.vars.length) { toast("Create a property first (Properties tab): a consequence or condition needs one.", true); return; }
+    if (needs === "thing" && (!doc.things.length || !doc.characters.length)) { toast("First give the story something to have (Properties tab: attributes, items, information), and a character.", true); return; }
     if (needs === "things" && (!doc.things.length || doc.characters.length < 2)) { toast("First give the story something to have (Properties tab: attributes, items, information), and two characters.", true); return; }
     if (needs === "portrait" && !doc.characters.some(c => c.sprite)) { toast("Give a character a portrait first (Cast tab).", true); return; }
+    const made = make();
+    if (!made) return;
     change(() => {
     // after the selected block; otherwise at the end, but ahead of whatever closes the scene
-    const it = make(), closing = x => x && ["choice", "goto", "end"].includes(x.t);
+    const it = made, closing = x => x && ["choice", "goto", "end"].includes(x.t);
     let at = selItem >= 0 ? selItem + 1 : s.items.length;
     if (selItem < 0 && closing(s.items[at - 1]) && !closing(it)) at--;
     s.items.splice(at, 0, it); selItem = at;
@@ -1342,8 +1357,11 @@ function renderInspector() {
     add("Event", () => ({ t: "event", name: eventNames()[0] || "alarm", on: true })),
     add("Give", () => ({ t: "give", from: doc.characters[0].id, to: doc.characters[1].id, thing: doc.things[0].id, n: 1 }), "things"),
     add("Copy / tell", () => ({ t: "copy", from: doc.characters[0].id, to: doc.characters[1].id, thing: (doc.things.find(t => t.kind === "info") || doc.things[0]).id, n: 1 }), "things"),
-    add("Gain or lose", () => ({ t: "grant", who: doc.characters[0].id, thing: doc.things[0].id, n: 1 }), "things"),
-    add("Trade", () => ({ t: "trade", a: doc.characters[0].id, b: doc.characters[1].id, thing: doc.things[0].id, n: 1, thing2: (doc.things[1] || doc.things[0]).id, n2: 1 }), "things"),
+    add("Gain or lose", () => ({ t: "grant", who: doc.characters[0].id, thing: doc.things[0].id, n: 1 }), "thing"),
+    add("Trade", () => {
+      if (doc.things.length < 2) { toast("A trade is of one thing for another: the story needs two things to have.", true); return null; }
+      return { t: "trade", a: doc.characters[0].id, b: doc.characters[1].id, thing: doc.things[0].id, n: 1, thing2: doc.things[1].id, n2: 1 };
+    }, "things"),
     add("Show", () => ({ t: "show", who: firstShown, expr: "neutral", slot: "center" }), "portrait"),
     add("Hide", () => ({ t: "hide", slot: "all" })),
     add("Card", () => ({ t: "card", title: "Chapter", sub: "" })),
@@ -1489,6 +1507,8 @@ function renderCast(host) {
             el("button", { class: "ghost", title: "Move down", text: "↓", disabled: ci === doc.characters.length - 1, onclick: () => change(() => doc.characters.splice(ci + 1, 0, doc.characters.splice(ci, 1)[0])) })),
           el("button", { class: "danger", text: "Delete character", onclick: () => {
             if (st.lines || st.scenes) { toast(`${ch.name || ch.id} still appears in ${st.scenes} scene(s). Remove those lines first.`, true); return; }
+            const held = usesOfChar(ch.id);
+            if (held.length) { toast(`${ch.name || ch.id} is still part of ${held.length} exchange(s) or condition(s): ${[...new Set(held)].slice(0, 4).join(", ")}.`, true); return; }
             change(() => { doc.characters.splice(ci, 1); doc.vars.forEach(v => { if (v.character === ch.id) v.character = ""; }); openChar = null; });
           } })));
     }
@@ -1535,7 +1555,8 @@ function renderProps(host) {
     el("div", { class: "sub", style: "color:var(--dim);margin-bottom:8px", text: "Attributes (numbers about a person), items (how many they carry) and information (known or not). Every character has each of them; scenes give, copy, trade and change them, and conditions can ask who has what." }),
     doc.things.map((t, ti) => { const uses = usesOfThing(t.id); return el("div", { class: "card", "data-thing": t.id },
       el("div", { class: "brow" },
-        el("select", { style: "flex:none", onchange: ev => change(() => { t.kind = ev.target.value; t.initial = fitThing(t, t.initial); for (const c of doc.characters) if (c.holds[t.id] != null) c.holds[t.id] = fitThing(t, c.holds[t.id]); }) }, opts(Object.keys(KIND_NAME).map(k => ({ value: k, label: KIND_NAME[k] })), t.kind)),
+        el("select", { style: "flex:none", onchange: ev => change(() => { t.kind = ev.target.value; t.initial = fitThing(t, t.initial); for (const c of doc.characters) if (c.holds[t.id] != null) c.holds[t.id] = fitThing(t, c.holds[t.id]);
+          if (t.kind === "info") for (const sc of doc.scenes) for (const it of sc.items) { if (["give", "copy"].includes(it.t) && it.thing === t.id) it.n = 1; if (it.t === "trade") { if (it.thing === t.id) it.n = Math.min(1, it.n); if (it.thing2 === t.id) it.n2 = Math.min(1, it.n2); } } }) }, opts(Object.keys(KIND_NAME).map(k => ({ value: k, label: KIND_NAME[k] })), t.kind)),
         bindText(el("input", { type: "text", placeholder: "Name shown to the player", style: "flex:1;font-weight:600" }), t, "label")),
       el("div", { class: "grid2" },
         el("label", { text: "Id" }), el("input", { type: "text", value: t.id, onchange: ev => {

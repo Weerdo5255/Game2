@@ -42,6 +42,7 @@ trade m q coin 50 for nerve 1
 n: (Fifty coins for a little of Quince's nerve: nobody has fifty coins.)
 grant p coin 1
 give m p key
+n: The Young Master comes down for his allowance, and for anything else going.
 if p.key >= 1 goto gave
 if m.canvas == 1 goto knows
 end Nothing learned | And nothing given away.

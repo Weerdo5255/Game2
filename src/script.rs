@@ -1275,6 +1275,14 @@ impl Doc {
                         if *n < 0 || *n2 < 0 {
                             err("the amounts cannot be less than nothing".into());
                         }
+                        if thing == thing2 {
+                            err("a trade is of one thing for another: these are the same".into());
+                        }
+                        for (t, amount) in [(thing, n), (thing2, n2)] {
+                            if *amount > 1 && self.things.iter().any(|d| d.id == *t && d.kind == "info") {
+                                err(format!("'{}' is information, known or not: nobody can offer {} of it", t, amount));
+                            }
+                        }
                     }
                     Item::Event { name, .. } => {
                         if !valid_id(name) {
@@ -1541,12 +1549,14 @@ pub struct Vm {
     pub holdings: BTreeMap<(String, String), i32>,
     /// What the last give, copy, grant or trade actually changed: (who, thing, by how much).
     pub changes: Vec<(String, String, i32)>,
+    /// Whether the last give or trade was carried out (a trade is refused when either side cannot meet it).
+    pub done: bool,
 }
 
 impl Vm {
     /// A fresh run: every property at its declared starting value.
     pub fn new(s: &Script) -> Vm {
-        Vm { pc: 0, vars: s.vars.iter().map(|v| (v.id.clone(), v.initial)).collect(), clock: s.clock.as_ref().map_or(0, |c| c.start), events: BTreeSet::new(), place: String::new(), spoke: false, holdings: BTreeMap::new(), changes: Vec::new() }
+        Vm { pc: 0, vars: s.vars.iter().map(|v| (v.id.clone(), v.initial)).collect(), clock: s.clock.as_ref().map_or(0, |c| c.start), events: BTreeSet::new(), place: String::new(), spoke: false, holdings: BTreeMap::new(), changes: Vec::new(), done: false }
     }
 
     pub fn var(&self, name: &str) -> i32 {
@@ -1560,6 +1570,14 @@ impl Vm {
         }
         let Some(def) = s.things.iter().find(|t| t.id == thing) else { return 0 };
         def.fit(s.character(who).and_then(|c| c.holds.get(thing)).copied().unwrap_or(def.initial))
+    }
+
+    /// How much more of a thing a character could take: one piece of information at most, any amount of the rest.
+    fn room(&self, s: &Script, who: &str, thing: &str) -> i32 {
+        match s.things.iter().find(|t| t.id == thing) {
+            Some(t) if t.kind == "info" => 1 - self.has(s, who, thing),
+            _ => i32::MAX,
+        }
     }
 
     /// Change what a character has by `by`, within what that kind of thing can be. Returns the change made.
@@ -1580,13 +1598,16 @@ impl Vm {
     /// Carry out a give, copy, grant or trade. What changed is left in `changes`.
     fn exchange(&mut self, s: &Script, cmd: &Cmd) {
         self.changes.clear();
+        self.done = false;
         let counted = |thing: &str| s.things.iter().find(|t| t.id == thing).map_or(false, |t| t.kind != "attribute");
         match cmd {
             Cmd::Give { from, to, thing, n } if from != to => {
                 // nobody hands over more than they have (attributes are numbers about a person: those simply shift)
-                let n = if counted(thing) { (*n).min(self.has(s, from, thing)) } else { *n }.max(0);
+                // ... and nobody is handed what they cannot take: someone who knows a thing already cannot learn it again
+                let n = if counted(thing) { (*n).min(self.has(s, from, thing)).min(self.room(s, to, thing)) } else { *n }.max(0);
                 let taken = -self.alter(s, from, thing, -n);
                 self.alter(s, to, thing, if counted(thing) { taken } else { n });
+                self.done = n > 0;
             }
             Cmd::Copy { from, to, thing, n } if from != to => {
                 let has = self.has(s, from, thing);
@@ -1598,7 +1619,7 @@ impl Vm {
                 } else {
                     // an attribute is matched: the pupil comes up to the teacher
                     let theirs = self.has(s, to, thing);
-                    self.alter(s, to, thing, has - theirs);
+                    self.alter(s, to, thing, has.saturating_sub(theirs));
                 }
             }
             Cmd::Grant { who, thing, n } => {
@@ -1607,7 +1628,9 @@ impl Vm {
             Cmd::Trade { a, b, thing, n, thing2, n2 } if a != b => {
                 // all or nothing: both must have what they offer
                 let (n, n2) = ((*n).max(0), (*n2).max(0));
-                if (!counted(thing) || self.has(s, a, thing) >= n) && (!counted(thing2) || self.has(s, b, thing2) >= n2) {
+                let can = |vm: &Vm, from: &str, to: &str, thing: &str, n: i32| !counted(thing) || (vm.has(s, from, thing) >= n && vm.room(s, to, thing) >= n);
+                if thing != thing2 && can(self, a, b, thing, n) && can(self, b, a, thing2, n2) {
+                    self.done = true;
                     self.alter(s, a, thing, -n);
                     self.alter(s, b, thing, n);
                     self.alter(s, b, thing2, -n2);
@@ -2075,6 +2098,13 @@ mod tests {
         // items never go below none; attributes are plain numbers
         run(&mut vm, "grant m coin -10\ngrant m nerve -4");
         assert_eq!((vm.has(&s, "m", "coin"), vm.has(&s, "m", "nerve")), (0, -3));
+        // nobody is told what they already know: the teller keeps it, and a trade for it is refused
+        let mut vm2 = Vm::new(&s);
+        run(&mut vm2, "copy q m canvas\ngive q m canvas");
+        assert_eq!((vm2.has(&s, "q", "canvas"), vm2.has(&s, "m", "canvas")), (1, 1));
+        assert!(run(&mut vm2, "trade m q coin 3 for canvas 1").is_empty() && !vm2.done && vm2.has(&s, "m", "coin") == 5);
+        run(&mut vm2, "grant m nerve 2147483646\ngrant q nerve -5\ncopy m q nerve");
+        assert_eq!(vm2.has(&s, "q", "nerve"), 2147483645, "far apart, and no overflow");
         // conditions and interrupts can ask
         let holds = |vm: &Vm, text: &str| vm.test(&s, &parse_cond(&text.split_whitespace().collect::<Vec<_>>()).unwrap());
         assert!(holds(&vm, "m.key >= 1") && holds(&vm, "q.key == 0") && holds(&vm, "c.canvas == 1") && holds(&vm, "p.nerve > 2"));
