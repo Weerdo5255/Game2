@@ -1115,6 +1115,7 @@ impl State {
             }
             ("GET", "/api/export") => {
                 let format = q.get("format").map_or("json", |f| f.as_str());
+                let mut zip_file: Option<PathBuf> = None;
                 let made: Result<(Vec<u8>, &str, &str), String> = match format {
                     "txt" => self.load(&story).map(|(mut doc, _)| {
                         doc.sanitize();
@@ -1138,31 +1139,38 @@ impl State {
                         static N: AtomicUsize = AtomicUsize::new(0);
                         let work = std::env::temp_dir().join(format!("below-stairs-godot-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
                         let _ = std::fs::remove_dir_all(&work);
+                        let zip = work.with_extension("zip");
                         let built = crate::godot::export(&work, &doc, Some(&story), self.art_dir(&story).as_deref(), true, mode).and_then(|_| {
-                            crate::godot::zip_dir(&work, &slug(&doc.title))
+                            // packed into a file beside it, and sent from there: a large game is never in memory whole
+                            let mut w = std::io::BufWriter::new(std::fs::File::create(&zip).map_err(|e| e.to_string())?);
+                            crate::godot::zip_dir_to(&work, &slug(&doc.title), &mut w)?;
+                            w.flush().map_err(|e| e.to_string())
                         });
                         let _ = std::fs::remove_dir_all(&work);
-                        built.map(|bytes| (bytes, "application/zip", match mode {
+                        let ending = match mode {
                             crate::godot::Mode::Flat => "godot-2d.zip",
                             crate::godot::Mode::Full => "godot-3d.zip",
                             crate::godot::Mode::Story => "godot.zip",
-                        }))
+                        };
+                        match built {
+                            Ok(()) => {
+                                zip_file = Some(zip);
+                                Ok((Vec::new(), "application/zip", ending))
+                            }
+                            Err(e) => {
+                                let _ = std::fs::remove_file(&zip);
+                                Err(e)
+                            }
+                        }
                     }),
                     _ => Err("export as json, bundle, txt, godot, godot2d or godot3d".into()),
                 };
                 match made {
                     Ok((bytes, kind, ending)) => {
-                        // a download, named after the story
-                        let name = if story_id.is_empty() || story_id == "main" { self.load(&story).map(|(d, _)| slug(&d.title)).unwrap_or_else(|_| "story".into()) } else { story_id.clone() };
-                        let name: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
-                        let head = format!(
-                            "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nContent-Disposition: attachment; filename=\"{}.{}\"\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n",
-                            kind,
-                            bytes.len(),
-                            if name.is_empty() { "story" } else { &name },
-                            ending
-                        );
-                        let _ = stream.write_all(head.as_bytes()).and_then(|_| stream.write_all(&bytes));
+                        self.send_download(stream, &story, &story_id, Some(bytes.as_slice()).filter(|_| zip_file.is_none()), zip_file.as_deref(), kind, ending);
+                        if let Some(zip) = &zip_file {
+                            let _ = std::fs::remove_file(zip);
+                        }
                     }
                     Err(e) => fail(stream, e),
                 }
@@ -1644,6 +1652,30 @@ impl State {
     /// Cache key for a preview: the request without its cache-busting
     /// `v`, plus the timestamp of the enhanced file it would show, so a
     /// preview is repainted only when its own image changes.
+    /// A download, named after the story: bytes in hand, or a file sent a piece at a time.
+    fn send_download(&self, stream: &mut TcpStream, story: &Path, story_id: &str, bytes: Option<&[u8]>, file: Option<&Path>, kind: &str, ending: &str) {
+        let name = if story_id.is_empty() || story_id == "main" { self.load(story).map(|(d, _)| slug(&d.title)).unwrap_or_else(|_| "story".into()) } else { story_id.to_string() };
+        let name: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+        let opened = file.map(std::fs::File::open).transpose();
+        let length = match (&opened, bytes) {
+            (Ok(Some(f)), _) => f.metadata().map(|m| m.len()).unwrap_or(0),
+            (_, Some(b)) => b.len() as u64,
+            _ => return respond_json(stream, "500 Internal Server Error", &json!({ "error": "the download could not be read" })),
+        };
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nContent-Disposition: attachment; filename=\"{}.{}\"\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n",
+            kind,
+            length,
+            if name.is_empty() { "story" } else { &name },
+            ending
+        );
+        let _ = stream.write_all(head.as_bytes()).and_then(|_| match (opened, bytes) {
+            (Ok(Some(mut f)), _) => std::io::copy(&mut f, stream).map(|_| ()),
+            (_, Some(b)) => stream.write_all(b),
+            _ => Ok(()),
+        });
+    }
+
     fn art_key(&self, req: &Request, enhanced: Option<PathBuf>) -> String {
         let query: Vec<&str> = req.query.split('&').filter(|kv| !kv.starts_with("v=")).collect();
         let stamp = enhanced.and_then(|f| std::fs::metadata(f).ok()).and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());

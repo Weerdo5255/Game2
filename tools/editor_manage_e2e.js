@@ -145,6 +145,11 @@ let browser = null;
   for (const [url, body] of [['/api/admin/clean', { story: 'main' }], ['/api/art/revert', { story: 'main', assets: ['bg_vista'] }], ['/api/sound/prune', { story: 'main' }], ['/api/art/run', { story: 'main', assets: ['bg_vista'] }], ['/api/history/remove', { story: 'main', name: kept[0] }]]) blocked.push((await post(url, body))[0]);
   const prefsSt = await p.evaluate(() => fetch('/api/art/prefs?story=main', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{"prompts":{"bg_vista":"x"}}' }).then(r => r.status));
   assert(blocked.every(c => c === 423) && prefsSt === 423 && fs.existsSync(path.join(tmp, 'assets', 'enhanced', '.removed', 'bg_old.png')) && !fs.existsSync(path.join(tmp, 'assets', 'art.json')), 'nor are its pictures, recordings, settings or history changed: ' + blocked.join(' '));
+  // a locked story with unsaved changes still exports: its saved version, as the page says
+  const dl = p.waitForEvent('download', { timeout: 30000 });
+  await p.evaluate(() => { window.said = []; const t = toast; toast = (m, e) => { said.push(m); t(m, e); }; exportStory('godot2d'); });
+  const got = await dl;
+  assert(got.suggestedFilename().endsWith('.godot-2d.zip') && (await p.evaluate(() => said.join(' '))).includes('saved version'), 'a locked story with unsaved edits still exports its saved version');
   await p.keyboard.press('Control+z');
   await p.evaluate(() => { dirty = false; dropDraft(); updateBar(); });
   await p.click('#adminBtn'); await p.waitForSelector('#lockBtn');

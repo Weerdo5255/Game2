@@ -352,14 +352,29 @@ fn fill(node: &Value, values: &Map<String, Value>) -> Result<Value, String> {
 
 /// CRC-32 as zlib computes it, so seeds match comfyui/enhance.py.
 pub(crate) fn crc32(data: &[u8]) -> u32 {
-    let mut crc = 0xFFFF_FFFFu32;
-    for &byte in data {
-        crc ^= byte as u32;
-        for _ in 0..8 {
-            crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+    let mut c = Crc32::new();
+    c.update(data);
+    c.finish()
+}
+
+/// The same checksum, a piece at a time.
+pub(crate) struct Crc32(u32);
+
+impl Crc32 {
+    pub(crate) fn new() -> Crc32 {
+        Crc32(0xFFFF_FFFF)
+    }
+    pub(crate) fn update(&mut self, data: &[u8]) {
+        for &byte in data {
+            self.0 ^= byte as u32;
+            for _ in 0..8 {
+                self.0 = if self.0 & 1 != 0 { (self.0 >> 1) ^ 0xEDB8_8320 } else { self.0 >> 1 };
+            }
         }
     }
-    !crc
+    pub(crate) fn finish(&self) -> u32 {
+        !self.0
+    }
 }
 
 /// Feed the guide straight to the ControlNet, without edge detection.

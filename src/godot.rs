@@ -355,7 +355,23 @@ pub fn export(dir: &Path, doc: &Doc, story: Option<&Path>, art_dir: Option<&Path
         put(&dir.join(name), text.as_bytes(), force, false, &mut report, name)?;
     }
     // the story: always as it now stands
-    let story_text = serde_json::to_string_pretty(&story_json(doc, mode)).map_err(|e| e.to_string())? + "\n";
+    let mut data = story_json(doc, mode);
+    if mode == Mode::Full {
+        // all 3D: someone whose model file is missing stands as a figure, not as a flat cut-out
+        let mut have: Vec<String> = Vec::new();
+        for d in [story.map(|s| places::world_dir(s).join("models")), Some(dir.join("models"))].into_iter().flatten() {
+            have.extend(std::fs::read_dir(d).into_iter().flatten().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()));
+        }
+        for c in data["characters"].as_array_mut().into_iter().flatten() {
+            let model = c["model"].as_str().unwrap_or("").to_string();
+            if places::model_file(&model) && !have.contains(&model) {
+                report.notes.push(format!("{}'s model '{}' is not in the story's world/models folder: they stand as a 3D figure instead", c["id"].as_str().unwrap_or(""), model));
+                c["model"] = json!("figure");
+                c["model_scale"] = json!(0.0);
+            }
+        }
+    }
+    let story_text = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())? + "\n";
     put(&dir.join("story/story.json"), story_text.as_bytes(), force, true, &mut report, "story/story.json")?;
 
     // pictures: every place the game paints, and every expression of everyone with a portrait
@@ -417,21 +433,17 @@ pub fn export(dir: &Path, doc: &Doc, story: Option<&Path>, art_dir: Option<&Path
     }
     if let Some(story) = story {
         let sounds = audio::audio_dir(story);
-        let mut flac = 0;
+        // (a .wav beside a .flac of the same name is not the one the game plays: the FLAC is, converted below)
+        let has_flac = |f: &str| f.len() > 4 && (sounds.join(format!("{}.flac", &f[..f.len() - 4])).is_file() || sounds.join(format!("{}.FLAC", &f[..f.len() - 4])).is_file());
         copy_all(
             sounds.clone(),
             "audio",
             &|f| {
-                let ok = [".ogg", ".mp3", ".wav"].iter().any(|e| f.to_ascii_lowercase().ends_with(e));
-                ok
+                let lower = f.to_ascii_lowercase();
+                [".ogg", ".mp3", ".wav"].iter().any(|e| lower.ends_with(e)) && !(lower.ends_with(".wav") && has_flac(f))
             },
             &mut report,
         )?;
-        for e in std::fs::read_dir(&sounds).into_iter().flatten().filter_map(|e| e.ok()) {
-            if e.file_name().to_string_lossy().to_ascii_lowercase().ends_with(".flac") {
-                flac += 1;
-            }
-        }
         // Godot does not play FLAC (what ComfyUI's audio savers write): such recordings go in as WAV, under the same names
         let mut unconverted = 0;
         for e in std::fs::read_dir(&sounds).into_iter().flatten().filter_map(|e| e.ok()) {
@@ -439,16 +451,23 @@ pub fn export(dir: &Path, doc: &Doc, story: Option<&Path>, art_dir: Option<&Path
             let Some(stem) = file.strip_suffix(".flac").or_else(|| file.strip_suffix(".FLAC")) else { continue };
             let label = format!("audio/{}.wav", stem);
             let path = dir.join(&label);
-            if path.exists() && !force {
+            // (kept only if it is a conversion already made: a newer recording is converted again)
+            let newer = |a: &Path, b: &Path| std::fs::metadata(a).and_then(|m| m.modified()).ok() > std::fs::metadata(b).and_then(|m| m.modified()).ok();
+            if path.exists() && !force && !newer(&e.path(), &path) {
                 report.kept.push(label);
                 continue;
             }
-            match to_wav(&e.path()) {
-                Ok(bytes) => put(&path, &bytes, true, true, &mut report, &label)?,
-                Err(_) => unconverted += 1,
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| format!("{}: {}", parent.display(), e))?;
+            }
+            match to_wav_file(&e.path(), &path) {
+                Ok(()) => report.written.push(label),
+                Err(_) => {
+                    let _ = std::fs::remove_file(&path);
+                    unconverted += 1
+                }
             }
         }
-        let _ = flac;
         if unconverted > 0 {
             report.notes.push(format!("{} FLAC recording(s) could not be converted for Godot (which does not play FLAC): convert them to Ogg Vorbis, MP3 or WAV under the same names", unconverted));
         }
@@ -461,7 +480,7 @@ pub fn export(dir: &Path, doc: &Doc, story: Option<&Path>, art_dir: Option<&Path
     }
     // a note on what this is and how to open it, with anything worth knowing about this export
     let mut readme = format!(
-        "{title}\n\nA Godot 4 project, exported from the story editor.\n\nShows: {how}.\n\nOpen it with Godot 4.3 or later: start Godot, choose Import, and pick project.godot\nin this folder (or: godot --path . --editor). Press F5 to play.\n\nThe story is story/story.json, with every scene and choice. Pictures are in art/,\n3D places are scenes in places/, sound in audio/, model files in models/.\nEdit the pictures and places here in Godot; edit the story in the story editor\nand export again (pictures and places changed here are kept unless you ask\nfor them to be written again).\n",
+        "{title}\n\nA Godot 4 project, exported from the story editor.\n\nShows: {how}.\n\nOpen it with Godot 4.3 or later: start Godot, choose Import, and pick project.godot\nin this folder (or: godot --path . --editor). Press F5 to play.\n\nThe story is story/story.json, with every scene and choice. Pictures are in art/,\n3D places are scenes in places/, sound in audio/, model files in models/.\nEdit the pictures and places here in Godot; edit the story in the story editor\nand export again. Writing the project into this folder (the editor's Manage\nview, or --export-godot) keeps pictures and places changed here unless you\nask for them to be written again. A download from the story menu is a fresh\ncopy with every file new: unzipping it over this folder replaces your changes.\n",
         title = if doc.title.is_empty() { "Untitled story" } else { &doc.title },
         how = mode.describe()
     );
@@ -475,43 +494,66 @@ pub fn export(dir: &Path, doc: &Doc, story: Option<&Path>, art_dir: Option<&Path
     Ok(report)
 }
 
-/// A recording as 16-bit PCM WAV, for an engine that does not read its format.
+/// A recording as 16-bit PCM WAV, for an engine that does not read its
+/// format, written straight to `out` as it is decoded (an hour of music is
+/// not held in memory).
 #[cfg(feature = "audio")]
-pub fn to_wav(path: &Path) -> Result<Vec<u8>, String> {
+pub fn to_wav_file(path: &Path, out: &Path) -> Result<(), String> {
     use rodio::Source;
+    use std::io::{Seek, SeekFrom, Write};
     let file = std::fs::File::open(path).map_err(|e| format!("{}: {}", path.display(), e))?;
     let decoder = rodio::Decoder::new(std::io::BufReader::new(file)).map_err(|e| format!("{}: {}", path.display(), e))?;
     let (channels, rate) = (decoder.channels(), decoder.sample_rate());
-    let samples: Vec<i16> = decoder.collect();
-    let data_len = (samples.len() * 2) as u32;
-    let mut out = Vec::with_capacity(44 + samples.len() * 2);
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + data_len).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&channels.to_le_bytes());
-    out.extend_from_slice(&rate.to_le_bytes());
-    out.extend_from_slice(&(rate * channels as u32 * 2).to_le_bytes());
-    out.extend_from_slice(&(channels * 2).to_le_bytes());
-    out.extend_from_slice(&16u16.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&data_len.to_le_bytes());
-    for s in samples {
-        out.extend_from_slice(&s.to_le_bytes());
+    let header = |data_len: u32| {
+        let mut h = Vec::with_capacity(44);
+        h.extend_from_slice(b"RIFF");
+        h.extend_from_slice(&(36u32.saturating_add(data_len)).to_le_bytes());
+        h.extend_from_slice(b"WAVEfmt ");
+        h.extend_from_slice(&16u32.to_le_bytes());
+        h.extend_from_slice(&1u16.to_le_bytes());
+        h.extend_from_slice(&channels.to_le_bytes());
+        h.extend_from_slice(&rate.to_le_bytes());
+        h.extend_from_slice(&(rate * channels as u32 * 2).to_le_bytes());
+        h.extend_from_slice(&(channels * 2).to_le_bytes());
+        h.extend_from_slice(&16u16.to_le_bytes());
+        h.extend_from_slice(b"data");
+        h.extend_from_slice(&data_len.to_le_bytes());
+        h
+    };
+    let fail = |e: std::io::Error| format!("{}: {}", out.display(), e);
+    let mut w = std::io::BufWriter::new(std::fs::File::create(out).map_err(fail)?);
+    w.write_all(&header(0)).map_err(fail)?;
+    let mut bytes: u64 = 0;
+    for s in decoder {
+        w.write_all(&s.to_le_bytes()).map_err(fail)?;
+        bytes += 2;
+        if bytes > (u32::MAX - 36) as u64 {
+            return Err(format!("{} is too long for a WAV file (4 GB)", path.display()));
+        }
     }
-    Ok(out)
+    let mut f = w.into_inner().map_err(|e| fail(e.into_error()))?;
+    f.seek(SeekFrom::Start(0)).and_then(|_| f.write_all(&header(bytes as u32))).map_err(fail)
 }
 
 #[cfg(not(feature = "audio"))]
-pub fn to_wav(_path: &Path) -> Result<Vec<u8>, String> {
+pub fn to_wav_file(_path: &Path, _out: &Path) -> Result<(), String> {
     Err("this build has no audio decoder (it was built without the 'audio' feature)".into())
 }
 
 /// Everything in a folder as one zip file (stored, not compressed: the
 /// pictures and recordings are compressed already), under `prefix/`.
 /// Godot's own cache folder (.godot) is left out.
+#[cfg(test)]
 pub fn zip_dir(dir: &Path, prefix: &str) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    zip_dir_to(dir, prefix, &mut out)?;
+    Ok(out)
+}
+
+/// The same, written to `out` a file at a time (a large game is never held
+/// in memory whole). Returns how many bytes were written.
+pub fn zip_dir_to(dir: &Path, prefix: &str, out: &mut impl std::io::Write) -> Result<u64, String> {
+    use std::io::Read;
     let mut files = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
@@ -530,18 +572,39 @@ pub fn zip_dir(dir: &Path, prefix: &str) -> Result<Vec<u8>, String> {
         }
     }
     files.sort();
-    let mut out = Vec::new();
+    if files.len() > u16::MAX as usize {
+        return Err("too many files for one zip file".into());
+    }
+    const TOO_BIG: &str = "the game is too large for one zip file (4 GB)";
+    let mut at: u64 = 0;
+    let put = |out: &mut dyn std::io::Write, bytes: &[u8], at: &mut u64| -> Result<(), String> {
+        out.write_all(bytes).map_err(|e| e.to_string())?;
+        *at += bytes.len() as u64;
+        Ok(())
+    };
     let mut central = Vec::new();
     let (time, date) = (0u16, (0 << 9) | (1 << 5) | 1u16);   // 1980-01-01, the earliest a zip can say
+    let mut buf = vec![0u8; 1 << 16];
     for path in &files {
         let rel = path.strip_prefix(dir).map_err(|e| e.to_string())?.to_string_lossy().replace('\\', "/");
         let name = format!("{}/{}", prefix, rel);
-        let data = std::fs::read(path).map_err(|e| format!("{}: {}", path.display(), e))?;
-        if data.len() > u32::MAX as usize || out.len() > u32::MAX as usize {
-            return Err("the game is too large for one zip file (4 GB)".into());
+        // first pass: its size and checksum; second: the bytes themselves
+        let open = || std::fs::File::open(path).map_err(|e| format!("{}: {}", path.display(), e));
+        let (mut crc, mut size) = (crate::comfy::Crc32::new(), 0u64);
+        let mut f = open()?;
+        loop {
+            let n = f.read(&mut buf).map_err(|e| format!("{}: {}", path.display(), e))?;
+            if n == 0 {
+                break;
+            }
+            crc.update(&buf[..n]);
+            size += n as u64;
         }
-        let crc = crate::comfy::crc32(&data);
-        let offset = out.len() as u32;
+        let crc = crc.finish();
+        if size > u32::MAX as u64 || at > u32::MAX as u64 {
+            return Err(TOO_BIG.into());
+        }
+        let offset = at as u32;
         let fixed = |buf: &mut Vec<u8>, sig: u32, central_entry: bool| {
             buf.extend_from_slice(&sig.to_le_bytes());
             if central_entry {
@@ -553,14 +616,28 @@ pub fn zip_dir(dir: &Path, prefix: &str) -> Result<Vec<u8>, String> {
             buf.extend_from_slice(&time.to_le_bytes());
             buf.extend_from_slice(&date.to_le_bytes());
             buf.extend_from_slice(&crc.to_le_bytes());
-            buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
-            buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            buf.extend_from_slice(&(size as u32).to_le_bytes());
+            buf.extend_from_slice(&(size as u32).to_le_bytes());
             buf.extend_from_slice(&(name.len() as u16).to_le_bytes());
             buf.extend_from_slice(&0u16.to_le_bytes());   // extra
         };
-        fixed(&mut out, 0x0403_4b50, false);
-        out.extend_from_slice(name.as_bytes());
-        out.extend_from_slice(&data);
+        let mut local = Vec::new();
+        fixed(&mut local, 0x0403_4b50, false);
+        local.extend_from_slice(name.as_bytes());
+        put(out, &local, &mut at)?;
+        let mut f = open()?;
+        let mut copied = 0u64;
+        loop {
+            let n = f.read(&mut buf).map_err(|e| format!("{}: {}", path.display(), e))?;
+            if n == 0 {
+                break;
+            }
+            put(out, &buf[..n], &mut at)?;
+            copied += n as u64;
+        }
+        if copied != size {
+            return Err(format!("{} changed while it was being packed", path.display()));
+        }
         fixed(&mut central, 0x0201_4b50, true);
         central.extend_from_slice(&0u16.to_le_bytes());   // comment
         central.extend_from_slice(&0u16.to_le_bytes());   // disk
@@ -569,20 +646,23 @@ pub fn zip_dir(dir: &Path, prefix: &str) -> Result<Vec<u8>, String> {
         central.extend_from_slice(&offset.to_le_bytes());
         central.extend_from_slice(name.as_bytes());
     }
-    if files.len() > u16::MAX as usize {
-        return Err("too many files for one zip file".into());
+    // the directory at the end must start, and end, where a 32-bit zip can point
+    if at + central.len() as u64 + 22 > u32::MAX as u64 {
+        return Err(TOO_BIG.into());
     }
-    let start = out.len() as u32;
-    out.extend_from_slice(&central);
-    out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
-    out.extend_from_slice(&0u16.to_le_bytes());
-    out.extend_from_slice(&0u16.to_le_bytes());
-    out.extend_from_slice(&(files.len() as u16).to_le_bytes());
-    out.extend_from_slice(&(files.len() as u16).to_le_bytes());
-    out.extend_from_slice(&(central.len() as u32).to_le_bytes());
-    out.extend_from_slice(&start.to_le_bytes());
-    out.extend_from_slice(&0u16.to_le_bytes());
-    Ok(out)
+    let start = at as u32;
+    let mut end = Vec::new();
+    end.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+    end.extend_from_slice(&0u16.to_le_bytes());
+    end.extend_from_slice(&0u16.to_le_bytes());
+    end.extend_from_slice(&(files.len() as u16).to_le_bytes());
+    end.extend_from_slice(&(files.len() as u16).to_le_bytes());
+    end.extend_from_slice(&(central.len() as u32).to_le_bytes());
+    end.extend_from_slice(&start.to_le_bytes());
+    end.extend_from_slice(&0u16.to_le_bytes());
+    put(out, &central, &mut at)?;
+    put(out, &end, &mut at)?;
+    Ok(at)
 }
 
 #[cfg(test)]
@@ -718,6 +798,51 @@ mod tests {
         assert!(std::fs::read_to_string(dir.join("README.txt")).unwrap().contains("everything 2D"));
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!((Mode::parse("2d"), Mode::parse("3d"), Mode::parse(""), Mode::parse("4d")), (Some(Mode::Flat), Some(Mode::Full), Some(Mode::Story), None));
+
+        // all 3D, with a model file that is not there: a figure, not a flat cut-out
+        let dir = std::env::temp_dir().join(format!("below-stairs-godot-3d-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let report = export(&dir, &with_model, None, None, true, Mode::Full).unwrap();
+        let written: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("story/story.json")).unwrap()).unwrap();
+        assert_eq!(written["characters"][1]["model"], "figure");
+        assert!(report.notes.iter().any(|n| n.contains("own.glb")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_recording_is_the_one_the_game_plays() {
+        // a FLAC and a WAV of the same name: the game plays the FLAC, so the project has it (as WAV)
+        let base = std::env::temp_dir().join(format!("below-stairs-godot-snd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let story = base.join("tale").join("story.txt");
+        std::fs::create_dir_all(story.parent().unwrap().join("audio")).unwrap();
+        std::fs::write(&story, crate::BUILT_IN_STORY).unwrap();
+        let wav = |rate: u32| {
+            let pcm: Vec<u8> = (0..400i16).flat_map(|i| (i * 50).to_le_bytes()).collect();
+            let mut w = b"RIFF".to_vec();
+            w.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
+            w.extend_from_slice(b"WAVEfmt ");
+            w.extend_from_slice(&[16, 0, 0, 0, 1, 0, 1, 0]);
+            w.extend_from_slice(&rate.to_le_bytes());
+            w.extend_from_slice(&(rate * 2).to_le_bytes());
+            w.extend_from_slice(&[2, 0, 16, 0]);
+            w.extend_from_slice(b"data");
+            w.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
+            w.extend_from_slice(&pcm);
+            w
+        };
+        let audio = story.parent().unwrap().join("audio");
+        // (the decoder reads by content: a WAV under a .flac name stands in for a FLAC)
+        std::fs::write(audio.join("both.flac"), wav(44100)).unwrap();
+        std::fs::write(audio.join("both.wav"), wav(22050)).unwrap();
+        let (doc, _) = Doc::parse(crate::BUILT_IN_STORY);
+        let out = base.join("game");
+        export(&out, &doc, Some(&story), None, false, Mode::Flat).unwrap();
+        let got = std::fs::read(out.join("audio/both.wav")).unwrap();
+        if cfg!(feature = "audio") {
+            assert_eq!(u32::from_le_bytes(got[24..28].try_into().unwrap()), 44100, "the FLAC's recording, not the stray WAV");
+        }
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -770,7 +895,8 @@ mod tests {
         wav.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
         wav.extend_from_slice(&pcm);
         std::fs::write(dir.join("in.wav"), &wav).unwrap();
-        let out = to_wav(&dir.join("in.wav")).unwrap();
+        to_wav_file(&dir.join("in.wav"), &dir.join("out.wav")).unwrap();
+        let out = std::fs::read(dir.join("out.wav")).unwrap();
         assert_eq!(&out[..4], b"RIFF");
         assert_eq!(u32::from_le_bytes(out[24..28].try_into().unwrap()), 8000);
         assert_eq!(out.len(), wav.len());

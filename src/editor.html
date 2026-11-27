@@ -1723,8 +1723,14 @@ function renderStoryMenu() {
       el("option", { value: EXPORT_STORY + "godot3d", text: "\u21E9 Godot game: all 3D (places and figures)" })));
 }
 /** Download the open story as a file. What is exported is the saved story. */
+/** Before an export: save, or for a locked story say that the saved version goes out. */
+async function savedForExport() {
+  if (!dirty) return true;
+  if (locked) { toast("This story is locked, so your unsaved changes are not in this export: it is the saved version.", true); return true; }
+  return save();
+}
 async function exportStory(format) {
-  if (dirty && !(await save())) return;
+  if (!(await savedForExport())) return;
   if (format === "bundle") toast("Gathering the story's pictures and recordings\u2026");
   if (format.startsWith("godot")) toast("Building the Godot game: painting every picture and place\u2026 (a few seconds)");
   try {
@@ -2518,7 +2524,7 @@ function renderAdmin() {
       el("select", { id: "godotMode", title: "How the Godot game shows its places", onchange: ev => { admin.godotMode = ev.target.value; } },
         opts([{ value: "story", label: "Godot: as the story sets places" }, { value: "2d", label: "Godot: all 2D" }, { value: "3d", label: "Godot: all 3D" }], admin.godotMode || "story")),
       el("button", { id: "godotBtn", text: "Write the Godot project", title: "Write (or bring up to date) this story's Godot 4 project folder: its pictures as textures, its 3D places as scenes, the story as data. To download it instead, use the story menu's Godot game entries.", onclick: async () => {
-        if (dirty && !(await save())) return;
+        if (!(await savedForExport())) return;
         const mode = admin.godotMode || "story";
         const force = confirm("Write the Godot project for this story.\n\nOK: also write its scenes and pictures again, replacing any changes made to them in Godot.\nCancel: only bring the story up to date and add what is missing (changes made in Godot are kept).");
         adminDo(() => api("POST", "/api/godot", { story: storyId, force, mode }), r => `Godot project in ${r.folder}: ${r.written} file(s) written, ${r.kept} kept` + (r.notes.length ? ". " + r.notes.join("; ") : ""));
