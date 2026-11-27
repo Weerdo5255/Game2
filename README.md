@@ -179,12 +179,13 @@ only and refuses requests from other web pages.
 - **Figures** for the open story: scenes, lines, words, a rough reading
   time, choices, endings and how many lines each speaker has.
 - **Earlier versions.** Whenever a change is saved, the version before it is
-  kept in `history/` beside the story (at most one every five minutes, the
-  newest 30). "Take a snapshot now" keeps a named one that is never thinned
+  kept in `.history/` beside the story (at most one every five minutes, the
+  newest 30; always when a save replaces the story with another version). "Take a snapshot now" keeps a named one that is never thinned
   out. Restore shows a version in the editor as an unsaved, undoable change;
   nothing on disk changes until you save.
 - **Lock.** A locked story cannot be saved over or removed until it is
-  unlocked (a `story.txt.locked` file beside it; the game is not affected).
+  unlocked, and neither can its pictures, recordings, voice settings or
+  history (a `story.txt.locked` file beside it; the game is not affected).
 - **Stories.** Every story with its word count, its size on disk split into
   story, art and sound, and when it was last saved; open, duplicate or
   remove from here. "Free ..." deletes what was only set aside: replaced

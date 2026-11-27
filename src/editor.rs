@@ -172,7 +172,10 @@ impl Library {
             n += 1;
             target = bin.join(format!("{}-{}", id, n));
         }
-        std::fs::rename(self.dir.join(id), &target).map_err(|e| format!("could not move the story: {}", e))
+        std::fs::rename(self.dir.join(id), &target).map_err(|e| format!("could not move the story: {}", e))?;
+        // when it was removed (moving a folder does not change its own date)
+        let _ = std::fs::write(target.join("removed.txt"), now().to_string());
+        Ok(())
     }
 }
 
@@ -187,7 +190,7 @@ impl Library {
             .map(|name| {
                 let folder = bin.join(&name);
                 let (doc, _) = Doc::parse(&std::fs::read_to_string(folder.join("story.txt")).unwrap_or_default());
-                json!({ "name": name, "title": if doc.title.is_empty() { "Untitled story".to_string() } else { doc.title }, "scenes": doc.scenes.len(), "removed": modified(&folder), "bytes": dir_bytes(&folder) })
+                json!({ "name": name, "title": if doc.title.is_empty() { "Untitled story".to_string() } else { doc.title }, "scenes": doc.scenes.len(), "removed": std::fs::read_to_string(folder.join("removed.txt")).ok().and_then(|t| t.trim().parse::<u64>().ok()).unwrap_or_else(|| modified(&folder)), "bytes": dir_bytes(&folder) })
             })
             .collect()
     }
@@ -198,13 +201,16 @@ impl Library {
         if !trash_name(name) || !from.join("story.txt").is_file() {
             return Err(format!("there is no removed story called '{}'", name));
         }
-        let mut id = name.to_string();
+        // a name the library can open: story ids are at most 64 characters
+        let base: String = name.chars().take(58).collect();
+        let mut id = base.clone();
         let mut n = 1;
         while id == "main" || self.dir.join(&id).exists() {
             n += 1;
-            id = format!("{}-{}", name, n);
+            id = format!("{}-{}", base, n);
         }
         std::fs::rename(&from, self.dir.join(&id)).map_err(|e| format!("could not bring the story back: {}", e))?;
+        let _ = std::fs::remove_file(self.dir.join(&id).join("removed.txt"));
         Ok(id)
     }
 
@@ -248,9 +254,18 @@ fn lock_file(story: &Path) -> PathBuf {
     PathBuf::from(p)
 }
 
-/// Earlier versions of a story are kept beside it, in "history".
+/// Earlier versions of a story are kept beside it, in ".history" (or
+/// ".history-<name>" for a story file not called story.txt, so that story
+/// files sharing a folder each keep their own).
 fn history_dir(story: &Path) -> PathBuf {
-    story.parent().unwrap_or(Path::new(".")).join("history")
+    let stem = story.file_stem().unwrap_or_default().to_string_lossy();
+    let name = if stem == "story" { ".history".to_string() } else { format!(".history-{}", stem) };
+    story.parent().unwrap_or(Path::new(".")).join(name)
+}
+
+/// The names given to snapshots, as typed (file names keep only a plain form).
+fn snapshot_labels(story: &Path) -> serde_json::Map<String, Value> {
+    std::fs::read_to_string(history_dir(story).join("labels.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
 }
 
 /// How many automatic snapshots are kept, and how far apart they are taken.
@@ -275,6 +290,7 @@ fn take_snapshot(story: &Path, kind: &str, label: &str) -> Result<String, String
     let mut slug: String = label.trim().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
     slug = slug.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
     slug.truncate(40);
+    let slug = slug.trim_end_matches('-').to_string();
     let mut time = now();
     let name = loop {
         let name = if slug.is_empty() { format!("{}_{}.txt", time, kind) } else { format!("{}_{}_{}.txt", time, kind, slug) };
@@ -284,6 +300,11 @@ fn take_snapshot(story: &Path, kind: &str, label: &str) -> Result<String, String
         time += 1;
     };
     std::fs::copy(story, dir.join(&name)).map_err(|e| e.to_string())?;
+    if !label.trim().is_empty() {
+        let mut labels = snapshot_labels(story);
+        labels.insert(name.clone(), json!(label.trim().chars().filter(|c| !c.is_control()).take(80).collect::<String>()));
+        let _ = std::fs::write(dir.join("labels.json"), serde_json::to_string_pretty(&labels).unwrap_or_default());
+    }
     Ok(name)
 }
 
@@ -580,7 +601,8 @@ impl State {
         Ok(Doc::parse(&text))
     }
 
-    fn save(&self, story: &Path, doc: &Doc) -> Result<(), String> {
+    /// `keep`: the version on disk is about to be replaced wholesale, so it is kept in the history whatever its age.
+    fn save(&self, story: &Path, doc: &Doc, keep: bool) -> Result<(), String> {
         let err = |e: std::io::Error| format!("{}: {}", story.display(), e);
         // keep each file as it was before this editing session
         let mut backed_up = self.backed_up.lock().unwrap();
@@ -590,13 +612,15 @@ impl State {
             std::fs::copy(story, PathBuf::from(bak)).map_err(err)?;
         }
         backed_up.insert(story.to_path_buf());
-        drop(backed_up);
-        // and keep how it was, now and then, so an earlier version can be brought back
+        // (the guard is held to the end: saves of one story never interleave)
+        // and keep how it was, now and then, so an earlier version can be brought back;
+        // always when the whole story is being replaced by another version
         let text = doc.to_text();
         if std::fs::read_to_string(story).map_or(false, |old| old != text) {
             let autos: Vec<_> = snapshots(story).into_iter().filter(|s| s.1 == "auto").collect();
-            if autos.first().map_or(true, |latest| now().saturating_sub(latest.0) >= AUTO_SNAPSHOT_GAP) {
-                let _ = take_snapshot(story, "auto", "");
+            // a snapshot stamped ahead of the clock (a corrected clock, a copied folder) must not hold others back
+            let due = autos.first().map_or(true, |latest| latest.0 > now() || now() - latest.0 >= AUTO_SNAPSHOT_GAP);
+            if (keep || due) && take_snapshot(story, "auto", "").is_ok() {
                 for old in autos.iter().skip(AUTO_SNAPSHOTS - 1) {
                     let _ = std::fs::remove_file(history_dir(story).join(&old.3));
                 }
@@ -721,9 +745,11 @@ impl State {
     }
 
     fn history(&self, story: &Path) -> Value {
+        let labels = snapshot_labels(story);
         let list: Vec<Value> = snapshots(story)
             .into_iter()
             .map(|(time, kind, label, name)| {
+                let label = labels.get(&name).and_then(Value::as_str).map_or(label, str::to_string);
                 let file = history_dir(story).join(&name);
                 let scenes = std::fs::read_to_string(&file).map_or(0, |t| Doc::parse(&t).0.scenes.len());
                 json!({ "name": name, "time": time, "kind": kind, "label": label, "scenes": scenes, "bytes": dir_bytes(&file) })
@@ -975,6 +1001,11 @@ impl State {
             Ok(p) => p,
             Err(e) => return respond_json(stream, "404 Not Found", &json!({ "error": e })),
         };
+        // a locked story is not changed by any route: not its text, its art, its sound or its history
+        const CHANGES: [&str; 9] = ["/api/story", "/api/stories/remove", "/api/admin/clean", "/api/history/remove", "/api/art/prefs", "/api/art/run", "/api/art/revert", "/api/sound/sample", "/api/sound/prune"];
+        if req.method != "GET" && CHANGES.contains(&req.path.as_str()) && lock_file(&story).exists() {
+            return respond_json(stream, "423 Locked", &json!({ "error": "this story is locked: unlock it under Manage to change it", "locked": true }));
+        }
         let answer = |stream: &mut TcpStream, result: Result<Value, String>| match result {
             Ok(v) => respond_json(stream, "200 OK", &v),
             Err(e) => respond_json(stream, "400 Bad Request", &json!({ "error": e })),
@@ -1097,7 +1128,7 @@ impl State {
                     return respond_json(stream, "409 Conflict", &json!({ "error": "the story file has changed since you opened it", "conflict": true }));
                 }
                 let before = self.load(&story).ok().map(|(doc, _)| doc);
-                match self.doc_from(&req.body).and_then(|doc| doc.survives_text().and_then(|_| self.save(&story, &doc)).map(|_| doc)) {
+                match self.doc_from(&req.body).and_then(|doc| doc.survives_text().and_then(|_| self.save(&story, &doc, q.contains_key("force") || q.contains_key("keep"))).map(|_| doc)) {
                     Ok(doc) => {
                         if let Some(before) = &before {
                             self.follow_renames(&story, before, &doc);

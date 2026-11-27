@@ -414,17 +414,25 @@ window.addEventListener("drop", pointerReleased, true);
 function num(text) { return Math.max(-9999, Math.min(9999, parseInt(text, 10) || 0)); }
 function markDirty() { dirty = true; updateBar(); scheduleValidate(); scheduleDraft(); }
 // ---- drafts: unsaved work is kept in this browser, in case the page goes away
-const draftKey = id => "story-editor-draft:" + location.host + ":" + id;
+// Keyed by the story's file, not its id: the same address serves other projects on other days.
+const draftKeyOf = path => "story-editor-draft:" + path;
+const draftKey = () => draftKeyOf(meta.path);
+let draftMine = false;   // this tab wrote the draft that is stored (another tab's is left alone)
+let keepNext = false;    // the next save replaces the story wholesale: have the server keep the version on disk
+function forgetDraftOf(id) { const st = stories.find(x => x.id === id); if (st) try { localStorage.removeItem(draftKeyOf(st.path)); } catch (e) { /* nothing to forget */ } }
 function scheduleDraft() { clearTimeout(scheduleDraft.timer); scheduleDraft.timer = setTimeout(writeDraft, 1200); }
 function writeDraft() {
   clearTimeout(scheduleDraft.timer);
-  try { if (dirty) localStorage.setItem(draftKey(storyId), JSON.stringify({ base: revision, at: Date.now(), doc: snapshot() })); else localStorage.removeItem(draftKey(storyId)); } catch (e) { /* storage full or switched off: carry on without */ }
+  try {
+    if (dirty) { localStorage.setItem(draftKey(), JSON.stringify({ base: revision, at: Date.now(), doc: snapshot() })); draftMine = true; }
+    else if (draftMine) { localStorage.removeItem(draftKey()); draftMine = false; }
+  } catch (e) { /* storage full or switched off: carry on without */ }
 }
-function dropDraft(id) { clearTimeout(scheduleDraft.timer); try { localStorage.removeItem(draftKey(id == null ? storyId : id)); } catch (e) { /* nothing to drop */ } }
+function dropDraft() { clearTimeout(scheduleDraft.timer); draftMine = false; try { localStorage.removeItem(draftKey()); } catch (e) { /* nothing to drop */ } }
 /** After a story has loaded: offer back work that was never saved. */
 function offerDraft() {
   let d = null;
-  try { d = JSON.parse(localStorage.getItem(draftKey(storyId)) || "null"); } catch (e) { /* unreadable: ignore */ }
+  try { d = JSON.parse(localStorage.getItem(draftKey()) || "null"); } catch (e) { /* unreadable: ignore */ }
   if (!d || !d.doc) return;
   if (d.doc === snapshot()) return dropDraft();
   const when = new Date(d.at).toLocaleString();
@@ -432,6 +440,7 @@ function offerDraft() {
   if (!confirm(`Unsaved changes to this story from ${when} were found in this browser.${stale}\n\nOK: restore them (you can still undo).\nCancel: discard them.`)) return dropDraft();
   undoStack.push(snapshot()); redoStack = [];
   try { doc = JSON.parse(d.doc); } catch (e) { doc = JSON.parse(undoStack.pop()); return dropDraft(); }
+  keepNext = true; draftMine = true;
   afterHistory(); toast("Restored your unsaved changes");
 }
 function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); doc = JSON.parse(undoStack.pop()); afterHistory(); }
@@ -459,13 +468,13 @@ async function save() {
   try {
     const sent = snapshot();
     let r;
-    try { r = await api("PUT", forStory("/api/story") + "&base=" + encodeURIComponent(revision || ""), doc); }
+    try { r = await api("PUT", forStory("/api/story") + "&base=" + encodeURIComponent(revision || "") + (keepNext ? "&keep=1" : ""), doc); }
     catch (e) {
       if (!e.conflict) throw e;
       if (!confirm("The story file has changed since you opened it (another tab, or an edit by hand).\n\nOK: save anyway, replacing what is on disk.\nCancel: keep the file; reload the page to see it (your changes here would be lost).")) return false;
       r = await api("PUT", forStory("/api/story") + "&force=1", doc);
     }
-    revision = r.revision;
+    revision = r.revision; keepNext = false;
     // anything typed while the request was on its way is still unsaved
     problems = r.problems; parseErrors = []; dirty = snapshot() !== sent; updateBar(); markProblems(); renderProblems(); writeDraft();
     toast("Saved");
@@ -1324,6 +1333,7 @@ function renderProblems() {
 function renderAll(opts) {
   renderGraph(); renderInspector(); renderLeft(); updateBar();
   if (opts && opts.center && sel >= 0) centerOn(sel);
+  if ($("#find").classList.contains("show")) renderFindHits();
 }
 
 // ----------------------------------------------------------------- boot
@@ -1341,6 +1351,7 @@ async function loadStory(id) {
     if (!list.some(x => x.id === id)) id = "main";
     data = await api("GET", "/api/story?story=" + encodeURIComponent(id));
   } catch (e) { toast("Could not load the story: " + e.message, true); return false; }
+  clearTimeout(scheduleDraft.timer); draftMine = false; keepNext = false;
   stories = list; storyId = id; revision = data.revision; locked = !!data.locked;
   history.replaceState(null, "", "#story=" + storyId);
   doc = data.doc; meta = data.meta; problems = data.problems; parseErrors = data.parse_errors;
@@ -1415,8 +1426,16 @@ async function importStory(file) {
   if (r.skipped.length) notes.push(`${r.skipped.length} file${r.skipped.length === 1 ? "" : "s"} left out (not a picture or recording)`);
   if (r.unread.length) notes.push(`${r.unread.length} line${r.unread.length === 1 ? "" : "s"} could not be read and ${r.unread.length === 1 ? "was" : "were"} kept as notes`);
   if (r.errors) notes.push(`${r.errors} problem${r.errors === 1 ? "" : "s"} to fix`);
-  stories = r.stories; renderStoryMenu();
+  stories = r.stories; renderStoryMenu(); forgetDraftOf(r.id);
   return { id: r.id, message: notes.join(", "), warn: !!(r.skipped.length || r.unread.length || r.errors) };
+}
+/** Open another story, giving up unsaved changes here (already agreed to). They and their draft are only let go once the other story has really opened. */
+async function leaveFor(id) {
+  const was = dirty, mine = draftMine, timer = scheduleDraft.timer, key = draftKey();
+  dirty = false;
+  if (await loadStory(id)) { if (was) try { localStorage.removeItem(key); } catch (e) { /* nothing to drop */ } return true; }
+  dirty = was; draftMine = mine; if (was) scheduleDraft(); updateBar();
+  return false;
 }
 async function storyMenuChanged() {
   const v = $("#storySel").value, back = () => { $("#storySel").value = storyId; };
@@ -1436,15 +1455,15 @@ async function storyMenuChanged() {
     return;
   }
   if (dirty && !confirm("This story has unsaved changes. Leave it without saving?")) return back();
-  if (dirty) dropDraft();
   // only forget the unsaved changes once the other story has really opened
-  const open = async id => { const was = dirty; dirty = false; if (await loadStory(id)) return true; dirty = was; updateBar(); back(); return false; };
+  const open = id => leaveFor(id).then(ok => { if (!ok) back(); return ok; });
   try {
     if (v === NEW_STORY || v === COPY_STORY) {
       const current = stories.find(x => x.id === storyId);
       const title = prompt(v === NEW_STORY ? "Title of the new story:" : "Title of the copy:", v === NEW_STORY ? "" : (current ? current.title : "") + " (copy)");
       if (!title || !title.trim()) return back();
       const made = await api("POST", "/api/stories", { title, copy: v === COPY_STORY ? storyId : null });
+      stories = made.stories; forgetDraftOf(made.id);   // a new story has no unsaved work, whatever an older one of that name left behind
       if (await open(made.id)) toast("Created '" + title.trim() + "'");
     } else if (v === REMOVE_STORY) {
       const current = stories.find(x => x.id === storyId);
@@ -1657,7 +1676,7 @@ async function restoreSnapshot(snap) {
   try {
     const r = await api("GET", forStory("/api/history/get?name=" + encodeURIComponent(snap.name)));
     undoStack.push(snapshot()); redoStack = [];
-    doc = r.doc; afterHistory(); closeAdmin(); fit();
+    doc = r.doc; keepNext = true; afterHistory(); closeAdmin(); fit();
     toast(`Showing the version from ${fmtTime(snap.time)}. Save to keep it, or Undo to go back.`);
   } catch (e) { toast(e.message, true); }
 }
@@ -1700,13 +1719,13 @@ function renderAdmin() {
         el("td", { class: "num", title: "Replaced pictures and recordings, and the backup copy from this session", text: x.bytes.aside ? fmtBytes(x.bytes.aside) : "—" }),
         el("td", { text: fmtTime(x.modified) }),
         el("td", {}, el("div", { class: "acts" },
-          x.id !== storyId && el("button", { text: "Open", onclick: async () => { if (dirty && !confirm("This story has unsaved changes. Leave it without saving?")) return; if (dirty) dropDraft(); dirty = false; await loadStory(x.id); } }),
-          el("button", { text: "Duplicate", onclick: () => { const title = prompt("Title of the copy:", x.title + " (copy)"); if (title && title.trim()) adminDo(async () => { const r = await api("POST", "/api/stories", { title, copy: x.id }); stories = r.stories; renderStoryMenu(); }, "Copied"); } }),
-          x.bytes.aside > 0 && el("button", { text: "Free " + fmtBytes(x.bytes.aside), title: "Delete the set-aside files for good", onclick: () => { if (confirm(`Delete ${fmtBytes(x.bytes.aside)} of set-aside pictures, recordings and backups of '${x.title}'? This cannot be undone.`)) adminDo(() => api("POST", "/api/admin/clean", { story: x.id }), r => "Freed " + fmtBytes(r.freed)); } }),
+          x.id !== storyId && el("button", { text: "Open", onclick: async () => { if (dirty && !confirm("This story has unsaved changes. Leave it without saving?")) return; await leaveFor(x.id); } }),
+          el("button", { text: "Duplicate", onclick: () => { const title = prompt("Title of the copy:", x.title + " (copy)"); if (title && title.trim()) adminDo(async () => { const r = await api("POST", "/api/stories", { title, copy: x.id }); stories = r.stories; forgetDraftOf(r.id); renderStoryMenu(); }, "Copied"); } }),
+          x.bytes.aside > 0 && el("button", { disabled: x.locked, text: "Free " + fmtBytes(x.bytes.aside), title: "Delete the set-aside files for good", onclick: () => { if (confirm(`Delete ${fmtBytes(x.bytes.aside)} of set-aside pictures, recordings and backups of '${x.title}'? This cannot be undone.`)) adminDo(() => api("POST", "/api/admin/clean", { story: x.id }), r => "Freed " + fmtBytes(r.freed)); } }),
           x.id !== "main" && el("button", { class: "ghost danger", text: "Remove", disabled: x.locked, title: x.locked ? "Unlock it first" : "Move it to Removed stories below", onclick: async () => {
             if (x.id === storyId && dirty && !confirm("This story has unsaved changes, which will be lost. Remove it anyway?")) return;
             if (!confirm(`Remove '${x.title}' from the library? It can be brought back from Removed stories.`)) return;
-            await adminDo(async () => { const r = await api("POST", "/api/stories/remove", { story: x.id }); stories = r.stories; if (x.id === storyId) { dropDraft(); dirty = false; await loadStory("main"); } else renderStoryMenu(); }, "Story removed");
+            await adminDo(async () => { forgetDraftOf(x.id); const r = await api("POST", "/api/stories/remove", { story: x.id }); stories = r.stories; if (x.id === storyId) { dropDraft(); dirty = false; await loadStory("main"); } else renderStoryMenu(); }, "Story removed");
           } }))))),
       el("tr", {}, el("td", { style: "color:var(--dim)", text: "All stories" }), el("td", {}), el("td", { class: "num", text: d.stories.reduce((n, x) => n + x.words, 0).toLocaleString() }), el("td", { class: "num", colspan: 4, text: fmtBytes(d.stories.reduce((n, x) => n + total(x.bytes), 0)) + " on disk" }), el("td", {}), el("td", {}))),
     el("h2", {}, "Removed stories"),
@@ -1714,7 +1733,7 @@ function renderAdmin() {
       ? el("table", {}, el("tr", {}, el("th", { text: "Title" }), el("th", { class: "num", text: "Scenes" }), el("th", { class: "num", text: "Size" }), el("th", { text: "Removed" }), el("th", {})),
           d.trash.map(t => el("tr", { "data-trash": t.name }, el("td", {}, el("b", { text: t.title }), el("div", { style: "color:var(--dim);font-size:11.5px", text: t.name })), el("td", { class: "num", text: String(t.scenes) }), el("td", { class: "num", text: fmtBytes(t.bytes) }), el("td", { text: fmtTime(t.removed) }),
             el("td", {}, el("div", { class: "acts" },
-              el("button", { text: "Bring back", onclick: () => adminDo(async () => { const r = await api("POST", "/api/admin/restore", { name: t.name }); stories = r.stories; renderStoryMenu(); }, `'${t.title}' is back in the library`) }),
+              el("button", { text: "Bring back", onclick: () => adminDo(async () => { const r = await api("POST", "/api/admin/restore", { name: t.name }); stories = r.stories; forgetDraftOf(r.id); renderStoryMenu(); }, `'${t.title}' is back in the library`) }),
               el("button", { class: "ghost danger", text: "Delete for good", onclick: () => { if (confirm(`Delete '${t.title}' with its pictures and recordings for good? This cannot be undone.`)) adminDo(() => api("POST", "/api/admin/purge", { name: t.name }), "Deleted"); } }))))))
       : el("div", { class: "empty", style: "padding:14px", text: "Nothing has been removed." }));
   host.scrollTop = scroll;
