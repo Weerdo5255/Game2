@@ -166,6 +166,13 @@ fn main() {
         game.start_at(label);
     }
     // a story with places marked 3D is shown by the 3D engine, if this build has one
+    if flag("--vr") {
+        if !cfg!(feature = "vr") {
+            eprintln!("--vr needs a build with the VR feature: cargo run --release --features vr -- --vr");
+        } else if flag("--2d") {
+            eprintln!("--2d and --vr were both given: showing the ordinary 2D window (leave out --2d for the headset)");
+        }
+    }
     // (in a headset every story is shown by the 3D engine: paintings hang on a panel)
     if (game.has_world() || (flag("--vr") && cfg!(feature = "vr"))) && !flag("--2d") {
         #[cfg(feature = "world3d")]

@@ -253,7 +253,7 @@ have clearly turned away. Near a wall it moves closer rather than into it.
 
 | Control | Does |
 |---|---|
-| left stick (or trackpad) | walk, in the direction you are looking |
+| left stick (on Vive wands: press the left trackpad) | walk, in the direction you are looking |
 | right stick, sideways | turn in 30 degree steps |
 | right stick, up / down | pick a choice |
 | either trigger | advance, confirm |
@@ -263,6 +263,9 @@ Mixed Reality controllers, and for OpenXR's simple controller (advance
 only). The keyboard and mouse keep working, and the window on the desktop
 shows the ordinary view. Comfort choices: turning is in steps, walking is at
 a steady pace, and the gentle swaying of the zero-gravity room is left out.
+Real steps in your room move you through the place too and stop at its
+walls, and turning pivots about where you stand, not about the middle of
+your play area.
 
 Places that a story leaves as paintings, and the title screen and chapter
 cards, are shown on a large screen in the dark, so any story can be played

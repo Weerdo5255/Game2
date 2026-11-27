@@ -64,6 +64,10 @@ struct Headset {
     down: bool,
     /// Where the eyes are in the world, for the cast to face.
     eye: Option<Vec3>,
+    /// Where the head is within the tracked space (its floor-level origin is the middle of the play area).
+    local: Vec3,
+    /// How far the head has really moved across the floor since the last frame, in the tracked space.
+    stepped: Vec2,
 }
 
 /// Where the player stands, for whatever carries the headset's viewpoint.
@@ -77,6 +81,8 @@ struct Body {
     fog: Option<(Color, f32, f32)>,
     /// The story's frame was redrawn this frame.
     redrawn: bool,
+    /// The walkable floor of the place.
+    floor: (Vec2, Vec2),
 }
 
 const EYE: f32 = 1.62;
@@ -170,8 +176,8 @@ pub fn run(game: Game, opts: Options) {
     app
         .init_resource::<Headset>()
         .init_resource::<Body>()
-        // keep the story moving when the window is not in front
-        .insert_resource(WinitSettings::game())
+        // keep the story moving when the window is not in front (a headset never waits for the window at all)
+        .insert_resource(if opts.vr && cfg!(feature = "vr") { WinitSettings { focused_mode: bevy::winit::UpdateMode::Continuous, unfocused_mode: bevy::winit::UpdateMode::Continuous } } else { WinitSettings::game() })
         .insert_resource(ClearColor(Color::BLACK))
         .insert_resource(AmbientLight { color: Color::WHITE, brightness: 300.0, ..default() })
         .insert_non_send_resource(runner)
@@ -331,7 +337,10 @@ fn frame(
         let (head_forward, head_right) = (Vec2::new(-facing.sin(), -facing.cos()), Vec2::new(facing.cos(), -facing.sin()));
         let stick_step = (head_forward * headset.stick.y + head_right * headset.stick.x).clamp_length_max(1.0) * 2.0;
         let at = Vec2::new(eye.0.translation.x, eye.0.translation.z);
-        let to = walk(place, at, (keys_step.normalize_or_zero() * speed + stick_step) * dt);
+        // real steps taken in the room move you through the place too (and stop at its walls)
+        let (sin, cos) = run.yaw.sin_cos();
+        let real_step = Vec2::new(headset.stepped.x * cos + headset.stepped.y * sin, -headset.stepped.x * sin + headset.stepped.y * cos);
+        let to = walk(place, at, (keys_step.normalize_or_zero() * speed + stick_step) * dt + real_step);
         // (no swaying in a headset: the world should move only when you do)
         let bob = if place.floating && !headset.active { (time.elapsed_secs() * 0.9).sin() * 0.06 } else { 0.0 };
         eye.0.translation = Vec3::new(to.x, place.spawn.y + bob, to.y);
@@ -340,6 +349,7 @@ fn frame(
         body.yaw = run.yaw;
         // how far the floor runs on ahead, to keep the text panel out of the walls
         let ahead = [(place.max.x - to.x, forward.x), (to.x - place.min.x, -forward.x), (place.max.y - to.y, forward.y), (to.y - place.min.y, -forward.y)];
+        body.floor = (place.min, place.max);
         body.reach = ahead.iter().filter(|(_, along)| *along > 1e-3).map(|(gap, along)| gap / along).fold(f32::MAX, f32::min);
     }
     body.in_place = run.place.is_some();
@@ -1033,12 +1043,22 @@ mod vr {
     use bevy_mod_xr::{camera::XrCamera, session::XrTrackingRoot};
     use bevy_xr_utils::xr_utils_actions::{ActiveSet, XRUtilsAction, XRUtilsActionSet, XRUtilsActionState, XRUtilsActionSystemSet, XRUtilsActionsPlugin, XRUtilsBinding};
 
-    #[derive(Component)]
-    struct WalkAction;
-    #[derive(Component)]
-    struct LookAction;
-    #[derive(Component)]
-    struct AdvanceAction;
+    use bevy::window::PresentMode;
+    use bevy_mod_xr::actions::ActionType;
+    use bevy_mod_xr::session::XrState;
+
+    /// What a controller input is for.
+    #[derive(Component, Clone, Copy, PartialEq)]
+    enum Use {
+        Walk,
+        Look,
+        Advance,
+        /// A trackpad counts only while it is pressed: a thumb resting on it is not a push.
+        WalkPad,
+        WalkPadPressed,
+        LookPad,
+        LookPadPressed,
+    }
     #[derive(Component)]
     struct Panel;
 
@@ -1046,7 +1066,11 @@ mod vr {
     const PANEL: (f32, f32, f32) = (2.0, 2.3, 1.72);
     const SNAP: f32 = PI / 6.0;
 
-    pub fn plugins(app: &mut App, window: WindowPlugin) {
+    pub fn plugins(app: &mut App, mut window: WindowPlugin) {
+        // the headset sets the pace: the desktop window must not make it wait for the monitor
+        if let Some(w) = &mut window.primary_window {
+            w.present_mode = PresentMode::AutoNoVsync;
+        }
         // without a runtime or a headset this falls back to ordinary rendering by itself
         app.add_plugins(add_xr_plugins(DefaultPlugins.build().disable::<PipelinedRenderingPlugin>()).set(window))
             .add_plugins(XRUtilsActionsPlugin)
@@ -1055,85 +1079,109 @@ mod vr {
     }
 
     fn actions(mut commands: Commands) {
+        const STICKS: [&str; 3] = ["/interaction_profiles/oculus/touch_controller", "/interaction_profiles/valve/index_controller", "/interaction_profiles/microsoft/motion_controller"];
+        const VIVE: &str = "/interaction_profiles/htc/vive_controller";
         let set = commands.spawn((XRUtilsActionSet { name: "story".into(), pretty_name: "Story and walking".into(), priority: 0 }, ActiveSet)).id();
-        let sticks = |hand: &str| -> Vec<(&'static str, String)> {
-            vec![
-                ("/interaction_profiles/oculus/touch_controller", format!("/user/hand/{}/input/thumbstick", hand)),
-                ("/interaction_profiles/valve/index_controller", format!("/user/hand/{}/input/thumbstick", hand)),
-                ("/interaction_profiles/microsoft/motion_controller", format!("/user/hand/{}/input/thumbstick", hand)),
-                ("/interaction_profiles/htc/vive_controller", format!("/user/hand/{}/input/trackpad", hand)),
-            ]
-        };
-        let mut triggers: Vec<(&'static str, String)> = Vec::new();
-        for hand in ["left", "right"] {
-            for profile in ["/interaction_profiles/oculus/touch_controller", "/interaction_profiles/valve/index_controller", "/interaction_profiles/microsoft/motion_controller", "/interaction_profiles/htc/vive_controller"] {
-                triggers.push((profile, format!("/user/hand/{}/input/trigger/value", hand)));
-            }
-            triggers.push(("/interaction_profiles/khr/simple_controller", format!("/user/hand/{}/input/select/click", hand)));
-        }
-        let mut make = |name: &str, label: &str, kind: bevy_mod_xr::actions::ActionType, bindings: Vec<(&'static str, String)>| {
-            let action = commands.spawn(XRUtilsAction { action_name: name.to_string().into(), localized_name: label.to_string().into(), action_type: kind }).id();
+        let mut make = |name: &str, label: &str, kind: ActionType, what: Use, bindings: Vec<(&'static str, String)>| {
+            let action = commands.spawn((XRUtilsAction { action_name: name.to_string().into(), localized_name: label.to_string().into(), action_type: kind }, what)).id();
             for (profile, binding) in bindings {
                 let b = commands.spawn(XRUtilsBinding { profile: profile.into(), binding: binding.into() }).id();
                 commands.entity(action).add_child(b);
             }
             commands.entity(set).add_child(action);
-            action
         };
-        let walk = make("walk", "Walk", bevy_mod_xr::actions::ActionType::Vector, sticks("left"));
-        let look = make("look", "Turn, and pick a choice", bevy_mod_xr::actions::ActionType::Vector, sticks("right"));
-        let advance = make("advance", "Advance the story", bevy_mod_xr::actions::ActionType::Float, triggers);
-        commands.entity(walk).insert(WalkAction);
-        commands.entity(look).insert(LookAction);
-        commands.entity(advance).insert(AdvanceAction);
+        let sticks = |hand: &str| STICKS.iter().map(|p| (*p, format!("/user/hand/{}/input/thumbstick", hand))).collect::<Vec<_>>();
+        let mut triggers: Vec<(&'static str, String)> = Vec::new();
+        for hand in ["left", "right"] {
+            for profile in STICKS.iter().chain([&VIVE]) {
+                triggers.push((*profile, format!("/user/hand/{}/input/trigger/value", hand)));
+            }
+            triggers.push(("/interaction_profiles/khr/simple_controller", format!("/user/hand/{}/input/select/click", hand)));
+        }
+        make("walk", "Walk", ActionType::Vector, Use::Walk, sticks("left"));
+        make("look", "Turn, and pick a choice", ActionType::Vector, Use::Look, sticks("right"));
+        make("advance", "Advance the story", ActionType::Float, Use::Advance, triggers);
+        make("walk_pad", "Walk (trackpad)", ActionType::Vector, Use::WalkPad, vec![(VIVE, "/user/hand/left/input/trackpad".into())]);
+        make("walk_pad_pressed", "Walk (press the trackpad)", ActionType::Bool, Use::WalkPadPressed, vec![(VIVE, "/user/hand/left/input/trackpad/click".into())]);
+        make("look_pad", "Turn, and pick a choice (trackpad)", ActionType::Vector, Use::LookPad, vec![(VIVE, "/user/hand/right/input/trackpad".into())]);
+        make("look_pad_pressed", "Turn, and pick (press the trackpad)", ActionType::Bool, Use::LookPadPressed, vec![(VIVE, "/user/hand/right/input/trackpad/click".into())]);
+    }
+
+    /// One push counts once: it fires on passing `high`, and not again until it has come back under `low`.
+    fn once(armed: &mut bool, value: f32, high: f32, low: f32) -> bool {
+        if value < low {
+            *armed = true;
+        }
+        let fire = *armed && value > high;
+        if fire {
+            *armed = false;
+        }
+        fire
     }
 
     /// Controllers and head pose, into what the story's frame understands.
-    #[allow(clippy::type_complexity)]
     fn read(
         mut headset: ResMut<Headset>,
+        state: Option<Res<XrState>>,
         views: Option<Res<OxrViews>>,
         root: Query<&GlobalTransform, With<XrTrackingRoot>>,
-        walk: Query<&XRUtilsActionState, With<WalkAction>>,
-        look: Query<&XRUtilsActionState, With<LookAction>>,
-        advance: Query<&XRUtilsActionState, With<AdvanceAction>>,
-        mut held: Local<(bool, bool, bool)>,
+        inputs: Query<(&Use, &XRUtilsActionState)>,
+        mut armed: Local<[bool; 5]>,
+        mut last: Local<Option<Vec3>>,
     ) {
-        let vector = |q: &Query<&XRUtilsActionState, With<WalkAction>>| q.iter().find_map(|s| if let XRUtilsActionState::Vector(v) = s { Some(Vec2::from(v.current_state)) } else { None });
-        let view = views.as_ref().and_then(|v| v.first().copied());
         *headset = Headset::default();
-        let Some(view) = view else {
-            *held = (false, false, false);
+        // only while a session is really running: what the runtime last said is not news after it has stopped
+        let running = state.map_or(false, |s| *s == XrState::Running);
+        let Some(view) = views.as_ref().filter(|_| running).and_then(|v| v.first().copied()) else {
+            // (nothing is held over to a later session; a trigger already down then must be let go first)
+            *armed = [false; 5];
+            *last = None;
             return;
         };
         headset.active = true;
         // which way the head faces, flattened to the floor
         let ahead = view.pose.orientation.to_quat() * Vec3::NEG_Z;
         headset.heading = if ahead.xz().length() > 0.2 { (-ahead.x).atan2(-ahead.z) } else { 0.0 };
+        let local = view.pose.position.to_vec3();
+        headset.local = local;
+        // real steps; a jump (the runtime recentring) is not one
+        let moved = last.map_or(Vec2::ZERO, |l| (local - l).xz());
+        headset.stepped = if moved.length() < 0.5 { moved } else { Vec2::ZERO };
+        *last = Some(local);
         if let Ok(root) = root.single() {
-            headset.eye = Some(root.transform_point(view.pose.position.to_vec3()));
+            headset.eye = Some(root.transform_point(local));
         }
-        // a little dead space in the middle of each stick
+        let vector = |what: Use| inputs.iter().find(|(u, _)| **u == what).and_then(|(_, s)| if let XRUtilsActionState::Vector(v) = s { Some(Vec2::from(v.current_state)) } else { None }).unwrap_or_default();
+        let level = |what: Use| {
+            inputs.iter().find(|(u, _)| **u == what).map_or(0.0, |(_, s)| match s {
+                XRUtilsActionState::Float(f) => f.current_state,
+                XRUtilsActionState::Bool(b) => b.current_state as u8 as f32,
+                XRUtilsActionState::Vector(_) => 0.0,
+            })
+        };
+        // a little dead space in the middle of each stick; a trackpad only while pressed
         let dead = |v: Vec2| if v.length() < 0.2 { Vec2::ZERO } else { v };
-        headset.stick = dead(vector(&walk).unwrap_or_default());
-        let look = look.iter().find_map(|s| if let XRUtilsActionState::Vector(v) = s { Some(Vec2::from(v.current_state)) } else { None }).unwrap_or_default();
-        let pull = advance.iter().find_map(|s| match s {
-            XRUtilsActionState::Float(f) => Some(f.current_state),
-            XRUtilsActionState::Bool(b) => Some(b.current_state as u8 as f32),
-            _ => None,
-        });
-        // each push of the stick, and each pull of the trigger, counts once
-        let (turning, picking, pulling) = (look.x.abs() > 0.7, look.y.abs() > 0.7 && look.x.abs() < 0.5, pull.unwrap_or(0.0) > 0.6);
-        if turning && !held.0 {
-            headset.turn = -look.x.signum() * SNAP;
+        let pad = |pad: Use, pressed: Use| if level(pressed) > 0.5 { vector(pad) } else { Vec2::ZERO };
+        headset.stick = dead(vector(Use::Walk) + pad(Use::WalkPad, Use::WalkPadPressed)).clamp_length_max(1.0);
+        let look = vector(Use::Look) + pad(Use::LookPad, Use::LookPadPressed);
+        // sideways turns, up and down picks: whichever the push is mostly
+        let (side, updown) = if look.x.abs() >= look.y.abs() { (look.x, 0.0) } else { (0.0, look.y) };
+        if once(&mut armed[0], side, 0.7, 0.35) {
+            headset.turn = -SNAP;
         }
-        if picking && !held.1 {
-            headset.up = look.y > 0.0;
-            headset.down = look.y < 0.0;
+        if once(&mut armed[1], -side, 0.7, 0.35) {
+            headset.turn = SNAP;
         }
-        headset.advance = pulling && !held.2;
-        // let go properly before the next one counts
-        *held = (look.x.abs() > 0.4, look.y.abs() > 0.4, pull.unwrap_or(0.0) > 0.3);
+        headset.up = once(&mut armed[2], updown, 0.7, 0.35);
+        headset.down = once(&mut armed[3], -updown, 0.7, 0.35);
+        headset.advance = once(&mut armed[4], level(Use::Advance), 0.6, 0.3);
+    }
+
+    /// How far the floor runs on from `from` towards `yaw`, in metres.
+    fn clear_ahead(floor: (Vec2, Vec2), from: Vec2, yaw: f32) -> f32 {
+        let dir = Vec2::new(-yaw.sin(), -yaw.cos());
+        let gaps = [(floor.1.x - from.x, dir.x), (from.x - floor.0.x, -dir.x), (floor.1.y - from.y, dir.y), (from.y - floor.0.y, -dir.y)];
+        gaps.iter().filter(|(_, along)| *along > 1e-3).map(|(gap, along)| (gap / along).max(0.0)).fold(f32::MAX, f32::min)
     }
 
     /// Put the headset's viewpoint where the player stands, give its eyes
@@ -1150,17 +1198,24 @@ mod vr {
         frame: Query<&Sprite, With<Overlay>>,
         mut panel: Query<(&mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), (With<Panel>, Without<XrTrackingRoot>)>,
         mut panel_yaw: Local<Option<f32>>,
+        mut was_in_place: Local<bool>,
     ) {
+        // The player's position is where their head is over the floor. The tracked
+        // space is placed so that the head, wherever it is in the real room, comes
+        // out there: turning then pivots about you, not about the middle of the room.
+        let turn = Quat::from_rotation_y(body.yaw);
+        let dark = Vec3::new(0.0, -1000.0, 0.0);
         if let Ok(mut root) = root.single_mut() {
             if body.in_place {
-                root.translation = body.feet;
-                root.rotation = Quat::from_rotation_y(body.yaw);
-            } else {
-                // nowhere in particular: a dark room with the story on the wall
-                root.translation = Vec3::new(0.0, -1000.0, 0.0);
+                root.translation = body.feet - turn * Vec3::new(headset.local.x, 0.0, headset.local.z);
+                root.rotation = turn;
+            } else if *was_in_place || root.translation.y > -500.0 {
+                // nowhere in particular: a dark room with the story on the wall (set once: you may move about in it)
+                root.translation = dark;
                 root.rotation = Quat::IDENTITY;
             }
         }
+        *was_in_place = body.in_place;
         for (eye, fog, layered) in &eyes {
             // the text panel is for the headset's eyes only (the window has the frame itself)
             if !layered {
@@ -1202,22 +1257,49 @@ mod vr {
             return;
         }
         *vis = Visibility::Visible;
-        let (origin, base_yaw) = if body.in_place { (body.feet, body.yaw) } else { (Vec3::new(0.0, -1000.0, 0.0), 0.0) };
+        let (floor_y, base_yaw) = if body.in_place { (body.feet.y, body.yaw) } else { (dark.y, 0.0) };
+        let head = headset.eye.unwrap_or(Vec3::new(body.feet.x, floor_y + EYE, body.feet.z));
         // it stays put while you look about, and comes round once you have clearly turned away from it
         let facing = base_yaw + headset.heading;
         let yaw = panel_yaw.get_or_insert(facing);
         let off = (facing - *yaw + PI).rem_euclid(TAU) - PI;
-        if off.abs() > 0.9 || !body.in_place {
+        if off.abs() > 0.9 {
             *yaw = facing;
         }
-        // nearer (and smaller, so it looks the same) where a wall is close
-        let distance = if body.in_place { PANEL.0.min(body.reach - 0.15).max(0.5) } else { PANEL.0 };
+        // nearer (and smaller, so it looks the same) where a wall is close in that direction
+        let distance = if body.in_place { PANEL.0.min(clear_ahead(body.floor, head.xz(), *yaw) - 0.15).max(0.5) } else { PANEL.0 };
         let size = PANEL.1 * distance / PANEL.0 * if body.in_place { 1.0 } else { 1.5 };
         let ahead = Vec3::new(-yaw.sin(), 0.0, -yaw.cos());
-        let head = headset.eye.unwrap_or(origin + Vec3::Y * EYE);
-        tf.translation = Vec3::new(head.x, origin.y + PANEL.2 * distance / PANEL.0 + (1.0 - distance / PANEL.0) * EYE, head.z) + ahead * distance;
+        tf.translation = Vec3::new(head.x, floor_y + PANEL.2 * distance / PANEL.0 + (1.0 - distance / PANEL.0) * EYE, head.z) + ahead * distance;
         tf.rotation = Quat::from_rotation_y(*yaw);
         tf.scale = Vec3::splat(size);
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn a_slow_pull_counts_once_and_a_held_one_does_not_repeat() {
+            let mut armed = false;
+            // down already when the session starts: nothing until it has been let go
+            assert!(!once(&mut armed, 1.0, 0.6, 0.3));
+            assert!(!once(&mut armed, 0.1, 0.6, 0.3));
+            // a pull that takes several frames to get there
+            let fired: Vec<bool> = [0.2, 0.45, 0.7, 1.0, 1.0, 0.5, 0.9, 0.2, 0.8].iter().map(|v| once(&mut armed, *v, 0.6, 0.3)).collect();
+            assert_eq!(fired, [false, false, true, false, false, false, false, false, true]);
+        }
+
+        #[test]
+        fn the_panel_keeps_clear_of_the_wall_you_face() {
+            let floor = (Vec2::splat(-4.0), Vec2::splat(4.0));
+            // facing -z from the middle, then from near that wall, then along it
+            assert!((clear_ahead(floor, Vec2::ZERO, 0.0) - 4.0).abs() < 1e-4);
+            assert!((clear_ahead(floor, Vec2::new(0.0, -3.4), 0.0) - 0.6).abs() < 1e-4);
+            assert!((clear_ahead(floor, Vec2::new(0.0, -3.4), PI / 2.0) - 4.0).abs() < 1e-3);
+            // outside the floor (leaning through a wall): never negative
+            assert!(clear_ahead(floor, Vec2::new(0.0, -4.5), 0.0) >= 0.0);
+        }
     }
 }
 
