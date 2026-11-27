@@ -120,7 +120,11 @@ fn node_name(text: &str, fallback: &str) -> String {
 }
 
 /// One 3D place as a Godot scene.
-pub fn place_scene(name: &str, place: &PlaceData) -> String {
+///
+/// `models`: the model files the project will have. A model part whose file
+/// is not among them is left out (as the game does), since a scene that
+/// refers to a missing file does not load in Godot at all.
+pub fn place_scene(name: &str, place: &PlaceData, models_there: &[String]) -> String {
     let mut ext = String::new();
     let mut sub = String::new();
     let mut nodes = String::new();
@@ -148,7 +152,7 @@ pub fn place_scene(name: &str, place: &PlaceData) -> String {
     // (the game's own light units are an engine's; these are scaled to look alike in Godot)
     let _ = writeln!(
         sub,
-        "[sub_resource type=\"Environment\" id=\"air\"]\nbackground_mode = 1\nbackground_color = {sky}\nambient_light_source = 2\nambient_light_color = {amb}\nambient_light_energy = {energy}\nfog_enabled = true\nfog_mode = 1\nfog_light_color = {sky}\nfog_density = 1.0\nfog_depth_begin = {f0}\nfog_depth_end = {f1}\n",
+        "[sub_resource type=\"Environment\" id=\"air\"]\nbackground_mode = 1\nbackground_color = {sky}\nambient_light_source = 2\nambient_light_color = {amb}\nambient_light_energy = {energy}\nfog_enabled = true\nfog_mode = 1\nfog_light_color = {sky}\nfog_density = 1.0\nfog_depth_begin = {f0}\nfog_depth_end = {f1}\ntonemap_mode = 2\n",
         sky = color(&air.sky, 1.0),
         amb = color(&air.ambient, 1.0),
         energy = num((air.brightness / 600.0).clamp(0.02, 4.0)),
@@ -170,6 +174,9 @@ pub fn place_scene(name: &str, place: &PlaceData) -> String {
         let base = node_name(if p.name.is_empty() { &p.shape } else { &p.name }, "part");
         let node = unique(base);
         if p.shape == "model" {
+            if !models_there.contains(&p.file) {
+                continue;
+            }
             let next = models.len() + 1;
             let id = models.entry(p.file.clone()).or_insert_with(|| {
                 let id = format!("model_{}", next);
@@ -233,11 +240,12 @@ pub fn place_scene(name: &str, place: &PlaceData) -> String {
             let node = unique("Lamp".to_string());
             let _ = writeln!(
                 nodes,
-                "[node name=\"{}\" type=\"OmniLight3D\" parent=\"Lights\"]\ntransform = {}\nlight_color = {}\nlight_energy = {}\nomni_range = {}\nshadow_enabled = {}\n",
+                "[node name=\"{}\" type=\"OmniLight3D\" parent=\"Lights\"]\ntransform = {}\nlight_color = {}\nlight_energy = {}\nomni_range = {}\nomni_attenuation = 2.0\nshadow_enabled = {}\n",
                 node,
                 transform(UPRIGHT, [1.0; 3], l.at),
                 color(&l.color, 1.0),
-                num((l.power / 250_000.0).clamp(0.05, 16.0)),
+                // (falling off with the square of the distance, as the game's lamps do)
+                num((l.power / 40_000.0).clamp(0.05, 64.0)),
                 num(if l.range > 0.0 { l.range } else { 30.0 }),
                 l.shadows
             );
@@ -327,10 +335,18 @@ pub fn export(dir: &Path, doc: &Doc, story: Option<&Path>, art_dir: Option<&Path
 
     // places: the story's own where it has one, else the game's
     let world = story.map(places::world_dir).filter(|d| d.is_dir());
+    // the models the project will have: the story's, and any already put there by hand
+    let listed = |d: PathBuf| -> Vec<String> { std::fs::read_dir(d).into_iter().flatten().filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).filter(|f| places::model_file(f)).collect() };
+    let mut models_there = world.as_ref().map_or(Vec::new(), |w| listed(w.join("models")));
+    models_there.extend(listed(dir.join("models")));
     for name in art::BACKGROUNDS {
         if let Some(place) = places::load(world.as_deref(), name) {
             let label = format!("places/{}.tscn", name);
-            put(&dir.join(&label), place_scene(name, &place).as_bytes(), force, false, &mut report, &label)?;
+            let missing: Vec<&str> = place.parts.iter().filter(|p| p.shape == "model" && !models_there.contains(&p.file)).map(|p| p.file.as_str()).collect();
+            if !missing.is_empty() {
+                report.notes.push(format!("{}: left out {} part(s) whose model file is not in the story's world/models folder ({})", name, missing.len(), missing.join(", ")));
+            }
+            put(&dir.join(&label), place_scene(name, &place, &models_there).as_bytes(), force, false, &mut report, &label)?;
         }
     }
 
@@ -347,7 +363,8 @@ pub fn export(dir: &Path, doc: &Doc, story: Option<&Path>, art_dir: Option<&Path
         Ok(())
     };
     if let Some(world) = &world {
-        copy_all(world.join("models"), "models", &|f| places::model_file(f), &mut report)?;
+        // (with whatever sits beside them: a .gltf may keep its mesh and pictures in other files)
+        copy_all(world.join("models"), "models", &|f| !f.starts_with('.'), &mut report)?;
     }
     if let Some(story) = story {
         let sounds = audio::audio_dir(story);
@@ -428,7 +445,7 @@ mod tests {
     fn every_place_becomes_a_well_formed_godot_scene() {
         for name in art::BACKGROUNDS {
             let place = places::builtin(name).unwrap();
-            let scene = place_scene(name, &place);
+            let scene = place_scene(name, &place, &[]);
             check_scene(&scene);
             for marker in ["Spawn", "CastLeft", "CastCentre", "CastRight", "Air", "Parts", "Lights", "Collision", "EdgeWest"] {
                 assert!(scene.contains(&format!("[node name=\"{}\"", marker)), "{} has no {}", name, marker);

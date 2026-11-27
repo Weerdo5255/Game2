@@ -30,12 +30,13 @@ func _initialize() -> void:
 				break
 			_:
 				break
-	if not game.moves.is_empty():
-		print("schedule: ", "; ".join(game.moves))
-	if not game.exchanges.is_empty():
-		print("exchanges: ", "; ".join(game.exchanges))
+	# (like the Rust game: a run that reaches no ending reports nothing on its output)
 	if game.mode == "ending":
+		if not game.moves.is_empty():
+			print("schedule: ", "; ".join(game.moves))
+		if not game.exchanges.is_empty():
+			print("exchanges: ", "; ".join(game.exchanges))
 		print("ending: ", game.ending_title)
 	else:
-		print("stopped without an ending, in mode ", game.mode)
+		printerr("stopped without an ending, in mode ", game.mode)
 	quit()

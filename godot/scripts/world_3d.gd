@@ -26,7 +26,12 @@ func enter(p: String) -> void:
 		return
 	leave()
 	place_name = p
-	place = load("res://places/%s.tscn" % p).instantiate()
+	var scene = load("res://places/%s.tscn" % p)
+	if scene == null:
+		push_error("res://places/%s.tscn could not be loaded" % p)
+		place_name = ""
+		return
+	place = scene.instantiate()
 	add_child(place)
 	player = PLAYER.instantiate()
 	add_child(player)

@@ -390,6 +390,10 @@ impl Game {
                     return;
                 }
                 Cmd::Choice(opts) => {
+                    // with every option closed by its condition there is nothing to choose: the story goes straight on
+                    if !opts.iter().any(|o| o.cond.as_ref().map_or(true, |c| self.vm.test(&self.script, c))) {
+                        continue;
+                    }
                     self.sync_presence();
                     self.cur_pc = i;
                     let opts = opts

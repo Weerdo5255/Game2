@@ -25,6 +25,7 @@ fog_light_color = Color(0.58824, 0.7451, 0.94118, 1)
 fog_density = 1.0
 fog_depth_begin = 60
 fog_depth_end = 400
+tonemap_mode = 2
 
 [sub_resource type="StandardMaterial3D" id="mat_1"]
 albedo_color = Color(0.83922, 0.86275, 0.9098, 1)
@@ -380,8 +381,9 @@ cast_shadow = 0
 [node name="Lamp" type="OmniLight3D" parent="Lights"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4.6, 0)
 light_color = Color(0.92157, 0.94902, 1, 1)
-light_energy = 2.4
+light_energy = 15
 omni_range = 30
+omni_attenuation = 2.0
 shadow_enabled = false
 
 [node name="Sun" type="DirectionalLight3D" parent="Lights"]

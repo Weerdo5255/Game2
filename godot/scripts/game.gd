@@ -93,6 +93,7 @@ func run() -> void:
 					dismissed.clear()
 					presence_place = ""
 					_present_place()
+					_present_cast()   # the stage is empty until someone is shown, or is due here
 					sync_presence()
 			"show":
 				var slot: int = StoryVM.SLOTS.find(cmd["slot"])
@@ -137,6 +138,8 @@ func run() -> void:
 				sync_presence()
 				mode = "choice"
 				_open_options = vm.open_options(cmd)
+				if _open_options.is_empty():
+					continue   # nothing can be chosen: the story goes straight on
 				var texts: Array = []
 				for o in _open_options:
 					texts.append(o["text"])

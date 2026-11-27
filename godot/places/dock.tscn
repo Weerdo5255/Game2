@@ -25,6 +25,7 @@ fog_light_color = Color(0.08627, 0.10196, 0.14902, 1)
 fog_density = 1.0
 fog_depth_begin = 35
 fog_depth_end = 140
+tonemap_mode = 2
 
 [sub_resource type="StandardMaterial3D" id="mat_1"]
 albedo_color = Color(0.22745, 0.24314, 0.28235, 1)
@@ -1092,29 +1093,33 @@ cast_shadow = 0
 [node name="Lamp" type="OmniLight3D" parent="Lights"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7, 9, -8)
 light_color = Color(0.78431, 0.87843, 1, 1)
-light_energy = 16
+light_energy = 64
 omni_range = 30
+omni_attenuation = 2.0
 shadow_enabled = false
 
 [node name="Lamp_2" type="OmniLight3D" parent="Lights"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 9, -8)
 light_color = Color(0.78431, 0.87843, 1, 1)
-light_energy = 16
+light_energy = 64
 omni_range = 30
+omni_attenuation = 2.0
 shadow_enabled = false
 
 [node name="Lamp_3" type="OmniLight3D" parent="Lights"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -7, 9, 4)
 light_color = Color(0.78431, 0.87843, 1, 1)
-light_energy = 16
+light_energy = 64
 omni_range = 30
+omni_attenuation = 2.0
 shadow_enabled = true
 
 [node name="Lamp_4" type="OmniLight3D" parent="Lights"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 9, 4)
 light_color = Color(0.78431, 0.87843, 1, 1)
-light_energy = 16
+light_energy = 64
 omni_range = 30
+omni_attenuation = 2.0
 shadow_enabled = false
 
 [node name="Collision" type="StaticBody3D" parent="."]

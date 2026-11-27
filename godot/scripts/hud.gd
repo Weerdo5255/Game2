@@ -131,6 +131,7 @@ func refresh_meters() -> void:
 		var colour := Color(0.47, 0.9, 0.59) if v.get("good", true) else Color(1.0, 0.43, 0.39)
 		for k in range(mini(pips, 12)):
 			var pip := ColorRect.new()
+			pip.mouse_filter = Control.MOUSE_FILTER_IGNORE   # a click here still moves the story on
 			pip.custom_minimum_size = Vector2(15, 14)
 			pip.color = colour if k < have else Color(0.24, 0.25, 0.39)
 			row.add_child(pip)
@@ -152,9 +153,12 @@ func toast(text: String, colour: Color) -> void:
 	toasts.add_child(label)
 	while toasts.get_child_count() > 8:
 		toasts.get_child(0).free()
+	# (by its id, not by itself: it may well be gone before the time is up)
+	var id := label.get_instance_id()
 	get_tree().create_timer(3.5).timeout.connect(func():
-		if is_instance_valid(label):
-			label.queue_free())
+		var still = instance_from_id(id)
+		if still != null:
+			still.queue_free())
 
 
 func clear_toasts() -> void:
