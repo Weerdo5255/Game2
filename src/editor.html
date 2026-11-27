@@ -1456,12 +1456,16 @@ async function pollJobs() {
   const busy = art.jobs.some(j => j.state === "queued" || j.state === "running");
   if (art.open || sound.open || busy) art.timer = setTimeout(pollJobs, busy ? 900 : 2500);
 }
-async function savePrefs() {
-  try { await api("PUT", forStory("/api/art/prefs"), prefs); } catch (e) { toast(e.message, true); }
+// Saves go out one after another, and anything that depends on them waits for the last.
+let prefsSaved = Promise.resolve();
+function savePrefs() {
+  const url = forStory("/api/art/prefs"), body = JSON.parse(JSON.stringify(prefs));
+  return prefsSaved = prefsSaved.then(() => api("PUT", url, body)).catch(e => toast(e.message, true));
 }
 async function sendArt(ids, workflow) {
   if (!ids.length) { toast("Nothing to send."); return; }
   if (dirty && !(await save())) return;   // jobs read the saved story
+  await prefsSaved;                        // and the saved prompts, workflows and voices
   const audio = ids.every(id => /^(voice|music)_/.test(id));
   // redoing a recording asks for a different take, not the same one again
   const settings = audio ? (workflow === "retake" ? { take: 1 + Math.floor(Math.random() * 999999) } : {}) : art.denoise == null ? {} : { denoise: art.denoise, refine_denoise: Math.min(art.denoise, 0.5) };
