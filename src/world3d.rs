@@ -65,6 +65,7 @@ struct Headset {
     /// Where the eyes are in the world, for the cast to face.
     eye: Option<Vec3>,
     /// Where the head is within the tracked space (its floor-level origin is the middle of the play area).
+    #[cfg_attr(not(feature = "vr"), allow(dead_code))]
     local: Vec3,
     /// How far the head has really moved across the floor since the last frame, in the tracked space.
     stepped: Vec2,
