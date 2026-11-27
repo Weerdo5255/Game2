@@ -11,7 +11,7 @@
 //!   W A S D         walk            Shift            hurry
 //!   Left / Right    turn (or Q/E)   right mouse drag look around
 //!   Up / Down       pick a choice   Enter / Space / click: advance
-//!   Tab             hide the text to look around
+//!   Tab (held)      hide the text to look around
 
 use std::collections::HashMap;
 use std::f32::consts::{PI, TAU};
@@ -19,6 +19,7 @@ use std::f32::consts::{PI, TAU};
 use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::pbr::{DistanceFog, FogFalloff, NotShadowCaster};
 use bevy::prelude::*;
+use bevy::render::camera::Viewport;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, Face, TextureDimension, TextureFormat};
 use bevy::render::view::screenshot::{save_to_disk, Screenshot};
@@ -54,12 +55,13 @@ struct Runner {
     portraits: HashMap<(String, String), Handle<Image>>,
     shown: [Option<(String, String)>; 3],
     last_mouse: (i32, i32),
-    hide_text: bool,
     yaw: f32,
     pitch: f32,
     shot: Option<(String, usize)>,
-    says: usize,
-    last_kind: &'static str,
+    /// The overlay as last sent to the engine, to send it again only when it changes.
+    sent: Vec<u8>,
+    /// 0..255 of the story's own (display-space) mixing to what the engine's (linear-light) blending needs.
+    alpha: [u8; 256],
     shot_timer: Option<f32>,
     auto: f32,
 }
@@ -98,12 +100,11 @@ pub fn run(game: Game, opts: Options) {
         portraits: HashMap::new(),
         shown: [None, None, None],
         last_mouse: (0, 0),
-        hide_text: false,
         yaw: 0.0,
         pitch: 0.0,
         shot: opts.shot,
-        says: 0,
-        last_kind: "",
+        sent: vec![0; (W * H * 4) as usize],
+        alpha: std::array::from_fn(|a| (255.0 * (1.0 - (1.0 - a as f32 / 255.0).powf(2.2))).round() as u8),
         shot_timer: None,
         auto: 0.0,
     };
@@ -172,7 +173,7 @@ fn frame(
     mut clear: ResMut<ClearColor>,
     (keys, buttons, motion, time): (Res<ButtonInput<KeyCode>>, Res<ButtonInput<MouseButton>>, Res<AccumulatedMouseMotion>, Res<Time>),
     window: Single<&Window, With<PrimaryWindow>>,
-    mut eye: Single<(&mut Transform, &mut DistanceFog), (With<Eye>, Without<CastSlot>, Without<Overlay>)>,
+    mut eye: Single<(&mut Transform, &mut DistanceFog, &mut Camera), (With<Eye>, Without<CastSlot>, Without<Overlay>)>,
     mut cast: Query<(&CastSlot, &mut Transform, &mut Visibility, &MeshMaterial3d<StandardMaterial>), (Without<Eye>, Without<Overlay>)>,
     mut overlay: Single<(&mut Sprite, &mut Transform), (With<Overlay>, Without<Eye>, Without<CastSlot>)>,
     parts: Query<Entity, With<PlacePart>>,
@@ -205,13 +206,10 @@ fn frame(
         mouse_moved: mouse != run.last_mouse,
     };
     run.last_mouse = mouse;
-    if pressed(&[KeyCode::Tab]) {
-        run.hide_text = !run.hide_text;
-    }
     // taking a picture: press on by itself until enough has been said
     if let Some((_, wanted)) = &run.shot {
         run.auto += dt;
-        if run.shot_timer.is_none() && run.says < *wanted && run.auto > 0.4 {
+        if run.shot_timer.is_none() && run.game.lines_begun < *wanted && run.auto > 0.4 {
             run.auto = 0.0;
             inp.advance = true;
         }
@@ -222,10 +220,14 @@ fn frame(
         return;
     }
     let kind = run.game.kind();
-    if kind == "say" && (run.last_kind != "say" || inp.advance) {
-        run.says += 1;
+    // the world is drawn where the story's frame is: the same letterboxed part of the window
+    let (pw, ph) = (window.physical_width().max(1), window.physical_height().max(1));
+    let fit = (pw as f32 / W as f32).min(ph as f32 / H as f32);
+    let size = UVec2::new(((W as f32 * fit) as u32).clamp(1, pw), ((H as f32 * fit) as u32).clamp(1, ph));
+    let viewport = Viewport { physical_position: UVec2::new((pw - size.x) / 2, (ph - size.y) / 2), physical_size: size, ..default() };
+    if eye.2.viewport.as_ref().map_or(true, |v| v.physical_position != viewport.physical_position || v.physical_size != viewport.physical_size) {
+        eye.2.viewport = Some(viewport);
     }
-    run.last_kind = kind;
 
     // ---- the place
     let view = run.game.world_view().filter(|v| PLACES.contains(&v.place.as_str()));
@@ -236,6 +238,7 @@ fn frame(
         }
         run.built = place_name.to_string();
         run.place = None;
+        clear.0 = Color::BLACK;
         if !place_name.is_empty() {
             let mut kit = Kit { commands: &mut commands, meshes: &mut meshes, materials: &mut materials, solids: Vec::new(), seed: 7 };
             let (place, air) = build(place_name, &mut kit);
@@ -286,7 +289,12 @@ fn frame(
         let key = (who.clone(), expr.clone());
         if run.shown[i].as_ref() != Some(&key) {
             if !run.portraits.contains_key(&key) {
-                let Some(canvas) = run.game.portrait(who, expr) else { continue };
+                let Some(canvas) = run.game.portrait(who, expr) else {
+                    // nobody the story knows: nothing stands there (as over a painting)
+                    *vis = Visibility::Hidden;
+                    run.shown[i] = None;
+                    continue;
+                };
                 let image = picture(canvas);
                 run.portraits.insert(key.clone(), images.add(image));
             }
@@ -295,10 +303,11 @@ fn frame(
             }
             run.shown[i] = Some(key);
         }
-        if let Some(m) = materials.get_mut(&material.0) {
-            let light = if *dim { 0.55 } else { 1.0 };
-            let colour = Color::srgba(light, light, light, appear.clamp(0.0, 1.0));
-            if m.base_color != colour {
+        let light = if *dim { 0.55 } else { 1.0 };
+        let colour = Color::srgba(light, light, light, appear.clamp(0.0, 1.0));
+        // only touched when it changes: touching a material sends it to the renderer again
+        if materials.get(&material.0).map_or(false, |m| m.base_color != colour) {
+            if let Some(m) = materials.get_mut(&material.0) {
                 m.base_color = colour;
             }
         }
@@ -312,38 +321,51 @@ fn frame(
     // ---- what the story draws over it
     overlay.0.custom_size = Some(Vec2::new(W as f32 * scale, H as f32 * scale));
     overlay.1.translation = Vec3::ZERO;
-    let image = images.get_mut(&overlay.0.image);
-    if let Some(data) = image.and_then(|i| i.data.as_mut()) {
-        if run.place.is_some() {
-            // Drawn once over black and once over white: where the two differ
-            // the world shows through, by exactly that much.
-            run.game.overlay = Some(0xFF00_0000);
-            run.game.render(&mut run.black);
-            run.game.overlay = Some(0xFFFF_FFFF);
-            run.game.render(&mut run.white);
-            let hide = run.hide_text && matches!(kind, "say");
-            for ((out, b), w) in data.chunks_exact_mut(4).zip(&run.black.px).zip(&run.white.px) {
-                let (br, bg, bb) = ((b >> 16) & 255, (b >> 8) & 255, b & 255);
-                let a = if hide { 0 } else { 255 - (((w >> 8) & 255).saturating_sub(bg)).min(255) };
-                if a == 0 {
-                    out.copy_from_slice(&[0, 0, 0, 0]);
-                } else {
-                    out.copy_from_slice(&[(br * 255 / a).min(255) as u8, (bg * 255 / a).min(255) as u8, (bb * 255 / a).min(255) as u8, a as u8]);
-                }
-            }
-        } else {
-            run.game.overlay = None;
-            run.game.render(&mut run.black);
-            for (out, p) in data.chunks_exact_mut(4).zip(&run.black.px) {
-                out.copy_from_slice(&[(p >> 16) as u8, (p >> 8) as u8, *p as u8, 255]);
+    let mut frame = std::mem::take(&mut run.sent);
+    let mut changed = false;
+    let mut put = |out: &mut [u8], px: [u8; 4]| {
+        if out != px {
+            out.copy_from_slice(&px);
+            changed = true;
+        }
+    };
+    if run.place.is_some() {
+        // Drawn once over black and once over white: where the two differ
+        // the world shows through, by exactly that much.
+        run.game.overlay = Some(0xFF00_0000);
+        run.game.render(&mut run.black);
+        run.game.overlay = Some(0xFFFF_FFFF);
+        run.game.render(&mut run.white);
+        // holding Tab clears the talk away for a look around (choices and endings stay)
+        let hide = keys.pressed(KeyCode::Tab) && kind == "say";
+        for ((out, b), w) in frame.chunks_exact_mut(4).zip(&run.black.px).zip(&run.white.px) {
+            let (br, bg, bb) = ((b >> 16) & 255, (b >> 8) & 255, b & 255);
+            let a = if hide { 0 } else { 255 - (((w >> 8) & 255).saturating_sub(bg)).min(255) };
+            if a == 0 {
+                put(out, [0, 0, 0, 0]);
+            } else {
+                put(out, [(br * 255 / a).min(255) as u8, (bg * 255 / a).min(255) as u8, (bb * 255 / a).min(255) as u8, run.alpha[a as usize]]);
             }
         }
+    } else {
+        run.game.overlay = None;
+        run.game.render(&mut run.black);
+        for (out, p) in frame.chunks_exact_mut(4).zip(&run.black.px) {
+            put(out, [(p >> 16) as u8, (p >> 8) as u8, *p as u8, 255]);
+        }
     }
+    // sent to the engine only when something on it has changed
+    if changed {
+        if let Some(data) = images.get_mut(&overlay.0.image).and_then(|i| i.data.as_mut()) {
+            data.copy_from_slice(&frame);
+        }
+    }
+    run.sent = frame;
 
     // ---- a picture, when asked for
     if let Some((path, wanted)) = run.shot.clone() {
         match &mut run.shot_timer {
-            None if run.says >= wanted => run.shot_timer = Some(0.0),
+            None if run.game.lines_begun >= wanted => run.shot_timer = Some(0.0),
             None if run.game.ending_title().is_some() => {
                 eprintln!("the story ended before {} line(s) were shown", wanted);
                 exit.write(AppExit::error());
@@ -396,7 +418,13 @@ fn walk(place: &Place, from: Vec2, step: Vec2) -> Vec2 {
             }
         }
     }
-    to.clamp(place.min + BODY, place.max - BODY)
+    let to = to.clamp(place.min + BODY, place.max - BODY);
+    // pushed back into something by a wall (a thing standing close to one): stay put rather than pass through
+    let inside = |p: Vec2| place.solids.iter().any(|(centre, half)| (p.x - centre.x).abs() < half.x + BODY - 1e-3 && (p.y - centre.y).abs() < half.y + BODY - 1e-3);
+    if inside(to) && !inside(from) {
+        return from;
+    }
+    to
 }
 
 // ------------------------------------------------------------- building
@@ -522,7 +550,7 @@ fn build(name: &str, k: &mut Kit) -> (Place, Air) {
             k.table(Vec3::new(0.0, 0.0, 1.4), Vec3::new(1.3, 0.78, 3.4), rgb(150, 112, 70));
             for z in [0.2, 1.4, 2.6] {
                 for x in [-1.0, 1.0] {
-                    k.block(Vec3::new(x, 0.24, z), Vec3::new(0.4, 0.48, 0.4), rgb(120, 86, 54));
+                    k.solid(Vec3::new(x, 0.24, z), Vec3::new(0.4, 0.48, 0.4), rgb(120, 86, 54));
                 }
             }
             // crockery on the table
@@ -591,7 +619,8 @@ fn build(name: &str, k: &mut Kit) -> (Place, Air) {
             k.post(Vec3::new(0.0, 0.9, -0.6), 1.1, 0.06, silver.clone());
             k.post(Vec3::new(0.0, 0.45, -0.6), 0.12, 0.9, silver.clone());
             for i in 0..14 {
-                let (x, y, z) = (k.rand() * 3.0 - 1.5, 1.1 + k.rand() * 1.6, -0.6 + k.rand() * 3.0 - 1.5);
+                // (kept overhead, clear of the faces of whoever is at the table)
+                let (x, y, z) = (k.rand() * 3.4 - 1.7, 2.75 + k.rand() * 1.5, -0.6 + k.rand() * 3.0 - 1.5);
                 match i % 3 {
                     0 => {
                         let soup = k.matte(rgb(226, 150, 60), 0.2, 0.0);
@@ -693,6 +722,11 @@ fn build(name: &str, k: &mut Kit) -> (Place, Air) {
             // balustrade
             k.block(Vec3::new(0.0, 1.0, -6.0), Vec3::new(22.0, 0.14, 0.4), stone);
             k.block(Vec3::new(0.0, 0.1, -6.0), Vec3::new(22.0, 0.2, 0.4), stone);
+            // and round both ends of the terrace
+            for x in [-10.9, 10.9] {
+                k.block(Vec3::new(x, 1.0, 1.0), Vec3::new(0.4, 0.14, 14.0), stone);
+                k.block(Vec3::new(x, 0.5, 1.0), Vec3::new(0.16, 0.9, 14.0), stone);
+            }
             let baluster = k.matte(stone, 0.8, 0.0);
             for i in 0..45 {
                 k.post(Vec3::new(-11.0 + i as f32 * 0.5, 0.55, -6.0), 0.08, 0.8, baluster.clone());
@@ -705,8 +739,8 @@ fn build(name: &str, k: &mut Kit) -> (Place, Air) {
             }
             let leaf = k.matte(rgb(52, 110, 60), 0.9, 0.0);
             for x in [-9.0, 9.0] {
-                k.solid(Vec3::new(x, 0.45, -4.6), Vec3::new(0.9, 0.9, 0.9), rgb(170, 160, 140));
-                k.ball(Vec3::new(x, 1.7, -4.6), 0.8, leaf.clone());
+                k.solid(Vec3::new(x, 0.45, -4.3), Vec3::new(1.3, 0.9, 1.3), rgb(170, 160, 140));
+                k.ball(Vec3::new(x, 1.7, -4.3), 0.75, leaf.clone());
             }
             // the world
             let radius = 620.0;

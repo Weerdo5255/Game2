@@ -19,7 +19,7 @@ out="$(cd "$out" && pwd)"
 run() { if [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; then "$@"; else xvfb-run -a -s "-screen 0 1280x800x24" "$@"; fi; }
 fail=0
 # scene to start from, name of the picture, lines to show first
-for shot in "start pantry 3" "ch1 axis 6" "ch2 dock 8" "ch4 vista 5" "ch5 ballroom 6" "summit study 5"; do
+for shot in "start pantry 2" "ch1 axis 4" "ch2 dock 6" "ch4 vista 4" "ch5 ballroom 4" "summit study 3"; do
   set -- $shot
   rm -f "$out/world_$2.png"
   (cd "$tmp" && run "$exe" --story "$tmp/story.txt" --start "$1" --world-shot "$out/world_$2.png" --world-shot-lines "$3" --silent > "$tmp/$2.log" 2>&1) || true

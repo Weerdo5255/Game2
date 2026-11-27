@@ -212,7 +212,7 @@ cargo run --release --features world3d
 | Left / Right, or Q / E | turn |
 | hold the right mouse button | look around |
 | Up / Down | pick a choice |
-| Tab | hide the text to look around |
+| hold Tab | hide the text to look around |
 
 Everything else is as in the table under Controls. A build without the
 feature plays the same stories and shows the paintings instead, saying so

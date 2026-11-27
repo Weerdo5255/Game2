@@ -178,6 +178,11 @@ fn main() {
         #[cfg(not(feature = "world3d"))]
         eprintln!("this story has places marked 3D, but this build has no 3D engine: showing their paintings (build with --features world3d)");
     }
+    if arg("--world-shot").is_some() {
+        // asked for a picture of the 3D world, which this run cannot show
+        eprintln!("--world-shot needs a story with a place marked 3D, a build with --features world3d, and no --2d");
+        std::process::exit(2);
+    }
     if let Err(e) = windowed(game, size) {
         eprintln!("could not open a window: {}", e);
         std::process::exit(1);

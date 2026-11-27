@@ -68,6 +68,8 @@ pub struct Game {
     /// out the painting and the portraits and fills with this colour
     /// instead, so that only what lies over the world is drawn.
     pub overlay: Option<u32>,
+    /// How many lines of dialogue have been begun since the game started.
+    pub lines_begun: usize,
 }
 
 /// What a 3D presenter shows at this moment of the story.
@@ -137,6 +139,7 @@ impl Game {
             art_dir,
             audio,
             overlay: None,
+            lines_begun: 0,
             cur_pc: 0,
             quit: false,
         }
@@ -270,6 +273,7 @@ impl Game {
                 Cmd::Music(track) => self.audio.play_music(&track),
                 Cmd::Say { who, text } => {
                     self.cur_pc = i;
+                    self.lines_begun += 1;
                     self.audio.say(&who, &text);
                     let lines = wrap(&text, COLS);
                     let pages = lines.chunks(LINES).map(|c| c.to_vec()).collect();
