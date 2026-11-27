@@ -23,6 +23,8 @@ pub struct Input {
     pub save: bool,
     pub load: bool,
     pub mute: bool,
+    /// Show or hide who has what.
+    pub ledger: bool,
     pub back: bool,
     pub click: bool,
     pub mouse: (i32, i32),
@@ -72,6 +74,8 @@ pub struct Game {
     pub overlay: Option<u32>,
     /// How many lines of dialogue have been begun since the game started.
     pub lines_begun: usize,
+    /// The "who has what" panel is open.
+    ledger: bool,
     /// People the scene sent off although their schedule has them here.
     dismissed: std::collections::HashSet<String>,
     /// People who are here by their schedule but have no room on stage.
@@ -80,6 +84,15 @@ pub struct Game {
     presence_place: String,
     /// A record of scheduled comings and goings ("09:30 q arrives in study").
     pub moves: Vec<String>,
+    /// A record of what changed hands ("m key +1").
+    pub exchanges: Vec<String>,
+}
+
+impl Game {
+    /// Open or close the "who has what" panel.
+    pub fn show_ledger(&mut self, open: bool) {
+        self.ledger = open && !self.script.things.is_empty();
+    }
 }
 
 /// What a 3D presenter shows at this moment of the story.
@@ -150,10 +163,12 @@ impl Game {
             audio,
             overlay: None,
             lines_begun: 0,
+            ledger: false,
             dismissed: Default::default(),
             unseated: Default::default(),
             presence_place: String::new(),
             moves: Vec::new(),
+            exchanges: Vec::new(),
             cur_pc: 0,
             quit: false,
         }
@@ -385,6 +400,31 @@ impl Game {
                     let col = if (n > 0) == def.good { rgb(150, 240, 160) } else { rgb(255, 130, 120) };
                     self.toasts.push((format!("{} {}{}", def.label, if n > 0 { "+" } else { "" }, n), col, 3.0));
                 }
+                cmd @ (Cmd::Give { .. } | Cmd::Copy { .. } | Cmd::Grant { .. } | Cmd::Trade { .. }) => {
+                    // say what changed hands, leaving out what the player is not to see
+                    let changes = std::mem::take(&mut self.vm.changes);
+                    let said = |g: &Game, who: &str, thing: &str| -> Option<(String, String)> {
+                        let def = g.script.things.iter().find(|t| t.id == thing).filter(|t| !t.hidden)?;
+                        Some((g.script.character(who).map_or(who.to_string(), |c| c.name.clone()), if def.label.is_empty() { def.id.clone() } else { def.label.clone() }))
+                    };
+                    if changes.is_empty() {
+                        if let Cmd::Trade { a, b, .. } = &cmd {
+                            let names = [a, b].map(|w| self.script.character(w).map_or(w.clone(), |c| c.name.clone()));
+                            self.toasts.push((format!("{} and {}: no trade", names[0], names[1]), rgb(200, 200, 215), 3.0));
+                        }
+                    }
+                    for (who, thing, by) in &changes {
+                        self.exchanges.push(format!("{} {} {}{}", who, thing, if *by > 0 { "+" } else { "" }, by));
+                        let Some((name, label)) = said(self, who, thing) else { continue };
+                        let info = self.script.things.iter().any(|t| t.id == *thing && t.kind == "info");
+                        let text = match (info, *by > 0) {
+                            (true, true) => format!("{} learns: {}", name, label),
+                            (true, false) => format!("{} forgets: {}", name, label),
+                            (false, _) => format!("{}: {} {}{}", name, label, if *by > 0 { "+" } else { "" }, by),
+                        };
+                        self.toasts.push((text, if *by > 0 { rgb(150, 240, 160) } else { rgb(255, 190, 120) }, 3.5));
+                    }
+                }
                 Cmd::Card(title, sub) => {
                     self.reset_scene();
                     self.mode = Mode::Card { title, sub, t: 0.0 };
@@ -421,6 +461,9 @@ impl Game {
         for who in &self.dismissed {
             s += &format!("dismissed={}\n", who);
         }
+        for ((who, thing), n) in &self.vm.holdings {
+            s += &format!("has.{}.{}={}\n", who, thing, n);
+        }
         let msg = match std::fs::write(SAVE_FILE, s) {
             Ok(()) => "Game saved".to_string(),
             Err(e) => format!("Save failed: {}", e),
@@ -451,6 +494,8 @@ impl Game {
                 vm.clock = v.parse().unwrap_or(vm.clock);
             } else if k == "event" {
                 vm.events.insert(v.to_string());
+            } else if let Some((who, thing)) = k.strip_prefix("has.").and_then(|r| r.split_once('.')) {
+                vm.holdings.insert((who.to_string(), thing.to_string()), v.parse().unwrap_or(0));
             } else if k == "dismissed" {
                 dismissed.insert(v.to_string());
             } else if let Some(name) = k.strip_prefix("var.") {
@@ -496,6 +541,9 @@ impl Game {
             s.appear = (s.appear + dt * 4.0).min(1.0);
         }
 
+        if inp.ledger && !self.script.things.is_empty() {
+            self.ledger = !self.ledger;
+        }
         if inp.mute && self.audio.available() {
             self.audio.toggle_mute();
             self.note = Some((if self.audio.muted { "Sound off".into() } else { "Sound on".into() }, 1.5));
@@ -800,7 +848,54 @@ impl Game {
         }
     }
 
+    /// Who has what: every character with something the player may see.
+    fn render_ledger(&self, c: &mut Canvas) {
+        let shown: Vec<&crate::script::ThingDef> = self.script.things.iter().filter(|t| !t.hidden).collect();
+        let mut rows: Vec<(String, u32, Vec<String>)> = Vec::new();
+        for ch in &self.script.characters {
+            let mut has = Vec::new();
+            for t in &shown {
+                let n = self.vm.has(&self.script, &ch.id, &t.id);
+                let label = if t.label.is_empty() { &t.id } else { &t.label };
+                match (t.kind.as_str(), n) {
+                    (_, 0) => {}
+                    ("info", _) => has.push(format!("knows: {}", label)),
+                    ("item", 1) => has.push(label.to_string()),
+                    _ => has.push(format!("{} {}", label, n)),
+                }
+            }
+            if !has.is_empty() {
+                rows.push((ch.name.clone(), parse_color(&ch.color).unwrap_or(WHITE), has));
+            }
+        }
+        // names on the left, what they have wrapped beside them
+        let mut lines: Vec<(Option<(String, u32)>, String)> = Vec::new();
+        for (name, col, has) in rows {
+            for (i, line) in wrap(&has.join(", "), 44).into_iter().enumerate() {
+                lines.push((if i == 0 { Some((name.clone(), col)) } else { None }, line));
+            }
+        }
+        if lines.is_empty() {
+            lines.push((None, "Nobody has anything of note.".into()));
+        }
+        lines.truncate(13);
+        let h = 70 + lines.len() as i32 * 26;
+        let top = (440 - h).max(8) / 2 + 8;
+        c.panel(96, top, W - 192, h);
+        c.text_c(W / 2, top + 14, "WHO HAS WHAT", GOLD, 2);
+        for (i, (name, line)) in lines.iter().enumerate() {
+            let y = top + 48 + i as i32 * 26;
+            if let Some((name, col)) = name {
+                c.text_sh(120, y, &name.chars().take(14).collect::<String>(), *col, 2);
+            }
+            c.text_sh(360, y, line, WHITE, 2);
+        }
+    }
+
     fn render_hud(&self, c: &mut Canvas) {
+        if self.ledger {
+            self.render_ledger(c);
+        }
         // one meter per property that declares one
         let meters: Vec<_> = self.script.vars.iter().filter(|v| v.meter > 0).take(4).collect();
         if !meters.is_empty() {

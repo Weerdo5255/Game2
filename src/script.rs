@@ -45,6 +45,46 @@ pub struct CharDef {
     /// What takes them away from that, first match first.
     #[serde(default)]
     pub interrupts: Vec<Interrupt>,
+    /// What they start the story with, where that differs from a thing's
+    /// own starting amount: attributes, items carried, things known.
+    #[serde(default)]
+    pub holds: BTreeMap<String, i32>,
+}
+
+/// The kinds of thing a character can have.
+pub const KINDS: [&str; 3] = ["attribute", "item", "info"];
+
+/// Something every character has some amount of: an attribute (a number
+/// about them: rank, nerve), an item (how many they carry) or a piece of
+/// information (they know it or they do not). Scenes move these between
+/// characters, and conditions ask after them as `who.thing`.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ThingDef {
+    pub id: String,
+    /// "attribute", "item" or "info".
+    pub kind: String,
+    #[serde(default)]
+    pub label: String,
+    /// What everyone starts with unless their own `holds` says otherwise.
+    #[serde(default)]
+    pub initial: i32,
+    /// Never shown to the player: not announced, not in the ledger.
+    #[serde(default)]
+    pub hidden: bool,
+    #[serde(default)]
+    pub note: String,
+}
+
+impl ThingDef {
+    /// Keep an amount within what this kind of thing can be: known or not
+    /// for information, none or more for items, any number for attributes.
+    pub fn fit(&self, n: i32) -> i32 {
+        match self.kind.as_str() {
+            "info" => n.clamp(0, 1),
+            "item" => n.max(0),
+            _ => n,
+        }
+    }
 }
 
 /// A place a character is not at: off stage altogether.
@@ -98,7 +138,8 @@ pub fn time_text(minutes: i32) -> String {
 /// Names that conditions can test besides the story's properties:
 /// `clock` (minutes after midnight), `day` (1, 2, ...), `event.<name>`
 /// (1 while that event is on), `@<who>` (1 while that character is in the
-/// place the story is in) and `@<who>.<place>`.
+/// place the story is in), `@<who>.<place>`, and `<who>.<thing>` (how much
+/// of an attribute, item or piece of information that character has).
 pub fn special_var(name: &str) -> Option<(&str, &str)> {
     if name == "clock" || name == "day" {
         return Some((name, ""));
@@ -106,9 +147,13 @@ pub fn special_var(name: &str) -> Option<(&str, &str)> {
     if let Some(event) = name.strip_prefix("event.") {
         return valid_id(event).then_some(("event", event));
     }
-    let who = name.strip_prefix('@')?;
-    let (who, place) = who.split_once('.').unwrap_or((who, ""));
-    (valid_id(who) && (place.is_empty() || valid_id(place))).then_some(("@", who))
+    if let Some(who) = name.strip_prefix('@') {
+        let (who, place) = who.split_once('.').unwrap_or((who, ""));
+        return (valid_id(who) && (place.is_empty() || valid_id(place))).then_some(("@", who));
+    }
+    // `q.key`: how much of a thing a character has
+    let (who, thing) = name.split_once('.')?;
+    (valid_id(who) && valid_id(thing)).then_some(("has", who))
 }
 
 /// A story property (variable): something choices change and conditions test.
@@ -151,6 +196,14 @@ pub enum Item {
     Pass { minutes: i32 },
     /// Start an event (or end it): characters' interrupts and conditions can depend on it.
     Event { name: String, on: bool },
+    /// Hand over: `from` loses what `to` gains (no more than `from` has, for items and information).
+    Give { from: String, to: String, thing: String, n: i32 },
+    /// Duplicate: `to` gains it and `from` keeps it (telling a secret, copying a key, teaching a skill).
+    Copy { from: String, to: String, thing: String, n: i32 },
+    /// Change what one character has by `n` (found, lost, earned, spent).
+    Grant { who: String, thing: String, n: i32 },
+    /// An exchange that happens only if both sides have what they offer.
+    Trade { a: String, b: String, thing: String, n: i32, thing2: String, n2: i32 },
     Show { who: String, expr: String, slot: String },
     /// `slot` is left, center, right or all.
     Hide { slot: String },
@@ -222,6 +275,9 @@ pub struct Doc {
     pub vars: Vec<VarDef>,
     #[serde(default)]
     pub tracks: Vec<TrackDef>,
+    /// Attributes, items and information that characters have.
+    #[serde(default)]
+    pub things: Vec<ThingDef>,
     /// The story's clock, if it keeps time (schedules need one).
     #[serde(default)]
     pub clock: Option<ClockDef>,
@@ -292,6 +348,8 @@ enum Line {
     Var(VarDef),
     Track(TrackDef),
     Clock(ClockDef),
+    Thing(ThingDef),
+    Holds(String, Vec<(String, i32)>),
     Schedule(String, Vec<Stop>),
     Interrupt(String, Interrupt),
     /// `render 3d` for the whole story, `render <place> 3d` for one place.
@@ -401,6 +459,37 @@ fn parse_line(line: &str) -> Result<Line, String> {
             let per_line = parts.get(1).filter(|s| !s.is_empty()).map(|s| number(s)).transpose()?.unwrap_or(0);
             return Ok(Line::Clock(ClockDef { start, per_line }));
         }
+        "attribute" | "item" | "info" => {
+            // item key | Brass key | 0 | hidden | opens the study     (id | label | everyone starts with | flags | note)
+            let parts: Vec<&str> = rest.splitn(5, '|').map(str::trim).collect();
+            let initial = parts.get(2).filter(|s| !s.is_empty()).map(|s| number(s)).transpose()?.unwrap_or(0);
+            let flags = parts.get(3).copied().unwrap_or("");
+            if !flags.is_empty() && flags != "hidden" {
+                return Err(format!("the only flag a thing takes is 'hidden', not '{}'", flags));
+            }
+            return Ok(Line::Thing(ThingDef {
+                id: parts[0].to_string(),
+                kind: toks[0].to_string(),
+                label: parts.get(1).unwrap_or(&"").to_string(),
+                initial,
+                hidden: flags == "hidden",
+                note: parts.get(4).unwrap_or(&"").to_string(),
+            }));
+        }
+        "holds" => {
+            // holds q | gold 5 | key | canvas        what a character starts with (an amount of 1 if none is given)
+            let parts: Vec<&str> = rest.split('|').map(str::trim).collect();
+            let mut held = Vec::new();
+            for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
+                let words: Vec<&str> = part.split_whitespace().collect();
+                match words.as_slice() {
+                    [thing] => held.push((thing.to_string(), 1)),
+                    [thing, n] => held.push((thing.to_string(), number(n)?)),
+                    _ => return Err(format!("'{}' should be a thing and an amount (key 2)", part)),
+                }
+            }
+            return Ok(Line::Holds(parts[0].to_string(), held));
+        }
         "schedule" => {
             // schedule p | 07:00 axis breakfast | 12:30 vista | 22:00 away
             let parts: Vec<&str> = rest.split('|').map(str::trim).collect();
@@ -457,6 +546,21 @@ fn parse_line(line: &str) -> Result<Line, String> {
         "time" if toks.len() == 2 => Item::Time { at: parse_time(toks[1]).ok_or(format!("time needs a time of day such as 09:30, not '{}'", toks[1]))? },
         "pass" if toks.len() == 2 => Item::Pass { minutes: number(toks[1])? },
         "event" if toks.len() == 2 || (toks.len() == 3 && (toks[2] == "on" || toks[2] == "off")) => Item::Event { name: toks[1].into(), on: toks.get(2) != Some(&"off") },
+        "give" | "copy" if toks.len() == 4 || toks.len() == 5 => {
+            // give q m key 2      copy q m canvas      (an amount of 1 if none is given; 0 for copy means "all that they have")
+            let n = toks.get(4).map(|n| number(n)).transpose()?.unwrap_or(1);
+            let (from, to, thing) = (toks[1].to_string(), toks[2].to_string(), toks[3].to_string());
+            if toks[0] == "give" {
+                Item::Give { from, to, thing, n }
+            } else {
+                Item::Copy { from, to, thing, n }
+            }
+        }
+        "grant" if toks.len() == 4 => Item::Grant { who: toks[1].into(), thing: toks[2].into(), n: number(toks[3])? },
+        "trade" if toks.len() == 8 && toks[5] == "for" => {
+            // trade m q gold 3 for key 1
+            Item::Trade { a: toks[1].into(), b: toks[2].into(), thing: toks[3].into(), n: number(toks[4])?, thing2: toks[6].into(), n2: number(toks[7])? }
+        }
         "music" if toks.len() == 2 => Item::Music { track: if toks[1] == "off" { String::new() } else { toks[1].into() } },
         "bg" if toks.len() == 2 => Item::Bg { name: toks[1].into() },
         "show" if toks.len() == 4 => Item::Show { who: toks[1].into(), expr: toks[2].into(), slot: toks[3].into() },
@@ -505,6 +609,7 @@ impl Doc {
             // a day for someone the file has not introduced yet cannot be filed: kept as a note, like any line not understood
             let orphan = match &parsed {
                 Line::Schedule(who, _) | Line::Interrupt(who, _) if !doc.characters.iter().any(|c| c.id == *who) => Some(who.clone()),
+                Line::Holds(who, _) if !doc.characters.iter().any(|c| c.id == *who) => Some(who.clone()),
                 _ => None,
             };
             let parsed = match orphan {
@@ -523,6 +628,12 @@ impl Doc {
                 Line::Var(v) => doc.vars.push(v),
                 Line::Track(t) => doc.tracks.push(t),
                 Line::Clock(c) => doc.clock = Some(c),
+                Line::Thing(t) => doc.things.push(t),
+                Line::Holds(who, held) => {
+                    if let Some(c) = doc.characters.iter_mut().find(|c| c.id == who) {
+                        c.holds.extend(held);
+                    }
+                }
                 // these belong to a character declared above them
                 Line::Schedule(who, stops) => {
                     if let Some(c) = doc.characters.iter_mut().find(|c| c.id == who) {
@@ -613,6 +724,7 @@ impl Doc {
             c.color = c.color.trim().to_lowercase();
             id(&mut c.sprite);
             c.look = c.look.iter().map(|(k, v)| (k.trim().to_string(), v.trim().to_string())).filter(|(k, v)| valid_id(k) && !v.is_empty() && !v.contains([' ', '|'])).collect();
+            c.holds = std::mem::take(&mut c.holds).into_iter().map(|(k, v)| (k.trim().to_string(), v)).filter(|(k, _)| valid_id(k)).collect();
             // a day in order, one entry per time
             for stop in &mut c.schedule {
                 stop.at = stop.at.clamp(0, DAY - 1);
@@ -629,6 +741,16 @@ impl Doc {
                 i.note = last_field(&i.note).replace('|', "/");
             }
             c.interrupts.retain(|i| !i.place.is_empty() && !i.place.contains(char::is_whitespace) && !i.when.var.is_empty() && !i.when.var.contains(char::is_whitespace));
+        }
+        for t in &mut self.things {
+            id(&mut t.id);
+            id(&mut t.kind);
+            if !KINDS.contains(&t.kind.as_str()) {
+                t.kind = "item".into();
+            }
+            pipe_free(&mut t.label);
+            t.initial = t.fit(t.initial);
+            t.note = last_field(&t.note).replace('|', "/");
         }
         if let Some(clock) = &mut self.clock {
             clock.start = clock.start.clamp(0, DAY - 1);
@@ -672,6 +794,21 @@ impl Doc {
                     Item::Time { at } => *at = (*at).clamp(0, DAY - 1),
                     Item::Pass { minutes } => *minutes = (*minutes).clamp(0, 7 * DAY),
                     Item::Event { name, .. } => id(name),
+                    Item::Give { from, to, thing, .. } | Item::Copy { from, to, thing, .. } => {
+                        id(from);
+                        id(to);
+                        id(thing);
+                    }
+                    Item::Grant { who, thing, .. } => {
+                        id(who);
+                        id(thing);
+                    }
+                    Item::Trade { a, b, thing, thing2, .. } => {
+                        id(a);
+                        id(b);
+                        id(thing);
+                        id(thing2);
+                    }
                     Item::Music { track } => {
                         id(track);
                         if track == "off" {
@@ -747,6 +884,17 @@ impl Doc {
             let sprite = if c.sprite.is_empty() { "-" } else { &c.sprite };
             out.push_str(format!("character {} | {} | {} | {} | {}", c.id, c.name, c.color, sprite, look.join(" ")).trim_end_matches([' ', '|']));
             out.push('\n');
+        }
+        if !self.things.is_empty() || self.characters.iter().any(|c| !c.holds.is_empty()) {
+            out.push('\n');
+        }
+        for t in &self.things {
+            out.push_str(format!("{} {} | {} | {} | {} | {}", t.kind, t.id, t.label, t.initial, if t.hidden { "hidden" } else { "" }, t.note).trim_end_matches([' ', '|']));
+            out.push('\n');
+        }
+        for c in self.characters.iter().filter(|c| !c.holds.is_empty()) {
+            let held: Vec<String> = c.holds.iter().map(|(thing, n)| format!("{} {}", thing, n)).collect();
+            out.push_str(&format!("holds {} | {}\n", c.id, held.join(" | ")));
         }
         if self.clock.is_some() || self.characters.iter().any(|c| !c.schedule.is_empty() || !c.interrupts.is_empty()) {
             out.push('\n');
@@ -828,6 +976,10 @@ impl Doc {
                     Item::Time { at } => out.push_str(&format!("time {}\n", time_text(*at))),
                     Item::Pass { minutes } => out.push_str(&format!("pass {}\n", minutes)),
                     Item::Event { name, on } => out.push_str(&format!("event {}{}\n", name, if *on { "" } else { " off" })),
+                    Item::Give { from, to, thing, n } => out.push_str(&format!("give {} {} {} {}\n", from, to, thing, n)),
+                    Item::Copy { from, to, thing, n } => out.push_str(&format!("copy {} {} {} {}\n", from, to, thing, n)),
+                    Item::Grant { who, thing, n } => out.push_str(&format!("grant {} {} {}\n", who, thing, n)),
+                    Item::Trade { a, b, thing, n, thing2, n2 } => out.push_str(&format!("trade {} {} {} {} for {} {}\n", a, b, thing, n, thing2, n2)),
                     Item::Show { who, expr, slot } => out.push_str(&format!("show {} {} {}\n", who, expr, slot)),
                     Item::Hide { slot } => out.push_str(&format!("hide {}\n", slot)),
                     Item::Add { var, n } => out.push_str(&format!("add {} {}\n", var, n)),
@@ -924,6 +1076,7 @@ impl Doc {
         let chars: HashMap<&str, &CharDef> = self.characters.iter().map(|c| (c.id.as_str(), c)).collect();
         let vars: HashSet<&str> = self.vars.iter().map(|v| v.id.as_str()).collect();
         let labels: HashSet<&str> = self.scenes.iter().map(|s| s.label.as_str()).collect();
+        let things: HashSet<&str> = self.things.iter().map(|t| t.id.as_str()).collect();
 
         let mut seen = HashSet::new();
         for c in &self.characters {
@@ -993,6 +1146,27 @@ impl Doc {
                 push("warning", "", None, format!("{} has a schedule but no portrait, so is never seen arriving anywhere", c.id));
             }
         }
+        // attributes, items and information, and who starts with what
+        let mut thing_ids = HashSet::new();
+        for t in &self.things {
+            if !valid_id(&t.id) {
+                push("error", "", None, format!("the id '{}' is not usable (letters, digits and _ only)", t.id));
+            }
+            if !thing_ids.insert(t.id.as_str()) {
+                push("error", "", None, format!("two attributes, items or pieces of information share the id '{}'", t.id));
+            }
+            if !KINDS.contains(&t.kind.as_str()) {
+                push("error", "", None, format!("'{}' is neither an attribute, an item nor information ('{}')", t.id, t.kind));
+            }
+        }
+        for c in &self.characters {
+            for thing in c.holds.keys().filter(|t| !things.contains(t.as_str())) {
+                push("error", "", None, format!("{} starts with '{}', which is not an attribute, item or information of this story", c.id, thing));
+            }
+        }
+        if self.characters.iter().any(|c| c.id == "event") && !self.things.is_empty() {
+            push("error", "", None, "a character cannot have the id 'event' in a story with attributes or items: 'event.x' means an event".into());
+        }
         for v in self.vars.iter().filter(|v| v.id == "clock" || v.id == "day") {
             push("error", "", None, format!("a property cannot be called '{}': that name is the story's clock", v.id));
         }
@@ -1058,6 +1232,48 @@ impl Doc {
                     Item::Time { .. } | Item::Pass { .. } => {
                         if self.clock.is_none() {
                             err("the story keeps no clock: give it one under Scenes > This story".into());
+                        }
+                    }
+                    Item::Give { from, to, thing, n } | Item::Copy { from, to, thing, n } => {
+                        for who in [from, to] {
+                            if !chars.contains_key(who.as_str()) {
+                                err(format!("unknown character '{}'", who));
+                            }
+                        }
+                        if from == to {
+                            err("the two characters are the same".into());
+                        }
+                        if !things.contains(thing.as_str()) {
+                            err(format!("unknown attribute, item or information '{}'", thing));
+                        }
+                        if *n < 0 {
+                            err("the amount cannot be less than nothing (swap the two characters instead)".into());
+                        }
+                    }
+                    Item::Grant { who, thing, .. } => {
+                        if !chars.contains_key(who.as_str()) {
+                            err(format!("unknown character '{}'", who));
+                        }
+                        if !things.contains(thing.as_str()) {
+                            err(format!("unknown attribute, item or information '{}'", thing));
+                        }
+                    }
+                    Item::Trade { a, b, thing, n, thing2, n2 } => {
+                        for who in [a, b] {
+                            if !chars.contains_key(who.as_str()) {
+                                err(format!("unknown character '{}'", who));
+                            }
+                        }
+                        if a == b {
+                            err("the two characters are the same".into());
+                        }
+                        for t in [thing, thing2] {
+                            if !things.contains(t.as_str()) {
+                                err(format!("unknown attribute, item or information '{}'", t));
+                            }
+                        }
+                        if *n < 0 || *n2 < 0 {
+                            err("the amounts cannot be less than nothing".into());
                         }
                     }
                     Item::Event { name, .. } => {
@@ -1185,6 +1401,10 @@ pub enum Cmd {
     Time(i32),
     Pass(i32),
     Event(String, bool),
+    Give { from: String, to: String, thing: String, n: i32 },
+    Copy { from: String, to: String, thing: String, n: i32 },
+    Grant { who: String, thing: String, n: i32 },
+    Trade { a: String, b: String, thing: String, n: i32, thing2: String, n2: i32 },
     Show { who: String, expr: String, slot: usize },
     /// `None` hides everyone.
     Hide(Option<usize>),
@@ -1208,6 +1428,7 @@ pub struct Script {
     /// Places shown as a 3D world; the rest are paintings.
     pub world: HashSet<String>,
     pub clock: Option<ClockDef>,
+    pub things: Vec<ThingDef>,
 }
 
 impl Doc {
@@ -1223,6 +1444,16 @@ impl Doc {
                     Some(format!("'{}' asks where '{}' is, who is not a character", name, who))
                 } else if !place.is_empty() && !bgs.contains(&place) {
                     Some(format!("'{}' names a place that does not exist", name))
+                } else {
+                    None
+                }
+            }
+            Some(("has", who)) => {
+                let thing = name.split_once('.').map_or("", |(_, t)| t);
+                if !self.characters.iter().any(|c| c.id == who) {
+                    Some(format!("'{}' asks what '{}' has, who is not a character", name, who))
+                } else if !self.things.iter().any(|t| t.id == thing) {
+                    Some(format!("'{}' names something that is not an attribute, item or information of this story", name))
                 } else {
                     None
                 }
@@ -1256,6 +1487,10 @@ impl Script {
                     Item::Time { at } => Cmd::Time(at),
                     Item::Pass { minutes } => Cmd::Pass(minutes),
                     Item::Event { name, on } => Cmd::Event(name, on),
+                    Item::Give { from, to, thing, n } => Cmd::Give { from, to, thing, n },
+                    Item::Copy { from, to, thing, n } => Cmd::Copy { from, to, thing, n },
+                    Item::Grant { who, thing, n } => Cmd::Grant { who, thing, n },
+                    Item::Trade { a, b, thing, n, thing2, n2 } => Cmd::Trade { a, b, thing, n, thing2, n2 },
                     Item::Show { who, expr, slot: s } => match slot(&s) {
                         Some(slot) => Cmd::Show { who, expr, slot },
                         None => continue,
@@ -1278,7 +1513,7 @@ impl Script {
         for c in &mut characters {
             c.schedule.sort_by_key(|stop| stop.at);
         }
-        Script { title: doc.title.clone(), subtitle: doc.subtitle.clone(), cmds, labels, characters, vars: doc.vars.clone(), world, clock: doc.clock.clone() }
+        Script { title: doc.title.clone(), subtitle: doc.subtitle.clone(), cmds, labels, characters, vars: doc.vars.clone(), world, clock: doc.clock.clone(), things: doc.things.clone() }
     }
 
     pub fn character(&self, id: &str) -> Option<&CharDef> {
@@ -1302,16 +1537,85 @@ pub struct Vm {
     pub place: String,
     /// A line has been spoken whose time has not yet been counted.
     spoke: bool,
+    /// What each character has, where it differs from where they started: (who, thing) -> amount.
+    pub holdings: BTreeMap<(String, String), i32>,
+    /// What the last give, copy, grant or trade actually changed: (who, thing, by how much).
+    pub changes: Vec<(String, String, i32)>,
 }
 
 impl Vm {
     /// A fresh run: every property at its declared starting value.
     pub fn new(s: &Script) -> Vm {
-        Vm { pc: 0, vars: s.vars.iter().map(|v| (v.id.clone(), v.initial)).collect(), clock: s.clock.as_ref().map_or(0, |c| c.start), events: BTreeSet::new(), place: String::new(), spoke: false }
+        Vm { pc: 0, vars: s.vars.iter().map(|v| (v.id.clone(), v.initial)).collect(), clock: s.clock.as_ref().map_or(0, |c| c.start), events: BTreeSet::new(), place: String::new(), spoke: false, holdings: BTreeMap::new(), changes: Vec::new() }
     }
 
     pub fn var(&self, name: &str) -> i32 {
         self.vars.get(name).copied().unwrap_or(0)
+    }
+
+    /// How much of a thing a character has now.
+    pub fn has(&self, s: &Script, who: &str, thing: &str) -> i32 {
+        if let Some(n) = self.holdings.get(&(who.to_string(), thing.to_string())) {
+            return *n;
+        }
+        let Some(def) = s.things.iter().find(|t| t.id == thing) else { return 0 };
+        def.fit(s.character(who).and_then(|c| c.holds.get(thing)).copied().unwrap_or(def.initial))
+    }
+
+    /// Change what a character has by `by`, within what that kind of thing can be. Returns the change made.
+    fn alter(&mut self, s: &Script, who: &str, thing: &str, by: i32) -> i32 {
+        let Some(def) = s.things.iter().find(|t| t.id == thing) else { return 0 };
+        if s.character(who).is_none() {
+            return 0;
+        }
+        let before = self.has(s, who, thing);
+        let after = def.fit(before.saturating_add(by));
+        if after != before {
+            self.holdings.insert((who.to_string(), thing.to_string()), after);
+            self.changes.push((who.to_string(), thing.to_string(), after - before));
+        }
+        after - before
+    }
+
+    /// Carry out a give, copy, grant or trade. What changed is left in `changes`.
+    fn exchange(&mut self, s: &Script, cmd: &Cmd) {
+        self.changes.clear();
+        let counted = |thing: &str| s.things.iter().find(|t| t.id == thing).map_or(false, |t| t.kind != "attribute");
+        match cmd {
+            Cmd::Give { from, to, thing, n } if from != to => {
+                // nobody hands over more than they have (attributes are numbers about a person: those simply shift)
+                let n = if counted(thing) { (*n).min(self.has(s, from, thing)) } else { *n }.max(0);
+                let taken = -self.alter(s, from, thing, -n);
+                self.alter(s, to, thing, if counted(thing) { taken } else { n });
+            }
+            Cmd::Copy { from, to, thing, n } if from != to => {
+                let has = self.has(s, from, thing);
+                if counted(thing) {
+                    // as many as asked for (all of them, for 0), if there is one to copy from
+                    if has > 0 {
+                        self.alter(s, to, thing, if *n <= 0 { has } else { *n });
+                    }
+                } else {
+                    // an attribute is matched: the pupil comes up to the teacher
+                    let theirs = self.has(s, to, thing);
+                    self.alter(s, to, thing, has - theirs);
+                }
+            }
+            Cmd::Grant { who, thing, n } => {
+                self.alter(s, who, thing, *n);
+            }
+            Cmd::Trade { a, b, thing, n, thing2, n2 } if a != b => {
+                // all or nothing: both must have what they offer
+                let (n, n2) = ((*n).max(0), (*n2).max(0));
+                if (!counted(thing) || self.has(s, a, thing) >= n) && (!counted(thing2) || self.has(s, b, thing2) >= n2) {
+                    self.alter(s, a, thing, -n);
+                    self.alter(s, b, thing, n);
+                    self.alter(s, b, thing2, -n2);
+                    self.alter(s, a, thing2, n2);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// A property, or one of the special names (see `special_var`).
@@ -1327,6 +1631,7 @@ impl Vm {
                 let place = name.split_once('.').map_or(self.place.as_str(), |(_, p)| p);
                 (!place.is_empty() && self.where_is(s, who) == Some(place)) as i32
             }
+            Some(("has", who)) => self.has(s, who, name.split_once('.').map_or("", |(_, t)| t)),
             _ => 0,
         }
     }
@@ -1403,6 +1708,10 @@ impl Vm {
                     } else {
                         self.events.remove(name);
                     }
+                }
+                Cmd::Give { .. } | Cmd::Copy { .. } | Cmd::Grant { .. } | Cmd::Trade { .. } => {
+                    self.exchange(s, &cmd);
+                    return Some((i, cmd));
                 }
                 Cmd::Bg(place) => {
                     self.place = place.clone();
@@ -1716,6 +2025,68 @@ mod tests {
         }
         assert_eq!((vm.value(&s4, "day"), vm.value(&s4, "clock")), (16, 7 * 60));
         assert!(Doc::parse("character p | P\nschedule p | 25:00 study\n*start\nend Done\n").1.len() == 1);
+    }
+
+    #[test]
+    fn characters_have_attributes_items_and_information_to_exchange() {
+        let (doc, errors) = Doc::parse(include_str!("../assets/example_holdings.txt"));
+        assert!(errors.is_empty(), "{:?}", errors);
+        assert!(problems(&doc).iter().all(|p| p.level != "error"), "{:?}", problems(&doc));
+        let (again, _) = Doc::parse(&doc.to_text());
+        assert_eq!(again, doc);
+        doc.survives_text().unwrap();
+        let s = Script::compile(&doc);
+        let mut vm = Vm::new(&s);
+        // where everyone starts: their own amounts, else the thing's
+        assert_eq!((vm.has(&s, "m", "coin"), vm.has(&s, "q", "coin"), vm.has(&s, "q", "key"), vm.has(&s, "q", "nerve"), vm.has(&s, "p", "nerve")), (5, 0, 1, 3, 1));
+        assert_eq!(vm.value(&s, "q.canvas"), 1);
+        let run = |vm: &mut Vm, text: &str| {
+            let (d, e) = Doc::parse(&format!("{}\n*x\n{}\nend X\n", doc.to_text().split("*start").next().unwrap(), text));
+            assert!(e.is_empty(), "{:?}", e);
+            let sx = Script::compile(&d);
+            vm.pc = sx.labels["x"];
+            while let Some((_, cmd)) = vm.next(&sx) {
+                if matches!(cmd, Cmd::End(..)) {
+                    break;
+                }
+            }
+            vm.changes.clone()
+        };
+        // giving moves it: no more than they have
+        run(&mut vm, "give m c coin 2");
+        assert_eq!((vm.has(&s, "m", "coin"), vm.has(&s, "c", "coin")), (3, 4));
+        run(&mut vm, "give m c coin 99");
+        assert_eq!((vm.has(&s, "m", "coin"), vm.has(&s, "c", "coin")), (0, 7));
+        assert!(run(&mut vm, "give m c coin 1").is_empty(), "nothing left to give");
+        // copying leaves the original: information spreads, and is known or not
+        run(&mut vm, "copy q m canvas\ncopy q p canvas\ncopy q m canvas");
+        assert_eq!((vm.has(&s, "q", "canvas"), vm.has(&s, "m", "canvas"), vm.has(&s, "p", "canvas")), (1, 1, 1));
+        assert!(run(&mut vm, "copy c p canvas").is_empty(), "Cook cannot tell what Cook does not know");
+        // an item copied is another one made; an attribute copied is matched
+        run(&mut vm, "copy q p key 2\ncopy q p nerve");
+        assert_eq!((vm.has(&s, "q", "key"), vm.has(&s, "p", "key"), vm.has(&s, "p", "nerve"), vm.has(&s, "q", "nerve")), (1, 2, 3, 3));
+        // information given away is forgotten by the giver
+        run(&mut vm, "give q c canvas");
+        assert_eq!((vm.has(&s, "q", "canvas"), vm.has(&s, "c", "canvas")), (0, 1));
+        // a trade happens whole or not at all
+        assert!(run(&mut vm, "trade m q coin 3 for key 1").is_empty(), "Marlowe has no coins left");
+        run(&mut vm, "grant m coin 4\ntrade m q coin 3 for key 1");
+        assert_eq!((vm.has(&s, "m", "coin"), vm.has(&s, "q", "coin"), vm.has(&s, "m", "key"), vm.has(&s, "q", "key")), (1, 3, 1, 0));
+        // items never go below none; attributes are plain numbers
+        run(&mut vm, "grant m coin -10\ngrant m nerve -4");
+        assert_eq!((vm.has(&s, "m", "coin"), vm.has(&s, "m", "nerve")), (0, -3));
+        // conditions and interrupts can ask
+        let holds = |vm: &Vm, text: &str| vm.test(&s, &parse_cond(&text.split_whitespace().collect::<Vec<_>>()).unwrap());
+        assert!(holds(&vm, "m.key >= 1") && holds(&vm, "q.key == 0") && holds(&vm, "c.canvas == 1") && holds(&vm, "p.nerve > 2"));
+        // what can go wrong is said
+        let bad = "character p | P\nitem key | Key\nitem key | Other\nholds p | sword 2\n*start\ngive p x key\ngive p p key\ngrant p crown 1\ntrade p p key 1 for key -1\nif p.crown >= 1 goto start\nif z.key >= 1 goto start\nend Done\n";
+        let (doc, errors) = Doc::parse(bad);
+        assert!(errors.is_empty(), "{:?}", errors);
+        let found: Vec<String> = problems(&doc).into_iter().map(|p| p.msg).collect();
+        for want in ["share the id 'key'", "starts with 'sword'", "unknown character 'x'", "the two characters are the same", "'crown'", "less than nothing", "who is not a character", "names something that is not"] {
+            assert!(found.iter().any(|m| m.contains(want)), "missing '{}' in {:?}", want, found);
+        }
+        assert!(Doc::parse("holds ghost | key\n*start\nend Done\n").0.to_text().contains("UNPARSED: holds ghost | key"));
     }
 
     #[test]

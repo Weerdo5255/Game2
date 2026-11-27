@@ -1,0 +1,51 @@
+title What Everyone Has | attributes, things carried, things known
+
+character m | Marlowe | #96e6a0 | -
+character p | Peregrine | #c8b4ff | p
+character q | Quince | #ffd27f | q
+character c | Cook | #ffb070 | c
+
+attribute nerve | Nerve | 1
+item coin | Coins | 0
+item key | Cellar key | 0 | | opens the wine cellar
+info canvas | The fleet is canvas | 0
+info recipe | Cook's secret recipe | 0 | hidden | nobody is told when this changes hands
+holds m | coin 5
+holds q | key | canvas | nerve 3
+holds c | recipe | coin 2
+
+*start
+bg pantry
+show q neutral left
+show c neutral right
+n: The pantry. Quince has the cellar key and knows something. I have five coins.
+choice
+- Buy the key from Quince for three coins => buy
+- [m.coin >= 9] Buy it for nine => rich
+- Ask what Quince knows => ask
+*buy
+trade m q coin 3 for key 1
+m: A fair price.
+goto after
+*rich
+m: I do not have nine coins.
+goto after
+*ask
+copy q m canvas
+q: Thirty-one of the sixty hulls are painted canvas. Now we both know.
+give m c coin 2
+m: And two coins to Cook, for looking the other way.
+copy c m recipe
+copy q m nerve
+*after
+trade m q coin 50 for nerve 1
+n: (Fifty coins for a little of Quince's nerve: nobody has fifty coins.)
+grant p coin 1
+give m p key
+if p.key >= 1 goto gave
+if m.canvas == 1 goto knows
+end Nothing learned | And nothing given away.
+*gave
+end The key goes upstairs | Peregrine has it now.
+*knows
+end A secret shared | Quince still knows it too.

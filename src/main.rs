@@ -153,6 +153,8 @@ fn main() {
     let sound = audio::Audio::new(story_file.map(|s| audio::audio_dir(&s)).filter(|_| !flag("--silent")), !headless_run);
     let mut game = Game::new(script, art_dir, sound);
 
+    // (for pictures: the "who has what" panel open from the start)
+    game.show_ledger(flag("--ledger"));
     if let Some(list) = arg("--autoplay") {
         let picks = list.split(',').filter_map(|s| s.trim().parse().ok()).collect();
         headless(game, picks, arg("--shots"), start.as_deref().unwrap_or("start"));
@@ -259,6 +261,7 @@ fn windowed(mut game: Game, size: (usize, usize)) -> Result<(), minifb::Error> {
             save: pressed(&[Key::F5]),
             load: pressed(&[Key::F9]),
             mute: pressed(&[Key::M]),
+            ledger: pressed(&[Key::I]),
             back: pressed(&[Key::Escape]),
             click: down && !was_down,
             mouse,
@@ -321,6 +324,9 @@ fn headless(mut game: Game, picks: Vec<usize>, shots: Option<String>, start: &st
             "ending" => {
                 if !game.moves.is_empty() {
                     println!("schedule: {}", game.moves.join("; "));
+                }
+                if !game.exchanges.is_empty() {
+                    println!("exchanges: {}", game.exchanges.join("; "));
                 }
                 if !game.audio.log.is_empty() {
                     let voiced = game.audio.log.iter().filter(|l| l.starts_with("voice ")).count();

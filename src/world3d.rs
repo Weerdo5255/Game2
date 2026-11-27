@@ -264,6 +264,7 @@ fn frame(
         save: pressed(&[KeyCode::F5]),
         load: pressed(&[KeyCode::F9]),
         mute: pressed(&[KeyCode::KeyM]),
+        ledger: pressed(&[KeyCode::KeyI]),
         back: pressed(&[KeyCode::Escape]),
         click: buttons.just_pressed(MouseButton::Left),
         mouse,

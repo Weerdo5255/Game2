@@ -46,6 +46,7 @@ sets its starting size.
 | Up / Down (or W / S), mouse | pick a choice |
 | Ctrl (hold) | skip text |
 | M | sound off / on |
+| I | who has what (in a story where characters have things) |
 | F5 / F9 | save / load (one slot, `below_stairs.sav`) |
 | Esc | back to title; quit from title |
 
@@ -236,6 +237,65 @@ cargo run --release -- --story assets/example_schedule.txt
 
 Played without a window (`--autoplay 0`) the game prints who came and went:
 `schedule: 08:00 q is in pantry; 08:20 q leaves pantry; ...`.
+
+## What characters have: attributes, items, information
+
+Besides the story's own properties, every character can have things of
+three kinds, and scenes can move them between characters:
+
+| Kind | Is | Example |
+|---|---|---|
+| **attribute** | a number about a person | nerve, rank, standing with the Admiral |
+| **item** | how many of something they carry (never fewer than none) | coins, the cellar key |
+| **information** | something they know, or do not | that the fleet is canvas |
+
+![The game's "who has what" panel](docs/holdings_game.png)
+
+In the story file:
+
+```
+attribute nerve | Nerve | 1                    everyone starts with 1
+item coin | Coins
+item key | Cellar key | 0 | | opens the wine cellar
+info canvas | The fleet is canvas
+info recipe | Cook's secret recipe | 0 | hidden      never shown to the player
+holds m | coin 5
+holds q | key | canvas | nerve 3               what one character starts with
+```
+
+and in scenes:
+
+| Line | Does |
+|---|---|
+| `give m c coin 2` | **hands over**: Marlowe loses two coins, Cook gains them. Nobody gives more than they have; information given away is forgotten by the giver. |
+| `copy q m canvas` | **duplicates**: Quince tells Marlowe, and both know it. For an item the other gets their own (`copy q p key 2`); for an attribute the other is brought to the same level. |
+| `trade m q coin 3 for key 1` | **an exchange**, which happens only if each has what they offer; otherwise nothing changes hands. |
+| `grant p coin 1` | one character gains (or with a minus, loses) something from nowhere. |
+
+Conditions on `if` lines, choices and schedule interrupts ask after them as
+`who.thing`:
+
+```
+choice
+- [m.coin >= 3] Buy the key from Quince => buy
+- [q.canvas == 1] Ask what Quince knows => ask
+```
+
+In the game, changes are announced ("Marlowe: Coins -3", "Marlowe learns:
+The fleet is canvas") and the **I** key shows who has what. Things marked
+`hidden` are tracked all the same but never shown.
+
+In the editor they are under **Properties > What characters have**: define
+attributes, items and information there, and fill in the table of who
+starts with what (also on each character's card in Cast). **Give**,
+**Copy / tell**, **Gain or lose** and **Trade** blocks go in scenes, and a
+condition can be set to "what someone has".
+
+![Defining things and who starts with what, in the editor](docs/editor_holdings.png)
+
+`assets/example_holdings.txt` is a small story that uses all of it. Played
+without a window the game prints what changed hands:
+`exchanges: m coin -3; q coin +3; q key -1; m key +1; ...`.
 
 ## Walking through the story in 3D
 
@@ -549,6 +609,10 @@ cargo build && node tools/editor_world_e2e.js
 
 ```bash
 cargo build && node tools/editor_schedule_e2e.js
+```
+
+```bash
+cargo build && node tools/editor_holdings_e2e.js
 ```
 
 The 3D world has its own unit tests (`cargo test --features world3d`) and
