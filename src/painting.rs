@@ -16,6 +16,8 @@ use crate::gfx::{rgb, with_alpha, Canvas, H, W};
 /// The most layers, and the most corners of one polygon, a painting may have.
 pub const MAX_LAYERS: usize = 600;
 pub const MAX_POINTS: usize = 96;
+/// The most dabs of the brush in all a painting's dabs layers.
+pub const MAX_DABS: u32 = 20_000;
 /// The longest a brush stroke may be, in pixels.
 pub const MAX_STROKE: f32 = 4000.0;
 /// The most washes and hatchings together.
@@ -48,6 +50,16 @@ fn third() -> f32 {
     0.3
 }
 
+/// A seed from any number a model may write (negative, huge, with a fraction): only its variety matters.
+fn any_seed<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(match v {
+        serde_json::Value::Number(n) => n.as_u64().map(|u| u as u32).or_else(|| n.as_i64().map(|i| i as u32)).unwrap_or_else(|| n.as_f64().map_or(0, |f| if f.is_finite() { (f.abs() as u64) as u32 } else { 0 })),
+        serde_json::Value::String(t) => t.bytes().fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(b as u32)),
+        _ => 0,
+    })
+}
+
 fn round_brush() -> String {
     "round".into()
 }
@@ -68,7 +80,7 @@ pub enum Layer {
     /// Light: a soft round glow that brightens what is under it.
     Glow { x: f32, y: f32, r: f32, color: String, strength: f32 },
     /// Scattered points of light between `y0` and `y1` (stars, dust, distant windows).
-    Stars { count: u32, y0: f32, y1: f32, color: String, seed: u32 },
+    Stars { count: u32, y0: f32, y1: f32, color: String, #[serde(deserialize_with = "any_seed")] seed: u32 },
     /// A brush stroke along a path, with pressure (see `brush`): `brush` is one of
     /// `brush::BRUSHES`, `load` how much paint it carries (0 a clean brush that
     /// blends, 0.1 a scrub, 0.3 ordinary, 0.9 thick impasto), `alpha` how much the paint covers.
@@ -82,7 +94,7 @@ pub enum Layer {
         load: f32,
         #[serde(default = "one")]
         alpha: f32,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "any_seed")]
         seed: u32,
     },
     /// A watercolour wash over a polygon: transparent, pooling at its edges; `wet` 0 crisp to 1 blooming.
@@ -93,7 +105,7 @@ pub enum Layer {
         alpha: f32,
         #[serde(default = "third")]
         wet: f32,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "any_seed")]
         seed: u32,
     },
     /// Pen hatching over a polygon: lines `spacing` apart at `angle` degrees (and across them if `cross`).
@@ -107,11 +119,11 @@ pub enum Layer {
         alpha: f32,
         #[serde(default)]
         cross: bool,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "any_seed")]
         seed: u32,
     },
     /// Many short touches of a brush scattered over a box, each a little different in colour (`jitter` 0 to 1).
-    Dabs { x: f32, y: f32, w: f32, h: f32, count: u32, size: f32, angle: f32, color: String, jitter: f32, #[serde(default)] seed: u32 },
+    Dabs { x: f32, y: f32, w: f32, h: f32, count: u32, size: f32, angle: f32, color: String, jitter: f32, #[serde(default, deserialize_with = "any_seed")] seed: u32 },
 }
 
 /// A way of painting: how the marks are made, and the surface they end on.
@@ -235,6 +247,16 @@ impl PaintingData {
             self.style = String::new();
         }
         self.layers.truncate(MAX_LAYERS);
+        // touches of the brush, all the dabs layers together: no more than this many
+        let dabs: u64 = self.layers.iter().map(|l| if let Layer::Dabs { count, .. } = l { (*count).min(4000) as u64 } else { 0 }).sum();
+        if dabs > MAX_DABS as u64 {
+            let k = MAX_DABS as f64 / dabs as f64;
+            for l in &mut self.layers {
+                if let Layer::Dabs { count, .. } = l {
+                    *count = ((*count).min(4000) as f64 * k).floor() as u32;
+                }
+            }
+        }
         // washes and hatching are worked out pixel by pixel over their area: a limit on how many
         let mut area_layers = 0;
         self.layers.retain(|l| {
@@ -401,6 +423,21 @@ impl PaintingData {
         let coarse = (work / 1.5e8).max(1.0);
         // and washes and hatching over more than twenty times the frame's area in all are left out
         let mut area_left = 20.0 * (W * H) as f32;
+        // polygons are filled by testing each pixel of their box against every edge: past
+        // about a dozen frame-sized polygons of many corners, the rest are left out
+        let mut poly_left = 12.0 * (W * H) as f64 * MAX_POINTS as f64;
+        let mut poly_ok = |points: &[Pt]| {
+            let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+            for p in points {
+                x0 = x0.min(p.x);
+                y0 = y0.min(p.y);
+                x1 = x1.max(p.x);
+                y1 = y1.max(p.y);
+            }
+            let area = ((x1.min(W as f32) - x0.max(0.0)).max(0.0) * (y1.min(H as f32) - y0.max(0.0)).max(0.0)) as f64;
+            poly_left -= area * points.len() as f64;
+            poly_left >= 0.0
+        };
         let mut area_ok = |points: &[Pt]| {
             let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
             for p in points {
@@ -428,7 +465,7 @@ impl PaintingData {
                 Layer::Soft { x, y, w, h, feather, color, alpha } => crate::art::paint::soft_rect(&mut c, *x, *y, *w, *h, feather.max(0.5), with_alpha(colour(color), a8(*alpha))),
                 Layer::Ellipse { x, y, rx, ry, color, alpha } => c.ellipse_aa(*x, *y, *rx, *ry, with_alpha(colour(color), a8(*alpha))),
                 Layer::Poly { points, color, alpha } => {
-                    if points.len() >= 3 {
+                    if points.len() >= 3 && poly_ok(points) {
                         let pts: Vec<(f32, f32)> = points.iter().map(|p| (p.x, p.y)).collect();
                         c.poly_aa(&pts, with_alpha(colour(color), a8(*alpha)));
                     }
@@ -615,6 +652,9 @@ mod tests {
         for i in 1..looks.len() {
             assert!(looks[i] != looks[0], "{} looks different from {}", STYLES[i].id, STYLES[0].id);
         }
+        let seeded: Layer = serde_json::from_str(r##"{"shape":"stroke","points":[{"x":1,"y":2}],"width":5,"color":"#ffffff","seed":-7}"##).unwrap();
+        assert!(matches!(seeded, Layer::Stroke { seed, .. } if seed != 0), "any whole number is a seed");
+        assert!(serde_json::from_str::<Layer>(r##"{"shape":"stars","count":3,"y0":0,"y1":9,"color":"#ffffff","seed":20260315123}"##).is_ok());
         let mut odd = PaintingData { style: "cubist".into(), ..Default::default() };
         odd.clean();
         assert_eq!(odd.style, "", "an unknown style is the matte one");
@@ -624,9 +664,15 @@ mod tests {
         let mut heavy = PaintingData { layers: (0..MAX_LAYERS * 2).map(|i| if i % 2 == 0 { big.clone() } else { wash.clone() }).collect(), style: "oil".into(), ..Default::default() };
         heavy.clean();
         assert_eq!(heavy.layers.iter().filter(|l| matches!(l, Layer::Hatch { .. })).count(), MAX_AREA_LAYERS);
+        // and dabs and polygons too
+        let dab = Layer::Dabs { x: 0.0, y: 0.0, w: 1152.0, h: 648.0, count: 4000, size: 80.0, angle: 0.0, color: "#ff0000".into(), jitter: 0.5, seed: 1 };
+        let star = Layer::Poly { points: (0..MAX_POINTS).map(|i| { let a = i as f32 * 0.0654; let r = if i % 2 == 0 { 2000.0 } else { 300.0 }; Pt { x: 576.0 + r * a.cos(), y: 324.0 + r * a.sin() } }).collect(), color: "#00ff00".into(), alpha: 0.01 };
+        heavy.layers.truncate(MAX_LAYERS / 2);
+        heavy.layers.extend((0..MAX_LAYERS / 2).map(|i| if i % 2 == 0 { dab.clone() } else { star.clone() }));
+        heavy.clean();
         let t = std::time::Instant::now();
         heavy.render();
-        assert!(t.elapsed().as_secs() < 20, "took {:?}", t.elapsed());
+        assert!(t.elapsed().as_secs() < 25, "took {:?}", t.elapsed());
         eprintln!("the heaviest painting took {:?}", t.elapsed());
     }
 

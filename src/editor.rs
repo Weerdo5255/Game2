@@ -1465,7 +1465,11 @@ impl State {
                     } else {
                         let want3d = body["want3d"].as_bool().unwrap_or(false);
                         let taken = crate::painting::backgrounds_for(Some(&story));
-                        let user = format!("{}The story's places so far: {}.\nPaint this place: {}", context, taken.join(", "), brief.trim());
+                        let mut user = format!("{}The story's places so far: {}.\nPaint this place: {}", context, taken.join(", "), brief.trim());
+                        if provider == crate::ai::Provider::Ollama && matches!(style.id, "oil" | "impressionist" | "watercolor" | "ink") {
+                            // a local model has a smaller context than Claude: fewer, simpler marks
+                            user.push_str("\nKeep the answer compact: at most 90 strokes or washes, each with at most 6 points, and whole numbers for coordinates.");
+                        }
                         let system = crate::ai::place_system(style, want3d);
                         let schema = crate::ai::place_schema(want3d);
                         // (a painting made of brush strokes takes many more words than one made of shapes)

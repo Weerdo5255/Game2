@@ -16,6 +16,10 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
+/// The longest answer asked of an Ollama model, in tokens (with its instructions, it must fit in the
+/// model's context, which costs memory on the machine running it).
+pub const OLLAMA_MAX_ANSWER: u32 = 32_000;
+
 /// The model asked when none is named.
 pub const CLAUDE_MODEL: &str = "claude-opus-5-5";
 const API_VERSION: &str = "2026-10-21";
@@ -243,12 +247,16 @@ fn ollama(model: &str, req: &Ask) -> Result<String, String> {
         "stream": false,
         "format": req.schema,
         "messages": [{ "role": "system", "content": req.system }, { "role": "user", "content": req.user }],
-        "options": { "num_predict": req.max_tokens, "num_ctx": 16384 },
+        // room for the instructions and the whole answer (Ollama's context holds both; the answer is cut off past it)
+        "options": { "num_predict": req.max_tokens.min(OLLAMA_MAX_ANSWER), "num_ctx": ((req.system.len() + req.user.len()) as u32 / 3 + req.max_tokens.min(OLLAMA_MAX_ANSWER) + 1024).clamp(8192, 40960) },
     });
     let url = format!("{}/api/chat", ollama_base());
     match agent(&url, Duration::from_secs(900)).post(&url).send_json(body) {
         Ok(resp) => {
             let v: Value = resp.into_json().map_err(|e| format!("Ollama's answer could not be read ({})", e))?;
+            if v["done_reason"] == "length" {
+                return Err(format!("{} ran out of room before its answer was finished: ask for something simpler, or choose a style made of shapes (matte, poster, woodblock, pixel), which needs far fewer words than brushwork", model.trim()));
+            }
             v["message"]["content"].as_str().map(str::to_string).filter(|t| !t.trim().is_empty()).ok_or_else(|| "Ollama sent back nothing".to_string())
         }
         Err(ureq::Error::Status(code, resp)) => {
