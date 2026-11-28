@@ -1450,21 +1450,27 @@ impl State {
                     }
                     let (doc, _) = self.load(&story)?;
                     let context = crate::ai::story_context(&doc);
+                    let style = crate::painting::style(body["style"].as_str().unwrap_or(""));
                     if req.path == "/api/ai/character" {
                         let taken: Vec<String> = doc.characters.iter().map(|c| c.id.clone()).chain(["n".to_string()]).collect();
                         let user = format!("{}\nMake this character: {}", context, brief.trim());
                         let schema = crate::ai::character_schema();
                         let v = crate::ai::ask(provider, model, &crate::ai::Ask { system: crate::ai::CHARACTER_SYSTEM, user: &user, schema: &schema, max_tokens: 8000 })?;
-                        let (def, bio, art_prompt) = crate::ai::character_from(&v, &taken)?;
-                        Ok(json!({ "character": def, "bio": bio, "art_prompt": art_prompt }))
+                        let (def, bio, mut art_prompt) = crate::ai::character_from(&v, &taken)?;
+                        // the portrait ComfyUI paints of them is in the chosen style
+                        if style.id != "matte" && !art_prompt.is_empty() {
+                            art_prompt = format!("{}, {}", art_prompt, style.words);
+                        }
+                        Ok(json!({ "character": def, "bio": bio, "art_prompt": art_prompt, "style": style.id }))
                     } else {
                         let want3d = body["want3d"].as_bool().unwrap_or(false);
                         let taken = crate::painting::backgrounds_for(Some(&story));
                         let user = format!("{}The story's places so far: {}.\nPaint this place: {}", context, taken.join(", "), brief.trim());
-                        let system = if want3d { format!("{}\n{}", crate::ai::PLACE_SYSTEM, crate::ai::ROOM_HELP) } else { crate::ai::PLACE_SYSTEM.to_string() };
+                        let system = crate::ai::place_system(style, want3d);
                         let schema = crate::ai::place_schema(want3d);
-                        let v = crate::ai::ask(provider, model, &crate::ai::Ask { system: &system, user: &user, schema: &schema, max_tokens: 32000 })?;
-                        let (name, painting, room) = crate::ai::place_from(&v, &taken)?;
+                        // (a painting made of brush strokes takes many more words than one made of shapes)
+                        let v = crate::ai::ask(provider, model, &crate::ai::Ask { system: &system, user: &user, schema: &schema, max_tokens: 64000 })?;
+                        let (name, painting, room) = crate::ai::place_from(&v, &taken, if style.id == "matte" { "" } else { style.id })?;
                         let preview = painting.render().resized(576, 324).png_bytes(false)?;
                         Ok(json!({ "name": name, "painting": painting, "room": room, "preview": format!("data:image/png;base64,{}", base64_encode(&preview)) }))
                     }

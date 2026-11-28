@@ -23,6 +23,7 @@
 
 mod ai;
 mod art;
+mod brush;
 mod audio;
 mod comfy;
 mod editor;
@@ -113,6 +114,26 @@ fn main() {
         return;
     }
 
+    if let Some(file) = arg("--render-painting") {
+        // a painting file (paintings/<name>.json) as a picture, to look at while editing it by hand
+        let out = arg("--out").unwrap_or_else(|| "painting.png".into());
+        let done = std::fs::read(&file).map_err(|e| e.to_string()).and_then(|bytes| {
+            let mut p: painting::PaintingData = serde_json::from_slice(&bytes).map_err(|e| format!("not a painting: {}", e))?;
+            if let Some(st) = arg("--style") {
+                p.style = st;
+            }
+            p.clean();
+            p.render().save_png(Path::new(&out), false)
+        });
+        match done {
+            Ok(()) => println!("wrote {}", out),
+            Err(e) => {
+                eprintln!("{}: {}", file, e);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     let (text, source) = load_story(arg("--story").map(PathBuf::from));
     let (doc, errors) = script::Doc::parse(&text);
     if flag("--format-story") {

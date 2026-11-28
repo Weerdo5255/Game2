@@ -268,7 +268,7 @@ label { color: var(--dim); }
     <li>The story menu at the top switches between stories, and makes, copies or removes them. Each story has its own file, cast and art.</li>
     <li><b>Art</b> sends this story's backgrounds and characters through ComfyUI, with a choice of workflows, and shows the results beside the game's own paintings.</li>
     <li><b>Sound</b> gives each speaker a voice (a stock voice, or one cloned from a sample recording) and has their lines read out through ComfyUI; it also generates the music tracks that scenes start with a Music block.</li>
-    <li><b>&#10022; Create with AI</b> (Cast) and <b>&#10022; New place with AI</b> (Scenes) ask Claude or a local Ollama model to design a character or paint a new place, optionally with a 3D room. Claude needs the editor started with <code>ANTHROPIC_API_KEY</code> set.</li>
+    <li><b>&#10022; Create with AI</b> (Cast) and <b>&#10022; New place with AI</b> (Scenes) ask Claude or a local Ollama model to design a character or paint a new place, optionally with a 3D room, in one of eight art styles (among them oil painted stroke by stroke with simulated bristle brushes, after aibrush). Claude needs the editor started with <code>ANTHROPIC_API_KEY</code> set.</li>
     <li>The story menu can also export the story as a <b>Godot game</b> (.zip): every scene and choice, the pictures, the 3D places and the sound, as a project for Godot 4.3 or later. Choose places as the story sets them, all 2D, or all 3D.</li>
     <li>The story menu's <b>Files</b> group exports the open story as one file (the story alone, or with its pictures and recordings) and imports such a file, or a story text file, as a new story.</li>
     <li><b>Manage</b> lists every story with its size and word count, keeps earlier versions of the open story (a snapshot is taken automatically as you save, and you can take named ones), locks a story against changes, and brings removed stories back.</li>
@@ -1871,7 +1871,7 @@ async function pollJobs() {
   if (art.open || sound.open || busy) art.timer = setTimeout(pollJobs, busy ? 900 : 2500);
 }
 // ------------------------------------------------- creating with a language model
-const ai = { status: null, provider: "", model: { claude: "", ollama: "" }, kind: "character", brief: "", want3d: false, busy: false, made: null, error: "" };
+const ai = { status: null, style: "matte", provider: "", model: { claude: "", ollama: "" }, kind: "character", brief: "", want3d: false, busy: false, made: null, error: "" };
 async function openAi(kind) {
   ai.kind = kind; ai.made = null; ai.error = "";
   $("#aiDlg").classList.add("show"); renderAi();
@@ -1894,6 +1894,9 @@ function renderAi() {
     el("div", { class: "brow" }, el("label", { text: "Ask" }),
       el("select", { id: "aiProvider", onchange: ev => { ai.provider = ev.target.value; renderAi(); } }, opts([{ value: "claude", label: "Claude (" + claudeNote + ")" }, { value: "ollama", label: "Ollama (" + ollamaNote + ")" }], ai.provider || "claude"))),
     el("div", { class: "brow", style: "margin-top:6px" }, el("label", { text: "Model" }), modelInput),
+    el("div", { class: "brow", style: "margin-top:6px" }, el("label", { text: "Style" }),
+      el("select", { id: "aiStyle", style: "flex:1", onchange: ev => { ai.style = ev.target.value; renderAi(); } }, opts(((st && st.styles) || [{ id: "matte", name: "Matte painting" }]).map(x => ({ value: x.id, label: x.name })), ai.style))),
+    st && st.styles && el("div", { class: "sub", id: "aiStyleNote", style: "color:var(--dim);margin-top:2px", text: ((st.styles.find(x => x.id === ai.style) || {}).blurb || "") + (place ? "" : " (For a character, the style is that of the portrait ComfyUI will paint; the game's own portrait stays as it is.)") }),
     el("div", { class: "sub", style: "color:var(--dim);margin:10px 0 4px", text: place
       ? "Describe the place: where it is, the time of day, the light, the mood. It is painted for the game as shapes, and the description is kept as the prompt for ComfyUI."
       : "Describe who they are: their place in the household, age, temperament, how they look. The game's portrait is reshaped to fit, and the description is kept as the prompt for ComfyUI." }),
@@ -1910,7 +1913,7 @@ async function runAi() {
   if (!ai.brief.trim()) { toast("Say what to make first.", true); return; }
   ai.busy = true; ai.error = ""; renderAi();
   try {
-    const body = { story: storyId, provider: ai.provider, model: ai.provider === "ollama" ? ai.model.ollama : ai.model.claude, brief: ai.brief, want3d: ai.want3d };
+    const body = { story: storyId, provider: ai.provider, model: ai.provider === "ollama" ? ai.model.ollama : ai.model.claude, brief: ai.brief, want3d: ai.want3d, style: ai.style };
     ai.made = await api("POST", "/api/ai/" + ai.kind, body);
   } catch (e) { ai.error = e.message; }
   ai.busy = false; renderAi();
@@ -1946,6 +1949,7 @@ function madePlace() {
     el("img", { class: "paint", src: m.preview }),
     el("div", { class: "grid2", style: "margin-top:8px" },
       el("label", { text: "Called" }), el("span", { text: m.painting.title || m.name }),
+      el("label", { text: "Style" }), el("span", { text: ((ai.status && ai.status.styles || []).find(x => x.id === (m.painting.style || "matte")) || { name: m.painting.style || "Matte painting" }).name }),
       el("label", { text: "Id" }), el("input", { type: "text", id: "aiPlaceName", value: m.name, onchange: ev => m.name = ev.target.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_") }),
       el("label", { text: "3D room" }), el("span", { text: m.room ? `${m.room.parts.length} part(s), ${m.room.lights.length} light(s)` : "none" })),
     el("div", { class: "brow", style: "margin-top:8px" }, el("button", { id: "aiAdd", class: "primary", text: "Add to the story", onclick: addMadePlace })));

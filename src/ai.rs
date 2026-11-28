@@ -115,6 +115,7 @@ pub fn status() -> Value {
     json!({
         "claude": { "ready": claude_key().is_some(), "model": CLAUDE_MODEL, "custom_url": env("ANTHROPIC_BASE_URL").is_some() },
         "ollama": ollama,
+        "styles": crate::painting::STYLES.iter().map(|st| json!({ "id": st.id, "name": st.name, "blurb": st.blurb })).collect::<Vec<_>>(),
     })
 }
 
@@ -318,6 +319,10 @@ pub fn place_schema(want3d: bool) -> Value {
         shape("line", json!({ "x0": num(), "y0": num(), "x1": num(), "y1": num(), "width": num(), "color": hex(), "alpha": num() }), &["x0", "y0", "x1", "y1", "width", "color", "alpha"]),
         shape("glow", json!({ "x": num(), "y": num(), "r": num(), "color": hex(), "strength": num() }), &["x", "y", "r", "color", "strength"]),
         shape("stars", json!({ "count": { "type": "integer" }, "y0": num(), "y1": num(), "color": hex(), "seed": { "type": "integer" } }), &["count", "y0", "y1", "color", "seed"]),
+        shape("stroke", json!({ "points": { "type": "array", "items": obj(json!({ "x": num(), "y": num(), "p": num() }), &["x", "y", "p"]) }, "width": num(), "color": hex(), "brush": { "type": "string", "enum": crate::brush::BRUSHES }, "load": num(), "alpha": num(), "seed": { "type": "integer" } }), &["points", "width", "color", "brush", "load", "alpha", "seed"]),
+        shape("wash", json!({ "points": { "type": "array", "items": pt.clone() }, "color": hex(), "alpha": num(), "wet": num(), "seed": { "type": "integer" } }), &["points", "color", "alpha", "wet", "seed"]),
+        shape("hatch", json!({ "points": { "type": "array", "items": pt.clone() }, "angle": num(), "spacing": num(), "width": num(), "color": hex(), "alpha": num(), "cross": { "type": "boolean" }, "seed": { "type": "integer" } }), &["points", "angle", "spacing", "width", "color", "alpha", "cross", "seed"]),
+        shape("dabs", json!({ "x": num(), "y": num(), "w": num(), "h": num(), "count": { "type": "integer" }, "size": num(), "angle": num(), "color": hex(), "jitter": num(), "seed": { "type": "integer" } }), &["x", "y", "w", "h", "count", "size", "angle", "color", "jitter", "seed"]),
     ]});
     let mut props = json!({
         "name": s("a short lowercase id for the place: letters, digits and _"),
@@ -376,11 +381,21 @@ pub const CHARACTER_SYSTEM: &str = "You design characters for a visual novel. Th
 - color is the colour their name is written in: readable on a dark panel.
 Make someone who belongs in the story you are told about and is unlike the characters it already has. The id must be new.";
 
-pub const PLACE_SYSTEM: &str = "You paint backgrounds for a visual novel, as layers of simple shapes drawn in order, first at the back, on a canvas 1152 wide and 648 tall (x to the right, y down).
+pub const PLACE_SYSTEM: &str = "You paint backgrounds for a visual novel, as layers drawn in order, first at the back, on a canvas 1152 wide and 648 tall (x to the right, y down).
 Shapes: gradient (a band across the whole width from y0 to y1, top colour to bottom colour), rect, soft (a rectangle with edges blurred `feather` pixels wide: haze, light shafts, distant masses), ellipse (centre x, y and radii), poly (a filled polygon of up to 96 points), line (a stroke `width` thick), glow (light that brightens what is under it; strength 0.2 to 1.5), stars (scattered points between y0 and y1).
-alpha is 0 to 1. Colours are #rrggbb. vignette 0 to 0.6 darkens the corners.
-Paint like a skilled matte painter: sky or ceiling first, then far shapes in hazy colours, then middle distance, then near detail with strong values; light sources with glows; 80 to 250 layers. Characters' portraits stand in the lower middle of the frame, so keep the centre from about y 250 down uncluttered, and give the floor or ground a clear plane there.
+Marks made by hand: stroke (a brush stroke along points, each with the brush's pressure p from 0 to 1; width at full pressure; brush is flat, narrow_flat, round, soft, dry, liner, fan, ragged or knife; load is the paint on the brush: 0 a clean brush that blends what is there, 0.1 a scrub, 0.3 ordinary, 0.9 thick impasto that stands up from the canvas; the paint runs out along a long stroke and the brush starts to skip), wash (a transparent watercolour wash over a polygon that darkens what is under it and pools at its edges; wet 0 crisp to 1 soft and blooming), hatch (pen lines across a polygon, spacing apart at angle degrees, cross-hatched if cross), dabs (count short brush touches scattered in a box, size long, at about angle degrees, colour varied by jitter 0 to 1).
+alpha is 0 to 1. Colours are #rrggbb. vignette 0 to 0.6 darkens the corners. seed is any whole number; vary it.
+Work back to front: sky or ceiling first, then far shapes in hazy colours, then middle distance, then near detail with strong values. Characters' portraits stand in the lower middle of the frame, so keep the centre from about y 250 down uncluttered, and give the floor or ground a clear plane there.
 Use a new id for the place, unlike the places the story already has.";
+
+/// The instructions for painting a place in a style.
+pub fn place_system(style: &crate::painting::Style, want3d: bool) -> String {
+    let mut out = format!("{}\nThe style is {}. {}", PLACE_SYSTEM, style.name, style.guide);
+    if want3d {
+        out = format!("{}\n{}", out, ROOM_HELP);
+    }
+    out
+}
 
 pub const ROOM_HELP: &str = "Also build the place as a simple 3D room to walk in (room): metres, y up, the floor at y 0, the room centred on x 0 z 0, half_width and half_depth 3 to 20. Parts are boxes, cylinders, spheres and capsules: at is a part's middle, size its width, height and depth, turn degrees about the upright; solid parts cannot be walked through. Give it a floor, walls (or ground and distant shapes outdoors), the main furniture, and 1 to 6 lights (point lamps of 200 to 2000, or a sun of 2000 to 20000). Brightness is the ambient light, 100 to 2000. The cast stands near z 0 facing +z; leave from x -2 to 2, z -1 to 3 clear.";
 
@@ -424,7 +439,7 @@ pub fn character_from(v: &Value, taken: &[String]) -> Result<(crate::script::Cha
 }
 
 /// A place from what the model made: its name, its painting, and its room if one was asked for.
-pub fn place_from(v: &Value, taken: &[String]) -> Result<(String, crate::painting::PaintingData, Option<crate::places::PlaceData>), String> {
+pub fn place_from(v: &Value, taken: &[String], style: &str) -> Result<(String, crate::painting::PaintingData, Option<crate::places::PlaceData>), String> {
     let mut name: String = v["name"].as_str().unwrap_or("").to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).take(32).collect();
     name = name.trim_matches('_').to_string();
     if !crate::painting::usable_name(&name) {
@@ -441,6 +456,7 @@ pub fn place_from(v: &Value, taken: &[String]) -> Result<(String, crate::paintin
         prompt: v["prompt"].as_str().unwrap_or("").to_string(),
         vignette: v["vignette"].as_f64().unwrap_or(0.25) as f32,
         layers: Vec::new(),
+        style: style.to_string(),
     };
     // one bad layer does not spoil the rest
     let mut dropped = 0;
@@ -550,13 +566,14 @@ mod tests {
             "room": { "sky": "#101020", "ambient": "#8080a0", "brightness": 300, "half_width": 8, "half_depth": 6,
                 "parts": [ { "shape": "box", "at": {"x":0,"y":-0.1,"z":0}, "size": {"x":16,"y":0.2,"z":12}, "turn": 0, "color": "#404040", "glow": 0, "solid": false, "name": "roof" } ],
                 "lights": [ { "kind": "point", "at": {"x":0,"y":3,"z":0}, "color": "#ffd080", "power": 900 } ] } });
-        let (name, painting, room) = place_from(&place, &[]).unwrap();
+        let (name, painting, room) = place_from(&place, &[], "oil").unwrap();
         assert_eq!(name, "place_pantry", "the game's own names are not taken over");
         assert_eq!(painting.layers.len(), 2, "the shape it does not know is left out");
         let room = room.unwrap();
         assert_eq!(room.parts.len(), 1);
         assert_eq!(room.air.sky, "#101020");
-        assert!(place_from(&json!({ "name": "x", "layers": [] }), &[]).is_err());
+        assert!(place_from(&json!({ "name": "x", "layers": [] }), &[], "").is_err());
+        assert_eq!(painting.style, "oil");
         // what is asked for can be asked for: every object closed, everything required
         fn closed(v: &Value) {
             if v["type"] == "object" {

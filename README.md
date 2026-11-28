@@ -238,12 +238,38 @@ properties and art.
   was made from is kept as that character's ComfyUI prompt, so the Art view
   can paint a proper portrait of them.
 - **A place** comes back as a painting made of layers of simple shapes
-  (bands of sky, polygons, soft haze, glowing lamps, stars), drawn by the
+  (bands of sky, polygons, soft haze, glowing lamps, stars) and marks made
+  by hand (brush strokes, watercolour washes, pen hatching), drawn by the
   game's own renderer, so it works in the game, the editor, the Art view and
   the Godot export like the seven built-in places. Tick **Also build it as a
   3D room** and the model lays out a room to walk through as well (floor,
   walls, furniture, lamps), which opens in the World editor. **Add to the
   story** saves it, and it appears in every Background block's list.
+- **Art styles.** Both dialogs offer a choice of style. For a place, the
+  style decides how the model is told to paint and the surface the game
+  gives the finished painting; for a character, it is the style of the
+  portrait ComfyUI is asked to paint (the game's own portrait figure stays
+  as it is). The same style words go into the place's ComfyUI prompt.
+
+  | Style | How it is painted |
+  |---|---|
+  | Matte painting | Layered shapes, haze and glowing light: the game's own look. |
+  | Oil painting (bristle brush) | Stroke by stroke with simulated bristle brushes, after [aibrush](https://github.com/neokrasav4ik/aibrush): each hair carries its own paint, which runs out along the stroke (dry brush), picks up the wet paint it passes over and leaves ridges that catch the light (impasto), on a linen weave. The model is told to work as aibrush advises a painter: plan the composition and values, a toned ground, block in with wide brushes at a low load, model the forms, soften edges with a clean brush, details, then thick accents last. |
+  | Impressionist | Broken colour in short dabs of thick paint. |
+  | Watercolour | Transparent washes that darken what is under them, pool at their edges and bloom when wet, on paper grain; the paper is left for the lights. |
+  | Pen and ink | Outlines and hatching (cross-hatched for shadow) on warm paper, with a little wash. |
+  | Pixel art | Big 4x4 pixels in a 20-colour dithered palette taken from the painting. |
+  | Gouache poster | Flat opaque shapes reduced to nine colours, like a mid-century travel poster. |
+  | Woodblock print | Flat inks, bold outlines and paper grain, in seven colours, after Japanese prints. |
+
+  The brush engine is the game's own (`src/brush.rs`), a much smaller model
+  than aibrush's, written for this renderer. It offers aibrush's nine brushes
+  (flat, narrow flat, round, soft, dry, liner, fan, ragged, palette knife),
+  with pressure along each stroke and a paint load from 0 (a clean brush
+  that only blends) to 0.9 (impasto).
+- A painting file can be looked at while you edit it by hand:
+  `cargo run -- --render-painting stories/x/paintings/roof.json --out roof.png`
+  (add `--style oil`, say, to see it in another style).
 - A story's own places live beside it: `paintings/<name>.json` for the
   painting (plain JSON, easy to edit by hand) and `world/<name>.json` for the
   room. They travel with the story when it is exported, imported or copied.

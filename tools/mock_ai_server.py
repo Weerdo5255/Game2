@@ -47,6 +47,7 @@ def made(system, user, schema):
             {"shape": "rect", "x": 0, "y": 520, "w": 1152, "h": 128, "color": "#1a1610", "alpha": 1},
             {"shape": "ellipse", "x": 760, "y": 300, "rx": 6, "ry": 14, "color": "#fff0c0", "alpha": 1},
             {"shape": "glow", "x": 760, "y": 300, "r": 220, "color": "#ffb060", "strength": 0.9},
+            {"shape": "stroke", "points": [{"x": 300, "y": 600, "p": 0.6}, {"x": 600, "y": 590, "p": 0.9}, {"x": 900, "y": 605, "p": 0.5}], "width": 80, "color": "#4a3a2a", "brush": "flat", "load": 0.3, "alpha": 1, "seed": 4},
             {"shape": "teapot", "x": 1},
         ],
     }

@@ -266,7 +266,11 @@ pub fn assets_of(doc: &Doc, story: &Path) -> Vec<Asset> {
         .map(|(name, p)| Asset {
             id: format!("bg_{}", name),
             kind: "background",
-            prompt: if p.prompt.is_empty() { format!("{}, painted background, no people", if p.title.is_empty() { name.replace('_', " ") } else { p.title.clone() }) } else { p.prompt.clone() },
+            prompt: {
+                let what = if p.prompt.is_empty() { format!("{}, painted background, no people", if p.title.is_empty() { name.replace('_', " ") } else { p.title.clone() }) } else { p.prompt.clone() };
+                // painted in a style: ComfyUI is asked for the same style
+                if p.style.is_empty() { what } else { format!("{}, {}", what, crate::painting::style(&p.style).words) }
+            },
             prompt_key: format!("bg_{}", name),
             name,
             character: None,
